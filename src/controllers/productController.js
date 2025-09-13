@@ -1,48 +1,49 @@
-const Product = require('../models/productModel');
+import * as productService from '../services/productService.js';
 
-exports.getAllProducts = async (req, res) => {
+export const getAllProducts = async (req, res) => {
   try {
-    const products = await Product.getAll();
+    const products = await productService.getAllProducts();
     res.json(products);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Database error' });
   }
 };
 
-exports.getProductById = async (req, res) => {
+export const getProductById = async (req, res) => {
   try {
-    const product = await Product.getById(req.params.id);
+    const product = await productService.getProductById(req.params.id);
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(product);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Database error' });
   }
 };
 
-exports.createProduct = async (req, res) => {
+export const createProduct = async (req, res) => {
   try {
-    const product = await Product.create(req.body);
+    const product = await productService.createProduct(req.body);
     res.status(201).json(product);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Database error' });
   }
 };
 
-exports.updateProduct = async (req, res) => {
+export const updateProduct = async (req, res) => {
   try {
-    const product = await Product.update(req.params.id, req.body);
+    const product = await productService.updateProduct(req.params.id, req.body);
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(product);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Database error' });
   }
 };
 
-exports.deleteProduct = async (req, res) => {
+export const deleteProduct = async (req, res) => {
   try {
-    await Product.delete(req.params.id);
-    res.json({ message: 'Product deleted' });
+    const product = await productService.deleteProduct(req.params.id);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    res.json({ message: 'Product deleted', product });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Database error' });
   }
 };

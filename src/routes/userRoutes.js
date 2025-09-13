@@ -1,14 +1,12 @@
-const express = require('express');
+import express from 'express';
+import * as userController from '../controllers/userController.js';
+
 const router = express.Router();
-const pool = require('../config/db');
 
-router.get('/users', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM users');
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+router.get('/users', userController.getAllUsers);
+router.get('/users/:id', userController.getUserById);
+router.post('/users', userController.createUser);
+router.put('/users/:id', userController.updateUser);
+router.delete('/users/:id', userController.deleteUser);
 
-module.exports = router;
+export default router;

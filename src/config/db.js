@@ -1,11 +1,13 @@
-const { Pool } = require("pg");
+import postgres from 'postgres'
 
-const pool = new Pool({
-  user: "postgres",         // Thay bằng user của bạn
-  host: "localhost",        // Hoặc IP server
-  database: "PharmacySystemDB", // Thay bằng tên database của bạn
-  password: "soulof28dec",      // Thay bằng mật khẩu của bạn
-  port: 5432,               // Cổng mặc định của PostgreSQL
-});
+const connectionString = process.env.DATABASE_URL
+const sql = postgres(connectionString)
 
-module.exports = pool;
+export default sql
+
+// Test thử kết nối
+sql`SELECT NOW()`.then(res => {
+  console.log('✅ Kết nối DB thành công:', res[0].now)
+}).catch(err => {
+  console.error('❌ Kết nối DB thất bại:', err)
+})

@@ -1,1 +1,28 @@
+# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# Environment variables
 .env
+.env.*.local
+
+# Build output
+dist/
+build/
+
+# Prisma
+# ⚠️ KHÔNG ignore thư mục prisma vì cần push schema + migrations
+# Chỉ ignore file client được generate
+prisma/generated/
+
+# Logs
+logs
+*.log
+*.sqlite-journal
+
+# OS files
+.DS_Store
+Thumbs.db
