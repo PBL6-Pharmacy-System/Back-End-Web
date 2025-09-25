@@ -1,15 +1,209 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
-generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Product {
+  id               Int       @id @default(autoincrement())
+  name             String    @db.VarChar(150)
+  description      String?
+  price            Decimal   @db.Decimal(14, 2)
+  tax_fee          Decimal?  @default(0) @db.Decimal(14, 2)
+  created_at       DateTime? @default(now())
+  updated_at       DateTime? @default(now())
+  images           Json?
+  manufacturer     String?
+  usage            String?
+  dosage           String?
+  specification    String?
+  adverseEffect    String?   @map("adverseEffect")
+  registNum        String?   @map("registNum")
+  brand            String?
+  producer         String?
+  manufactor       String?
+  legalDeclaration String?   @map("legalDeclaration")
+  faq              Json?
+
+  // relations
+  category_id Int?
+  category    Category? @relation(fields: [category_id], references: [id])
+
+  supplier_id Int?
+  supplier    Supplier? @relation(fields: [supplier_id], references: [id])
+
+  base_unit_id Int?
+  baseUnit     UnitType? @relation(fields: [base_unit_id], references: [id])
+
+  productUnits   ProductUnit[]
+  orderItems     OrderItem[] // 👈 inverse relation
+  productBatches ProductBatch[] // 👈 inverse relation
+
+  @@map("products")
+}
+
+model Category {
+  id          Int     @id @default(autoincrement())
+  name        String  @db.VarChar(150)
+  description String?
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model ProductUnit {
+  id                Int      @id @default(autoincrement())
+  base_qty_per_unit Decimal  @db.Decimal(14, 6)
+  sale_price        Decimal  @db.Decimal(14, 2)
+  is_default        Boolean? @default(false)
+  sku               String?  @db.VarChar(100)
+  barcode           String?  @db.VarChar(100)
+
+  // relations
+  product_id Int?
+  product    Product? @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  unit_id Int?
+  unit    UnitType? @relation(fields: [unit_id], references: [id])
+
+  orderItems OrderItem[] // 👈 inverse relation
+
+  @@map("productunits")
+}
+
+model Role {
+  id          Int     @id @default(autoincrement())
+  name        String  @db.VarChar(100)
+  description String?
+
+  @@map("roles")
+}
+
+// cần thêm Supplier & UnitType (vì được reference)
+model Supplier {
+  id           Int     @id @default(autoincrement())
+  name         String  @db.VarChar(150)
+  contact_info String?
+
+  products       Product[]
+  productBatches ProductBatch[] // 👈 inverse relation
+
+  @@map("suppliers")
+}
+
+model UnitType {
+  id   Int    @id @default(autoincrement())
+  name String @db.VarChar(100)
+
+  products     Product[]
+  productUnits ProductUnit[]
+
+  @@map("unittype")
+}
+
+model Customer {
+  id            BigInt    @unique @default(autoincrement())
+  phone         String    @id
+  name          String?
+  date_of_birth DateTime?
+  sex           String?
+  isVerified    Boolean?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime?
+
+  @@map("customer")
+}
+
+model Branch {
+  id           Int               @id @default(autoincrement())
+  name         String            @db.VarChar(150)
+  address      String?
+  contact_info String?
+  created_at   DateTime          @default(now())
+  inventories  BranchInventory[]
+
+  @@map("branches")
+}
+
+model BranchInventory {
+  id               Int      @id @default(autoincrement())
+  branch_id        Int?
+  product_batch_id Int?
+  quantity         Int?     @default(0)
+  updated_at       DateTime @default(now())
+
+  branch       Branch?       @relation(fields: [branch_id], references: [id])
+  productBatch ProductBatch? @relation(fields: [product_batch_id], references: [id])
+
+  @@map("branchinventory")
+}
+
+model OrderItem {
+  id              Int      @id @default(autoincrement())
+  order_id        Int?
+  product_id      Int?
+  product_unit_id Int?
+  quantity        Int
+  unit_price      Decimal  @db.Decimal(14, 2)
+  discount_price  Decimal? @db.Decimal(14, 2)
+  base_qty_total  Decimal  @db.Decimal(14, 6)
+
+  order       Order?       @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product     Product?     @relation(fields: [product_id], references: [id])
+  productUnit ProductUnit? @relation(fields: [product_unit_id], references: [id])
+
+  batches OrderItemBatch[]
+
+  @@map("orderitems")
+  @@unique([order_id, product_id, product_unit_id])
+}
+
+model OrderItemBatch {
+  id               Int  @id @default(autoincrement())
+  order_item_id    Int?
+  product_batch_id Int?
+  quantity         Int
+
+  orderItem    OrderItem?    @relation(fields: [order_item_id], references: [id], onDelete: Cascade)
+  productBatch ProductBatch? @relation(fields: [product_batch_id], references: [id])
+
+  @@map("orderitembatches")
+}
+
+model ProductBatch {
+  id               Int       @id @default(autoincrement())
+  batch_number     String    @db.VarChar(100)
+  expiry_date      DateTime
+  manufacture_date DateTime?
+  supplier_id      Int?
+  product_id       Int?
+  created_at       DateTime? @default(now())
+
+  product  Product?  @relation(fields: [product_id], references: [id])
+  supplier Supplier? @relation(fields: [supplier_id], references: [id])
+
+  branchInventory  BranchInventory[]
+  orderItemBatches OrderItemBatch[]
+
+  @@map("productbatches")
+}
+
+model Order {
+  id               Int       @id @default(autoincrement())
+  user_id          Int?
+  status           String?   @db.VarChar(50)
+  discount_total   Decimal?  @default(0) @db.Decimal(14, 2)
+  subtotal         Decimal   @db.Decimal(14, 2)
+  voucher_discount Decimal?  @default(0) @db.Decimal(14, 2)
+  final_total      Decimal   @db.Decimal(14, 2)
+  voucher_id       Int?
+  created_at       DateTime? @default(now())
+
+  orderItems OrderItem[]
+
+  @@map("orders")
 }

@@ -1,36 +1,105 @@
-import sql from '../config/db.js';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export const getAllProducts = async () => {
-  return await sql`SELECT * FROM products`;
+  return prisma.product.findMany({
+    include: {
+      category: true,
+      supplier: true,
+      baseUnit: true,
+      productUnits: true,
+    },
+  });
 };
 
 export const getProductById = async (id) => {
-  const product = await sql`SELECT * FROM products WHERE id = ${id}`;
-  return product[0];
+  return prisma.product.findUnique({
+    where: { id: Number(id) },
+    include: {
+      category: true,
+      supplier: true,
+      baseUnit: true,
+      productUnits: true,
+    },
+  });
 };
 
 export const createProduct = async (data) => {
-  const { name, description, price, manufacturer, category } = data;
-  const product = await sql`
-    INSERT INTO products (name, description, price, manufacturer, category)
-    VALUES (${name}, ${description}, ${price}, ${manufacturer}, ${category})
-    RETURNING *
-  `;
-  return product[0];
+  return prisma.product.create({
+    data: {
+      name: data.name,
+      description: data.description,
+      price: data.price,
+      manufacturer: data.manufacturer,
+      usage: data.usage,
+      dosage: data.dosage,
+      specification: data.specification,
+      brand: data.brand,
+      images: data.images ? data.images : undefined,
+      category: data.category_id
+        ? { connect: { id: Number(data.category_id) } }
+        : undefined,
+      supplier: data.supplier_id
+        ? { connect: { id: Number(data.supplier_id) } }
+        : undefined,
+      baseUnit: data.base_unit_id
+        ? { connect: { id: Number(data.base_unit_id) } }
+        : undefined,
+    },
+  });
 };
 
 export const updateProduct = async (id, data) => {
-  const { name, description, price, manufacturer, category } = data;
-  const product = await sql`
-    UPDATE products
-    SET name = ${name}, description = ${description}, price = ${price}, manufacturer = ${manufacturer}, category = ${category}
-    WHERE id = ${id}
-    RETURNING *
-  `;
-  return product[0];
+  return prisma.product.update({
+    where: { id: Number(id) },
+    data: {
+      name: data.name,
+      description: data.description,
+      price: data.price,
+      manufacturer: data.manufacturer,
+      usage: data.usage,
+      dosage: data.dosage,
+      specification: data.specification,
+      brand: data.brand,
+      images: data.images ? data.images : undefined,
+      category: data.category_id
+        ? { connect: { id: Number(data.category_id) } }
+        : undefined,
+      supplier: data.supplier_id
+        ? { connect: { id: Number(data.supplier_id) } }
+        : undefined,
+      baseUnit: data.base_unit_id
+        ? { connect: { id: Number(data.base_unit_id) } }
+        : undefined,
+    },
+  });
 };
 
 export const deleteProduct = async (id) => {
-  const product = await sql`DELETE FROM products WHERE id = ${id} RETURNING *`;
-  return product[0];
+  return prisma.product.delete({
+    where: { id: Number(id) },
+  });
+};
+
+export const searchProductsByName = async (keyword) => {
+  return prisma.product.findMany({
+  where: {
+    name: {
+      contains: keyword,
+      mode: 'insensitive',
+    }},
+  });
+};
+
+export const getProductsByCategory = async (categoryId) => {
+  return prisma.product.findMany({
+    where: { category_id: Number(categoryId) },
+    include: {
+      category: true,
+      supplier: true,
+      baseUnit: true,
+      productUnits: true,
+    },
+  });
 };
