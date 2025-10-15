@@ -1,13 +1,14 @@
-import postgres from 'postgres'
+import { PrismaClient } from '@prisma/client';
 
-const connectionString = process.env.DATABASE_URL
-const sql = postgres(connectionString)
+const prisma = new PrismaClient();
 
-export default sql
+// Test connection
+prisma.$connect()
+  .then(() => {
+    console.log('✅ Database connected successfully');
+  })
+  .catch((err) => {
+    console.error('❌ Database connection failed:', err);
+  });
 
-// Test thử kết nối
-sql`SELECT NOW()`.then(res => {
-  console.log('✅ Kết nối DB thành công:', res[0].now)
-}).catch(err => {
-  console.error('❌ Kết nối DB thất bại:', err)
-})
+export default prisma;

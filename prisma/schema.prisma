@@ -1,209 +1,378 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model branches {
+  id              Int               @id @default(autoincrement())
+  name            String            @db.VarChar(255)
+  address         String
+  phone           String?           @db.VarChar(20)
+  manager_id      Int?
+  created_at      DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at      DateTime?         @default(now()) @db.Timestamp(6)
+  branchinventory branchinventory[]
+  shipments       shipments[]
 }
 
-model Product {
-  id               Int       @id @default(autoincrement())
-  name             String    @db.VarChar(150)
-  description      String?
-  price            Decimal   @db.Decimal(14, 2)
-  tax_fee          Decimal?  @default(0) @db.Decimal(14, 2)
-  created_at       DateTime? @default(now())
-  updated_at       DateTime? @default(now())
-  images           Json?
-  manufacturer     String?
-  usage            String?
-  dosage           String?
-  specification    String?
-  adverseEffect    String?   @map("adverseEffect")
-  registNum        String?   @map("registNum")
-  brand            String?
-  producer         String?
-  manufactor       String?
-  legalDeclaration String?   @map("legalDeclaration")
-  faq              Json?
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model branchinventory {
+  id           Int       @id @default(autoincrement())
+  branch_id    Int
+  product_id   Int
+  stock        Int?      @default(0)
+  last_updated DateTime? @default(now()) @db.Timestamp(6)
+  branches     branches  @relation(fields: [branch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products     products  @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  // relations
-  category_id Int?
-  category    Category? @relation(fields: [category_id], references: [id])
-
-  supplier_id Int?
-  supplier    Supplier? @relation(fields: [supplier_id], references: [id])
-
-  base_unit_id Int?
-  baseUnit     UnitType? @relation(fields: [base_unit_id], references: [id])
-
-  productUnits   ProductUnit[]
-  orderItems     OrderItem[] // 👈 inverse relation
-  productBatches ProductBatch[] // 👈 inverse relation
-
-  @@map("products")
+  @@unique([branch_id, product_id], map: "unique_branch_product")
+  @@index([branch_id], map: "idx_branchinventory_branch_id")
 }
 
-model Category {
-  id          Int     @id @default(autoincrement())
-  name        String  @db.VarChar(150)
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model categories {
+  id          Int        @id @default(autoincrement())
+  name        String     @db.VarChar(255)
   description String?
-
-  products Product[]
-
-  @@map("categories")
+  parent_id   Int?
+  created_at  DateTime?  @default(now()) @db.Timestamp(6)
+  updated_at  DateTime?  @default(now()) @db.Timestamp(6)
+  products    products[]
 }
 
-model ProductUnit {
-  id                Int      @id @default(autoincrement())
-  base_qty_per_unit Decimal  @db.Decimal(14, 6)
-  sale_price        Decimal  @db.Decimal(14, 2)
-  is_default        Boolean? @default(false)
-  sku               String?  @db.VarChar(100)
-  barcode           String?  @db.VarChar(100)
-
-  // relations
-  product_id Int?
-  product    Product? @relation(fields: [product_id], references: [id], onDelete: Cascade)
-
-  unit_id Int?
-  unit    UnitType? @relation(fields: [unit_id], references: [id])
-
-  orderItems OrderItem[] // 👈 inverse relation
-
-  @@map("productunits")
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model customers {
+  id                Int                 @id @default(autoincrement())
+  user_id           Int?                @unique
+  full_name         String?             @db.VarChar(255)
+  dob               DateTime?           @db.Date
+  gender            String?             @db.VarChar(10)
+  phone             String?             @db.VarChar(20)
+  email             String?             @db.VarChar(255)
+  address           String?
+  created_at        DateTime?           @default(now()) @db.Timestamp(6)
+  updated_at        DateTime?           @default(now()) @db.Timestamp(6)
+  users             users?              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  insuranceclaims   insuranceclaims[]
+  notifications     notifications[]
+  orders            orders[]
+  reviews           reviews[]
+  shippingaddresses shippingaddresses[]
+  uservouchers      uservouchers[]
 }
 
-model Role {
-  id          Int     @id @default(autoincrement())
-  name        String  @db.VarChar(100)
-  description String?
-
-  @@map("roles")
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model faqs {
+  id         Int       @id @default(autoincrement())
+  question   String
+  answer     String
+  category   String?   @db.VarChar(100)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
 }
 
-// cần thêm Supplier & UnitType (vì được reference)
-model Supplier {
-  id           Int     @id @default(autoincrement())
-  name         String  @db.VarChar(150)
-  contact_info String?
-
-  products       Product[]
-  productBatches ProductBatch[] // 👈 inverse relation
-
-  @@map("suppliers")
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model insuranceclaims {
+  id                Int       @id @default(autoincrement())
+  order_id          Int
+  product_id        Int
+  customer_id       Int
+  claim_date        DateTime? @default(now()) @db.Timestamp(6)
+  status            String?   @default("submitted") @db.VarChar(50)
+  insurance_info    Json?
+  provider_response Json?
+  created_at        DateTime? @default(now()) @db.Timestamp(6)
+  updated_at        DateTime? @default(now()) @db.Timestamp(6)
+  customers         customers @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders            orders    @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products          products  @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
-model UnitType {
-  id   Int    @id @default(autoincrement())
-  name String @db.VarChar(100)
-
-  products     Product[]
-  productUnits ProductUnit[]
-
-  @@map("unittype")
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model logs {
+  id         Int       @id @default(autoincrement())
+  user_id    Int?
+  action     String    @db.VarChar(255)
+  details    String?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  users      users?    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
-model Customer {
-  id            BigInt    @unique @default(autoincrement())
-  phone         String    @id
-  name          String?
-  date_of_birth DateTime?
-  sex           String?
-  isVerified    Boolean?
-  created_at    DateTime  @default(now())
-  updated_at    DateTime?
-
-  @@map("customer")
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model notifications {
+  id          Int        @id @default(autoincrement())
+  user_id     Int?
+  customer_id Int?
+  message     String
+  type        String?    @db.VarChar(50)
+  is_read     Boolean?   @default(false)
+  created_at  DateTime?  @default(now()) @db.Timestamp(6)
+  customers   customers? @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users       users?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
-model Branch {
-  id           Int               @id @default(autoincrement())
-  name         String            @db.VarChar(150)
-  address      String?
-  contact_info String?
-  created_at   DateTime          @default(now())
-  inventories  BranchInventory[]
-
-  @@map("branches")
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model order_status_history {
+  id         Int       @id @default(autoincrement())
+  order_id   Int
+  status     String    @db.VarChar(50)
+  changed_at DateTime? @default(now()) @db.Timestamp(6)
+  changed_by Int?
+  users      users?    @relation(fields: [changed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders     orders    @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
-model BranchInventory {
-  id               Int      @id @default(autoincrement())
-  branch_id        Int?
-  product_batch_id Int?
-  quantity         Int?     @default(0)
-  updated_at       DateTime @default(now())
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model orderitems {
+  id           Int          @id @default(autoincrement())
+  order_id     Int
+  product_id   Int
+  unit_id      Int
+  quantity     Int
+  price        Decimal      @db.Decimal(12, 2)
+  subtotal     Decimal      @db.Decimal(12, 2)
+  created_at   DateTime?    @default(now()) @db.Timestamp(6)
+  updated_at   DateTime?    @default(now()) @db.Timestamp(6)
+  orders       orders       @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products     products     @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  productunits productunits @relation(fields: [unit_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  branch       Branch?       @relation(fields: [branch_id], references: [id])
-  productBatch ProductBatch? @relation(fields: [product_batch_id], references: [id])
-
-  @@map("branchinventory")
+  @@index([order_id], map: "idx_orderitems_order_id")
 }
 
-model OrderItem {
-  id              Int      @id @default(autoincrement())
-  order_id        Int?
-  product_id      Int?
-  product_unit_id Int?
-  quantity        Int
-  unit_price      Decimal  @db.Decimal(14, 2)
-  discount_price  Decimal? @db.Decimal(14, 2)
-  base_qty_total  Decimal  @db.Decimal(14, 6)
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model orders {
+  id                   Int                    @id @default(autoincrement())
+  customer_id          Int
+  voucher_id           Int?
+  shipping_address_id  Int?
+  total_amount         Decimal                @db.Decimal(12, 2)
+  discount_amount      Decimal?               @default(0) @db.Decimal(12, 2)
+  final_amount         Decimal                @db.Decimal(12, 2)
+  status               String?                @default("pending") @db.VarChar(50)
+  order_date           DateTime?              @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?              @default(now()) @db.Timestamp(6)
+  insuranceclaims      insuranceclaims[]
+  order_status_history order_status_history[]
+  orderitems           orderitems[]
+  customers            customers              @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shippingaddresses    shippingaddresses?     @relation(fields: [shipping_address_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vouchers             vouchers?              @relation(fields: [voucher_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payments             payments[]
+  shipments            shipments[]
+  uservouchers         uservouchers[]
 
-  order       Order?       @relation(fields: [order_id], references: [id], onDelete: Cascade)
-  product     Product?     @relation(fields: [product_id], references: [id])
-  productUnit ProductUnit? @relation(fields: [product_unit_id], references: [id])
-
-  batches OrderItemBatch[]
-
-  @@map("orderitems")
-  @@unique([order_id, product_id, product_unit_id])
+  @@index([customer_id], map: "idx_orders_customer_id")
 }
 
-model OrderItemBatch {
-  id               Int  @id @default(autoincrement())
-  order_item_id    Int?
-  product_batch_id Int?
-  quantity         Int
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model payments {
+  id             Int       @id @default(autoincrement())
+  order_id       Int
+  payment_method String    @db.VarChar(50)
+  amount         Decimal   @db.Decimal(12, 2)
+  payment_date   DateTime? @default(now()) @db.Timestamp(6)
+  status         String?   @default("pending") @db.VarChar(50)
+  transaction_id String?   @unique @db.VarChar(255)
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  updated_at     DateTime? @default(now()) @db.Timestamp(6)
+  orders         orders    @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  orderItem    OrderItem?    @relation(fields: [order_item_id], references: [id], onDelete: Cascade)
-  productBatch ProductBatch? @relation(fields: [product_batch_id], references: [id])
-
-  @@map("orderitembatches")
+  @@index([order_id], map: "idx_payments_order_id")
 }
 
-model ProductBatch {
-  id               Int       @id @default(autoincrement())
-  batch_number     String    @db.VarChar(100)
-  expiry_date      DateTime
-  manufacture_date DateTime?
-  supplier_id      Int?
-  product_id       Int?
-  created_at       DateTime? @default(now())
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model products {
+  id                    Int               @id @default(autoincrement())
+  name                  String            @db.VarChar(255)
+  description           String?
+  price                 Decimal           @db.Decimal(12, 2)
+  stock                 Int?              @default(0)
+  category_id           Int?
+  supplier_id           Int?
+  image_url             String?           @db.VarChar(500)
+  prescription_required Boolean?          @default(false)
+  created_at            DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at            DateTime?         @default(now()) @db.Timestamp(6)
+  tax_fee               Decimal?          @default(0) @db.Decimal(14, 2)
+  base_unit_id          Int?
+  images                Json?
+  manufacturer          String?
+  usage                 String?
+  dosage                String?
+  specification         String?
+  adverseEffect         String?
+  registNum             String?
+  brand                 String?
+  producer              String?
+  manufactor            String?
+  legalDeclaration      String?
+  faq                   Json?
+  branchinventory       branchinventory[]
+  insuranceclaims       insuranceclaims[]
+  orderitems            orderitems[]
+  unittype              unittype?         @relation(fields: [base_unit_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categories            categories?       @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  suppliers             suppliers?        @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  productunits          productunits[]
+  reviews               reviews[]
 
-  product  Product?  @relation(fields: [product_id], references: [id])
-  supplier Supplier? @relation(fields: [supplier_id], references: [id])
-
-  branchInventory  BranchInventory[]
-  orderItemBatches OrderItemBatch[]
-
-  @@map("productbatches")
+  @@index([category_id], map: "idx_products_category_id")
+  @@index([supplier_id], map: "idx_products_supplier_id")
 }
 
-model Order {
-  id               Int       @id @default(autoincrement())
-  user_id          Int?
-  status           String?   @db.VarChar(50)
-  discount_total   Decimal?  @default(0) @db.Decimal(14, 2)
-  subtotal         Decimal   @db.Decimal(14, 2)
-  voucher_discount Decimal?  @default(0) @db.Decimal(14, 2)
-  final_total      Decimal   @db.Decimal(14, 2)
-  voucher_id       Int?
-  created_at       DateTime? @default(now())
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model productunits {
+  id                Int          @id @default(autoincrement())
+  product_id        Int
+  unit_name         String       @db.VarChar(100)
+  conversion_factor Decimal      @db.Decimal(12, 4)
+  price             Decimal      @db.Decimal(12, 2)
+  created_at        DateTime?    @default(now()) @db.Timestamp(6)
+  updated_at        DateTime?    @default(now()) @db.Timestamp(6)
+  orderitems        orderitems[]
+  products          products     @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
 
-  orderItems OrderItem[]
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model reviews {
+  id          Int       @id @default(autoincrement())
+  customer_id Int
+  product_id  Int
+  rating      Int
+  comment     String?
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+  customers   customers @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products    products  @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@map("orders")
+  @@unique([customer_id, product_id], map: "unique_review")
+  @@index([product_id], map: "idx_reviews_product_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model rolepermissions {
+  id          Int       @id @default(autoincrement())
+  role_name   String    @unique @db.VarChar(100)
+  permissions Json      @default("{}")
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+  users       users[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model shipments {
+  id                  Int               @id @default(autoincrement())
+  order_id            Int
+  branch_id           Int
+  shipping_address_id Int
+  tracking_number     String?           @unique @db.VarChar(100)
+  carrier             String?           @db.VarChar(100)
+  shipped_date        DateTime?         @db.Timestamp(6)
+  estimated_delivery  DateTime?         @db.Timestamp(6)
+  actual_delivery     DateTime?         @db.Timestamp(6)
+  status              String?           @default("pending") @db.VarChar(50)
+  created_at          DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at          DateTime?         @default(now()) @db.Timestamp(6)
+  branches            branches          @relation(fields: [branch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders              orders            @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shippingaddresses   shippingaddresses @relation(fields: [shipping_address_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([order_id], map: "idx_shipments_order_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model shippingaddresses {
+  id           Int         @id @default(autoincrement())
+  customer_id  Int
+  address_line String
+  city         String?     @db.VarChar(100)
+  state        String?     @db.VarChar(100)
+  postal_code  String?     @db.VarChar(20)
+  country      String?     @default("Vietnam") @db.VarChar(100)
+  is_default   Boolean?    @default(false)
+  created_at   DateTime?   @default(now()) @db.Timestamp(6)
+  updated_at   DateTime?   @default(now()) @db.Timestamp(6)
+  orders       orders[]
+  shipments    shipments[]
+  customers    customers   @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model suppliers {
+  id           Int        @id @default(autoincrement())
+  name         String     @db.VarChar(255)
+  contact_info Json?
+  created_at   DateTime?  @default(now()) @db.Timestamp(6)
+  updated_at   DateTime?  @default(now()) @db.Timestamp(6)
+  products     products[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model unittype {
+  id       Int        @id @default(autoincrement())
+  name     String     @db.VarChar(100)
+  products products[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model users {
+  id                   Int                    @id @default(autoincrement())
+  username             String                 @unique @db.VarChar(255)
+  password_hash        String                 @db.VarChar(255)
+  email                String                 @unique @db.VarChar(255)
+  phone                String?                @unique @db.VarChar(20)
+  role_id              Int
+  full_name            String?                @db.VarChar(255)
+  avatar_url           String?                @db.VarChar(500)
+  created_at           DateTime?              @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?              @default(now()) @db.Timestamp(6)
+  customers            customers?
+  logs                 logs[]
+  notifications        notifications[]
+  order_status_history order_status_history[]
+  rolepermissions      rolepermissions        @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model uservouchers {
+  id          Int       @id @default(autoincrement())
+  customer_id Int
+  voucher_id  Int
+  order_id    Int?
+  is_used     Boolean?  @default(false)
+  assigned_at DateTime? @default(now()) @db.Timestamp(6)
+  customers   customers @relation(fields: [customer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders      orders?   @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vouchers    vouchers  @relation(fields: [voucher_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model vouchers {
+  id              Int            @id @default(autoincrement())
+  code            String         @unique @db.VarChar(50)
+  discount_type   String         @db.VarChar(50)
+  discount_value  Decimal        @db.Decimal(12, 2)
+  min_order_value Decimal?       @db.Decimal(12, 2)
+  start_date      DateTime       @db.Date
+  end_date        DateTime       @db.Date
+  usage_limit     Int?
+  used_count      Int?           @default(0)
+  created_at      DateTime?      @default(now()) @db.Timestamp(6)
+  updated_at      DateTime?      @default(now()) @db.Timestamp(6)
+  orders          orders[]
+  uservouchers    uservouchers[]
 }

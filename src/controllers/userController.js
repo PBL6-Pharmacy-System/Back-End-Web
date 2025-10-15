@@ -2,48 +2,102 @@ import * as userService from '../services/userService.js';
 
 export const getAllUsers = async (req, res) => {
   try {
-    const users = await userService.getAllUsers();
-    res.json(users);
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      role,
+      sortBy = 'created_at',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const result = await userService.getAllUsers({
+      page: parseInt(page),
+      limit: parseInt(limit),
+      search: search?.trim(),
+      role,
+      sortBy,
+      sortOrder
+    });
+
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.json(result);
   } catch (err) {
-    res.status(500).json({ error: 'Database error' });
+    console.error('Error in getAllUsers:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi lấy danh sách người dùng'
+    });
   }
 };
 
 export const getUserById = async (req, res) => {
   try {
-    const user = await userService.getUserById(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+    const result = await userService.getUserById(req.params.id);
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.json(result);
   } catch (err) {
-    res.status(500).json({ error: 'Database error' });
+    console.error('Error in getUserById:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi lấy thông tin người dùng'
+    });
   }
 };
 
 export const createUser = async (req, res) => {
   try {
-    const user = await userService.createUser(req.body);
-    res.status(201).json(user);
+    const result = await userService.createUser(req.body);
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.status(201).json(result);
   } catch (err) {
-    res.status(500).json({ error: 'Database error' });
+    console.error('Error in createUser:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi tạo người dùng mới'
+    });
   }
 };
 
 export const updateUser = async (req, res) => {
   try {
-    const user = await userService.updateUser(req.params.id, req.body);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+    const result = await userService.updateUser(req.params.id, req.body);
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.json(result);
   } catch (err) {
-    res.status(500).json({ error: 'Database error' });
+    console.error('Error in updateUser:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi cập nhật thông tin người dùng'
+    });
   }
 };
 
 export const deleteUser = async (req, res) => {
   try {
-    const user = await userService.deleteUser(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ message: 'User deleted', user });
+    const result = await userService.deleteUser(req.params.id);
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.json(result);
   } catch (err) {
-    res.status(500).json({ error: 'Database error' });
+    console.error('Error in deleteUser:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi xóa người dùng'
+    });
   }
 };

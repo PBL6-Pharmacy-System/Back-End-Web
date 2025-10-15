@@ -2,84 +2,125 @@ import * as productService from '../services/productService.js';
 
 export const getAllProducts = async (req, res) => {
   try {
-    const products = await productService.getAllProducts();
-    res.json(products);
+    const { 
+      search, 
+      categoryId, 
+      supplierId, 
+      minPrice, 
+      maxPrice,
+      page = 1, 
+      limit = 10 
+    } = req.query;
+
+    const result = await productService.getAllProducts({
+      search,
+      categoryId,
+      supplierId,
+      minPrice,
+      maxPrice,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+
+    res.json(result.data);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    console.error('Error in getAllProducts:', err);
+    res.status(500).json({ error: 'Lỗi khi lấy danh sách sản phẩm' });
   }
 };
 
 export const getProductById = async (req, res) => {
   try {
-    const product = await productService.getProductById(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json(product);
+    const result = await productService.getProductById(req.params.id);
+    if (!result.success) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    res.json(result.data);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    console.error('Error in getProductById:', err);
+    res.status(500).json({ error: 'Lỗi khi lấy thông tin sản phẩm' });
   }
 };
 
 export const createProduct = async (req, res) => {
   try {
-    const product = await productService.createProduct(req.body);
-    res.status(201).json(product);
+    const result = await productService.createProduct(req.body);
+    if (!result.success) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    res.status(201).json(result.data);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    console.error('Error in createProduct:', err);
+    res.status(500).json({ error: 'Lỗi khi tạo sản phẩm mới' });
   }
 };
 
 export const updateProduct = async (req, res) => {
   try {
-    const product = await productService.updateProduct(req.params.id, req.body);
-    res.json(product);
-  } catch (err) {
-    if (err.code === 'P2025') {
-      return res.status(404).json({ error: 'Product not found' });
+    const result = await productService.updateProduct(req.params.id, req.body);
+    if (!result.success) {
+      return res.status(result.status).json({ error: result.error });
     }
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    res.json(result.data);
+  } catch (err) {
+    console.error('Error in updateProduct:', err);
+    res.status(500).json({ error: 'Lỗi khi cập nhật sản phẩm' });
   }
 };
 
 export const deleteProduct = async (req, res) => {
   try {
-    const product = await productService.deleteProduct(req.params.id);
-    res.json({ message: 'Product deleted', product });
-  } catch (err) {
-    if (err.code === 'P2025') {
-      return res.status(404).json({ error: 'Product not found' });
+    const result = await productService.deleteProduct(req.params.id);
+    if (!result.success) {
+      return res.status(result.status).json({ error: result.error });
     }
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    res.json({ 
+      message: 'Xóa sản phẩm thành công',
+      product: result.data 
+    });
+  } catch (err) {
+    console.error('Error in deleteProduct:', err);
+    res.status(500).json({ error: 'Lỗi khi xóa sản phẩm' });
   }
 };
 
 export const searchProducts = async (req, res) => {
   try {
-    const { q } = req.query; // lấy keyword từ query string: /products/search?q=panadol
-    if (!q) return res.status(400).json({ error: "Missing search keyword" });
+    const { q: keyword, page = 1, limit = 10 } = req.query;
 
-    const products = await productService.searchProductsByName(q);
-    res.json(products);
+    const result = await productService.searchProducts({
+      keyword,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+
+    if (!result.success) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    res.json(result.data);
   } catch (err) {
-    res.status(500).json({ error: "Database error" });
+    console.error('Error in searchProducts:', err);
+    res.status(500).json({ error: 'Lỗi khi tìm kiếm sản phẩm' });
   }
 };
 
 export const getProductsByCategory = async (req, res) => {
   try {
-    const categoryId = req.params.categoryId;
-    const products = await productService.getProductsByCategory(categoryId);
+    const { page = 1, limit = 10 } = req.query;
+    const result = await productService.getProductsByCategory(
+      req.params.categoryId,
+      {
+        page: parseInt(page),
+        limit: parseInt(limit)
+      }
+    );
 
-    if (!products || products.length === 0) {
-      return res.status(404).json({ message: 'Không có sản phẩm trong danh mục này' });
+    if (!result.success) {
+      return res.status(result.status).json({ error: result.error });
     }
-
-    res.json(products);
+    res.json(result.data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Error in getProductsByCategory:', err);
+    res.status(500).json({ error: 'Lỗi khi lấy sản phẩm theo danh mục' });
   }
 };
