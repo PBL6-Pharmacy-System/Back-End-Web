@@ -153,6 +153,7 @@ export const getProductById = async (id) => {
 };
 
 export const createProduct = async (data) => {
+  console.log("🧠 Prisma models:", Object.keys(prisma));
   try {
     // Validate product data
     const validation = validateProduct(data);
@@ -172,7 +173,7 @@ export const createProduct = async (data) => {
       data.supplier_id ? prisma.suppliers.findUnique({
         where: { id: Number(data.supplier_id) }
       }) : true,
-      prisma.productUnits.findUnique({
+      prisma.productunits.findUnique({
         where: { id: Number(data.base_unit_id) }
       })
     ]);
@@ -217,10 +218,11 @@ export const createProduct = async (data) => {
         base_unit_id: Number(data.base_unit_id),
       },
       include: {
-        category: true,
-        supplier: true,
-        baseUnit: true
-      }
+        categories: true, 
+        suppliers: true,  
+        unittype: true,   
+        productunits: true,
+      },
     });
 
     return {
@@ -291,7 +293,7 @@ export const updateProduct = async (id, data) => {
     }
 
     if (data.base_unit_id) {
-      const baseUnit = await prisma.productUnits.findUnique({
+      const baseUnit = await prisma.unittype.findUnique({
         where: { id: Number(data.base_unit_id) }
       });
       if (!baseUnit) {
@@ -320,9 +322,9 @@ export const updateProduct = async (id, data) => {
         base_unit_id: data.base_unit_id ? Number(data.base_unit_id) : undefined,
       },
       include: {
-        category: true,
-        supplier: true,
-        baseUnit: true
+        categories: true,
+        suppliers: true,
+        unittype: true
       }
     });
 
@@ -388,7 +390,7 @@ export const searchProducts = async ({ keyword, page = 1, limit = 10 }) => {
         error: 'Vui lòng nhập từ khóa tìm kiếm'
       };
     }
-
+//OR để query sản phẩm theo bất kỳ trường nào mà keyword khớp
     const where = {
       OR: [
         { name: { contains: keyword, mode: 'insensitive' } },
@@ -404,9 +406,9 @@ export const searchProducts = async ({ keyword, page = 1, limit = 10 }) => {
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          category: true,
-          supplier: true,
-          baseUnit: true
+        categories: true,
+        suppliers: true,
+        unittype: true
         },
         orderBy: { name: 'asc' }
       }),
@@ -453,9 +455,9 @@ export const getProductsByCategory = async (categoryId, { page = 1, limit = 10 }
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          category: true,
-          supplier: true,
-          baseUnit: true
+          categories: true,
+          suppliers: true,
+          unittype: true
         },
         orderBy: { name: 'asc' }
       }),
