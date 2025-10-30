@@ -4,7 +4,7 @@ import prisma from '../config/db.js';
 export const getOrCreateCart = async (customerId) => {
   let cart = await prisma.orders.findFirst({
     where: { 
-      user_id: Number(customerId), 
+      customer_id: Number(customerId), 
       status: 'cart' 
     },
     include: { 
@@ -19,7 +19,7 @@ export const getOrCreateCart = async (customerId) => {
   if (!cart) {
     cart = await prisma.orders.create({
       data: {
-        user_id: Number(customerId),
+        customer_id: Number(customerId),
         total_amount: 0,
         final_amount: 0,
         status: 'cart',

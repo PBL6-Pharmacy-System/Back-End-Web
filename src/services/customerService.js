@@ -55,7 +55,7 @@ export const getAllCustomers = async ({ search, membership, status, page = 1, li
         include: {
           orders: {
             include: {
-              orderItems: true
+              orderitems: true
             }
           },
           reviews: true
@@ -85,13 +85,13 @@ export const getCustomerById = async (id) => {
       include: {
         orders: {
           include: {
-            orderItems: true,
-            voucher: true
+            orderitems: true,
+            vouchers: true
           }
         },
         reviews: {
           include: {
-            product: true
+            products: true
           }
         }
       }
@@ -103,10 +103,10 @@ export const getCustomerById = async (id) => {
 
 export const createCustomer = async (data) => {
   try {
-    const { name, email, phone, date_of_birth } = data;
+    const { full_name, gender, address, email, phone, dob } = data;
 
     // Validate required fields
-    if (!name || !phone) {
+    if (!full_name?.trim() || !phone?.trim()) {
       return {
         success: false,
         status: 400,
@@ -114,6 +114,9 @@ export const createCustomer = async (data) => {
       };
     }
 
+    if (gender != "Nam" || gender != "Nữ"){
+      return { error:' Giới tính không hợp lệ'}
+    }
     // Validate phone format
     if (!isValidPhone(phone)) {
       return {
@@ -133,7 +136,7 @@ export const createCustomer = async (data) => {
     }
 
     // Validate date of birth if provided
-    if (date_of_birth && !isValidBirthdate(date_of_birth)) {
+    if (dob && !isValidBirthdate(dob)) {
       return {
         success: false,
         status: 400,
@@ -143,10 +146,11 @@ export const createCustomer = async (data) => {
 
     const customer = await prisma.customers.create({
       data: {
-        ...data,
-        date_of_birth: date_of_birth ? new Date(date_of_birth) : undefined,
+        full_name,
+        email,
+        phone,
+        dob: dob ? new Date(dob) : undefined,
         created_at: new Date(),
-        status: 'active'
       },
       include: {
         orders: true,
@@ -181,7 +185,7 @@ export const createCustomer = async (data) => {
 
 export const updateCustomer = async (id, data) => {
   try {
-    const { email, phone, date_of_birth } = data;
+    const { email, phone, dob } = data;
 
     // Validate phone format if provided
     if (phone && !isValidPhone(phone)) {
@@ -202,7 +206,7 @@ export const updateCustomer = async (id, data) => {
     }
 
     // Validate date of birth if provided
-    if (date_of_birth && !isValidBirthdate(date_of_birth)) {
+    if (dob && !isValidBirthdate(dob)) {
       return {
         success: false,
         status: 400,
@@ -214,7 +218,7 @@ export const updateCustomer = async (id, data) => {
       where: { id: Number(id) },
       data: {
         ...data,
-        date_of_birth: date_of_birth ? new Date(date_of_birth) : undefined
+        dob: dob ? new Date(dob) : undefined
       },
       include: {
         orders: true,

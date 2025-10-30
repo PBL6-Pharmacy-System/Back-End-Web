@@ -16,6 +16,7 @@ model branches {
   manager_id      Int?
   created_at      DateTime?         @default(now()) @db.Timestamp(6)
   updated_at      DateTime?         @default(now()) @db.Timestamp(6)
+  is_active       Boolean           @default(true) 
   branchinventory branchinventory[]
   shipments       shipments[]
 }
@@ -171,7 +172,8 @@ model orders {
   shipments            shipments[]
   uservouchers         uservouchers[]
 
-  @@index([customer_id], map: "idx_orders_customer_id")
+  @@unique([customer_id, status], map: "unique_customer_cart")
+
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

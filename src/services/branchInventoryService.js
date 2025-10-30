@@ -59,14 +59,14 @@ export const getAllBranchInventory = async ({
     if (productId) where.product_id = Number(productId);
 
     const [inventory, total] = await Promise.all([
-      prisma.branchInventory.findMany({
+      prisma.branchinventory.findMany({
         where,
         include: {
-          branch: true,
-          product: {
+          branches: true,
+          products: {
             include: {
-              baseUnit: true,
-              productUnits: true
+              unittype: true,
+              productunits: true
             }
           }
         },
@@ -76,7 +76,7 @@ export const getAllBranchInventory = async ({
         skip: (page - 1) * limit,
         take: limit
       }),
-      prisma.branchInventory.count({ where })
+      prisma.branchinventory.count({ where })
     ]);
 
     return {
@@ -99,14 +99,14 @@ export const getAllBranchInventory = async ({
 // Get inventory by ID
 export const getBranchInventoryById = async (id) => {
   try {
-    const inventory = await prisma.branchInventory.findUnique({
+    const inventory = await prisma.branchinventory.findUnique({
       where: { id: Number(id) },
       include: {
-        branch: true,
-        product: {
+        branches: true,
+        products: {
           include: {
-            baseUnit: true,
-            productUnits: true
+            unittype: true,
+            productunits: true
           }
         }
       }
@@ -169,7 +169,7 @@ export const createBranchInventory = async (data) => {
     }
 
     // Check if inventory already exists
-    const exists = await prisma.branchInventory.findFirst({
+    const exists = await prisma.branchinventory.findFirst({
       where: {
         branch_id: Number(data.branch_id),
         product_id: Number(data.product_id)
@@ -184,7 +184,7 @@ export const createBranchInventory = async (data) => {
       };
     }
 
-    const inventory = await prisma.branchInventory.create({
+    const inventory = await prisma.branchinventory.create({
       data: {
         branch_id: Number(data.branch_id),
         product_id: Number(data.product_id),
