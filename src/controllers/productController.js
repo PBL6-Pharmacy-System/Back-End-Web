@@ -107,20 +107,18 @@ export const searchProducts = async (req, res) => {
 export const getProductsByCategory = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
-    const result = await productService.getProductsByCategory(
-      req.params.categoryId,
-      {
-        page: parseInt(page),
-        limit: parseInt(limit)
-      }
-    );
+    const result = await productService.getProductsByCategory(req.params.categoryName, {
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
 
     if (!result.success) {
-      return res.status(result.status).json({ error: result.error });
+      return res.status(result.status || 500).json({ error: result.error });
     }
-    res.json(result.data);
+
+    return res.status(result.status).json(result.data);
   } catch (err) {
     console.error('Error in getProductsByCategory:', err);
-    res.status(500).json({ error: 'Lỗi khi lấy sản phẩm theo danh mục' });
+    return res.status(500).json({ error: 'Lỗi khi lấy sản phẩm theo danh mục' });
   }
 };

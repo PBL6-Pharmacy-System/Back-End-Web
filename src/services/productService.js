@@ -432,22 +432,27 @@ export const searchProducts = async ({ keyword, page = 1, limit = 10 }) => {
   }
 };
 
-export const getProductsByCategory = async (categoryId, { page = 1, limit = 10 }) => {
+export const getProductsByCategory = async (categoryName, { page = 1, limit = 10 }) => {
   try {
-    // Check if category exists
-    const category = await prisma.categories.findUnique({
-      where: { id: Number(categoryId) }
+    // Tìm category theo tên chính xác, không phân biệt hoa/thường
+    const category = await prisma.categories.findFirst({
+      where: {
+        name: {
+          equals: categoryName,
+          mode: 'insensitive'
+        }
+      }
     });
 
     if (!category) {
       return {
         success: false,
         status: 404,
-        error: 'Danh mục không tồn tại'
+        error: `Không tìm thấy danh mục có tên '${categoryName}'`
       };
     }
 
-    const where = { category_id: Number(categoryId) };
+    const where = { category_id: category.id };
 
     const [products, total] = await Promise.all([
       prisma.products.findMany({
@@ -466,18 +471,15 @@ export const getProductsByCategory = async (categoryId, { page = 1, limit = 10 }
 
     return {
       success: true,
-      data: {
-        category,
-        products,
-        pagination: {
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
-          totalRecords: total
-        }
-      }
+      status: 200,
+      data: { category, products, total }
     };
   } catch (error) {
-    throw error;
+    console.error("Lỗi trong getProductsByCategory:", error);
+    return {
+      success: false,
+      status: 500,
+      error: "Lỗi server trong quá trình lấy sản phẩm theo danh mục"
+    };
   }
 };
