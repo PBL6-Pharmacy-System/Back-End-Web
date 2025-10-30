@@ -93,20 +93,87 @@ const validateStockAvailability = async (items) => {
   return { isValid: true };
 };
 
+// Kiểm tra và lấy giá flashsale nếu có
+const getFlashsalePrice = async (productId) => {
+  try {
+    const now = new Date();
+    
+    // Tìm flashsale đang active
+    const flashsale = await prisma.flashsales.findFirst({
+      where: {
+        start_time: { lte: now },
+        end_time: { gte: now },
+        status: 'active'
+      },
+      include: {
+        products: {
+          where: {
+            product_id: productId
+          }
+        }
+      }
+    });
+
+    if (!flashsale || !flashsale.products.length) {
+      return null;
+    }
+
+    const flashsaleProduct = flashsale.products[0];
+    
+    // Kiểm tra còn hàng flashsale không
+    if (flashsaleProduct.sold_count >= flashsaleProduct.stock_limit) {
+      return null;
+    }
+
+    return flashsaleProduct;
+  } catch (error) {
+    console.error('Error checking flashsale:', error);
+    return null;
+  }
+};
+
 const calculateOrderTotals = async (items) => {
   let subtotal = 0;
   let totalQuantity = 0;
+  let totalDiscount = 0;
 
   for (const item of items) {
-    const { quantity, unitPrice } = item;
-    subtotal += quantity * unitPrice;
+    const { quantity, unitPrice, productId } = item;
+    
+    // Kiểm tra giá flashsale
+    const flashsaleProduct = await getFlashsalePrice(productId);
+    
+    if (flashsaleProduct) {
+      // Tính giá với flashsale
+      const flashPrice = Number(flashsaleProduct.flash_price);
+      const regularPrice = quantity * unitPrice;
+      const flashsalePrice = quantity * flashPrice;
+      
+      subtotal += flashsalePrice;
+      totalDiscount += (regularPrice - flashsalePrice);
+      
+      // Cập nhật số lượng đã bán trong flashsale
+      await prisma.flashsale_products.update({
+        where: { id: flashsaleProduct.id },
+        data: {
+          sold_count: {
+            increment: quantity
+          }
+        }
+      });
+    } else {
+      // Tính giá bình thường
+      subtotal += quantity * unitPrice;
+    }
+    
     totalQuantity += quantity;
   }
 
   return {
     subtotal,
     totalQuantity,
-    totalAmount: subtotal // Will be updated with discounts/vouchers later
+    totalDiscount,
+    totalAmount: subtotal // Will be updated with other discounts/vouchers later
   };
 };
 
