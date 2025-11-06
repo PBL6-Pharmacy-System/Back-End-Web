@@ -1,17 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../config/db.js';
+import { ORDER_STATUS } from '../utils/constants.js';
 import { validateNumericFields } from '../utils/validation.js';
-
-const prisma = new PrismaClient();
-
-const ORDER_STATUS = {
-  CART: 'cart',
-  PENDING: 'pending',
-  CONFIRMED: 'confirmed',
-  PROCESSING: 'processing',
-  SHIPPING: 'shipping',
-  COMPLETED: 'completed',
-  CANCELLED: 'cancelled'
-};
 
 const validateOrderItem = (item) => {
   // Required fields

@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../config/db.js';
 import { validateNumericFields, validateRequiredFields } from '../utils/validation.js';
-
-const prisma = new PrismaClient();
 
 // Validate product data
 const validateProduct = (data) => {

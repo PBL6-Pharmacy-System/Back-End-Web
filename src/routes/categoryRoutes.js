@@ -1,16 +1,17 @@
 import express from 'express';
 import * as categoryController from '../controllers/categoryController.js';
+import { authenticateToken, authorizeAdmin } from '../middlewares/auth.middleware.js';
+import { validateId } from '../middlewares/validate.middleware.js';
+
 const router = express.Router();
 
-// Lấy tất cả danh mục (có sản phẩm con)
+// Public routes - Không cần authentication
 router.get('/categories', categoryController.getAllCategories);
-// Lấy chi tiết danh mục
-router.get('/categories/:id', categoryController.getCategoryById);
-// Tạo mới danh mục
-router.post('/categories', categoryController.createCategory);
-// Cập nhật danh mục
-router.put('/categories/:id', categoryController.updateCategory);
-// Xóa danh mục (chỉ khi không còn sản phẩm con)
-router.delete('/categories/:id', categoryController.deleteCategory);
+router.get('/categories/:id', validateId(), categoryController.getCategoryById);
+
+// Admin only routes - Cần authentication và quyền admin
+router.post('/categories', authenticateToken, authorizeAdmin, categoryController.createCategory);
+router.put('/categories/:id', authenticateToken, authorizeAdmin, validateId(), categoryController.updateCategory);
+router.delete('/categories/:id', authenticateToken, authorizeAdmin, validateId(), categoryController.deleteCategory);
 
 export default router;

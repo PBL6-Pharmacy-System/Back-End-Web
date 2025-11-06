@@ -1,20 +1,21 @@
 import express from 'express';
 import * as branchInventoryController from '../controllers/branchInventoryController.js';
+import { authenticateToken, authorizeAdmin, authorizeRoles } from '../middlewares/auth.middleware.js';
+import { validateId } from '../middlewares/validate.middleware.js';
+
 const router = express.Router();
 
-// Lấy tất cả tồn kho chi nhánh
-router.get('/branchinventory', branchInventoryController.getAllBranchInventory);
-// Lấy chi tiết tồn kho
-router.get('/branchinventory/:id', branchInventoryController.getBranchInventoryById);
-// Nhập hàng vào kho
-router.post('/branchinventory/import', branchInventoryController.importToBranchInventory);
-// Xuất hàng khỏi kho
-router.post('/branchinventory/export', branchInventoryController.exportFromBranchInventory);
-// Tạo mới tồn kho (khởi tạo)
-router.post('/branchinventory', branchInventoryController.createBranchInventory);
-// Cập nhật tồn kho (sửa số lượng thủ công)
-router.put('/branchinventory/:id', branchInventoryController.updateBranchInventory);
-// Xóa tồn kho
-router.delete('/branchinventory/:id', branchInventoryController.deleteBranchInventory);
+// Protected routes - Cần authentication để xem inventory
+router.get('/branchinventory', authenticateToken, branchInventoryController.getAllBranchInventory);
+router.get('/branchinventory/:id', authenticateToken, validateId(), branchInventoryController.getBranchInventoryById);
+
+// Staff/Admin routes - Nhập/xuất hàng
+router.post('/branchinventory/import', authenticateToken, authorizeRoles('admin', 'staff'), branchInventoryController.importToBranchInventory);
+router.post('/branchinventory/export', authenticateToken, authorizeRoles('admin', 'staff'), branchInventoryController.exportFromBranchInventory);
+
+// Admin only routes - Quản lý tồn kho
+router.post('/branchinventory', authenticateToken, authorizeAdmin, branchInventoryController.createBranchInventory);
+router.put('/branchinventory/:id', authenticateToken, authorizeAdmin, validateId(), branchInventoryController.updateBranchInventory);
+router.delete('/branchinventory/:id', authenticateToken, authorizeAdmin, validateId(), branchInventoryController.deleteBranchInventory);
 
 export default router;

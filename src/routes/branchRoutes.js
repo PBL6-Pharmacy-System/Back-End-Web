@@ -1,16 +1,17 @@
 import express from 'express';
 import * as branchController from '../controllers/branchController.js';
+import { authenticateToken, authorizeAdmin } from '../middlewares/auth.middleware.js';
+import { validateId } from '../middlewares/validate.middleware.js';
+
 const router = express.Router();
 
-// Lấy tất cả chi nhánh (có tồn kho)
+// Public routes - User có thể xem danh sách chi nhánh
 router.get('/branches', branchController.getAllBranches);
-// Lấy chi tiết chi nhánh (có tồn kho)
-router.get('/branches/:id', branchController.getBranchById);
-// Tạo mới chi nhánh
-router.post('/branches', branchController.createBranch);
-// Cập nhật chi nhánh
-router.put('/branches/:id', branchController.updateBranch);
-// Xóa chi nhánh (chỉ khi không còn tồn kho hoặc shipment liên quan)
-router.delete('/branches/:id', branchController.deleteBranch);
+router.get('/branches/:id', validateId(), branchController.getBranchById);
+
+// Admin only routes - Chỉ admin mới được quản lý chi nhánh
+router.post('/branches', authenticateToken, authorizeAdmin, branchController.createBranch);
+router.put('/branches/:id', authenticateToken, authorizeAdmin, validateId(), branchController.updateBranch);
+router.delete('/branches/:id', authenticateToken, authorizeAdmin, validateId(), branchController.deleteBranch);
 
 export default router;

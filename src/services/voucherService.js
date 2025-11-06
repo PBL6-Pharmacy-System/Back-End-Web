@@ -71,7 +71,7 @@ export const getAllVouchers = async ({
       }),
       prisma.vouchers.count({ where })
     ]);
-
+    
     return {
       success: true,
       data: {

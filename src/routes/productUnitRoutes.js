@@ -1,16 +1,17 @@
 import express from 'express';
 import * as productUnitController from '../controllers/productUnitController.js';
+import { authenticateToken, authorizeAdmin } from '../middlewares/auth.middleware.js';
+import { validateId } from '../middlewares/validate.middleware.js';
+
 const router = express.Router();
 
-// Lấy tất cả đơn vị sản phẩm
+// Public routes - User có thể xem đơn vị sản phẩm
 router.get('/productunits', productUnitController.getAllProductUnits);
-// Lấy chi tiết đơn vị sản phẩm
-router.get('/productunits/:id', productUnitController.getProductUnitById);
-// Tạo mới đơn vị sản phẩm
-router.post('/productunits', productUnitController.createProductUnit);
-// Cập nhật đơn vị sản phẩm
-router.put('/productunits/:id', productUnitController.updateProductUnit);
-// Xóa đơn vị sản phẩm
-router.delete('/productunits/:id', productUnitController.deleteProductUnit);
+router.get('/productunits/:id', validateId(), productUnitController.getProductUnitById);
+
+// Admin only routes - Chỉ admin mới được quản lý đơn vị sản phẩm
+router.post('/productunits', authenticateToken, authorizeAdmin, productUnitController.createProductUnit);
+router.put('/productunits/:id', authenticateToken, authorizeAdmin, validateId(), productUnitController.updateProductUnit);
+router.delete('/productunits/:id', authenticateToken, authorizeAdmin, validateId(), productUnitController.deleteProductUnit);
 
 export default router;

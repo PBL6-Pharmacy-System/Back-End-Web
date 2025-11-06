@@ -1,12 +1,17 @@
 import express from 'express';
 import * as supplierController from '../controllers/supplierController.js';
+import { authenticateToken, authorizeAdmin } from '../middlewares/auth.middleware.js';
+import { validateId } from '../middlewares/validate.middleware.js';
 
 const router = express.Router();
 
+// Public routes - Có thể xem danh sách suppliers
 router.get('/suppliers', supplierController.getAllSuppliers);
-router.get('/suppliers/:id', supplierController.getSupplierById);
-router.post('/suppliers', supplierController.createSupplier);
-router.put('/suppliers/:id', supplierController.updateSupplier);
-router.delete('/suppliers/:id', supplierController.deleteSupplier);
+router.get('/suppliers/:id', validateId(), supplierController.getSupplierById);
+
+// Admin only routes - Chỉ admin mới được thêm/sửa/xóa
+router.post('/suppliers', authenticateToken, authorizeAdmin, supplierController.createSupplier);
+router.put('/suppliers/:id', authenticateToken, authorizeAdmin, validateId(), supplierController.updateSupplier);
+router.delete('/suppliers/:id', authenticateToken, authorizeAdmin, validateId(), supplierController.deleteSupplier);
 
 export default router;

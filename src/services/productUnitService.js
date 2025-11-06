@@ -60,7 +60,6 @@ const validateProductUnitData = async (data, unitId = null, checkRequired = true
     }
   }
 
-  // Check for name uniqueness
   if (data.unit_name && data.product_id) {
     const existingUnit = await findProductUnitByName(
       data.product_id,
