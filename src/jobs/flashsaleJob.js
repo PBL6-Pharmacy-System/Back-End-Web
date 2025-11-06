@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { updateFlashsaleStatuses } from '../services/flashsaleService.js';
+import { updateFlashsaleStatuses } from '../modules/promotion-management/flashsales/flashsaleService.js';
 
 // Chạy mỗi phút
 cron.schedule('* * * * *', async () => {
