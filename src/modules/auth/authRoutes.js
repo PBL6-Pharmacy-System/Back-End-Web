@@ -2,6 +2,7 @@ import express from 'express';
 import { authLimiter, passwordLimiter } from '../../middlewares/rateLimit.middleware.js';
 import { authenticateToken } from './auth.middleware.js';
 import * as authController from './authController.js';
+import * as otpController from './otpController.js';
 
 const router = express.Router();
 
@@ -9,6 +10,11 @@ const router = express.Router();
 router.post('/auth/register', authLimiter, authController.register);
 router.post('/auth/login', authLimiter, authController.login);
 router.post('/auth/refresh-token', authController.refreshToken);
+
+// OTP routes for customer login
+router.post('/auth/otp/request', authLimiter, otpController.requestOTP);
+router.post('/auth/otp/verify', authLimiter, otpController.verifyOTP);
+router.post('/auth/customer/login', authLimiter, authController.customerLoginWithOTP);
 
 // Protected routes
 router.get('/auth/me', authenticateToken, authController.getCurrentUser);

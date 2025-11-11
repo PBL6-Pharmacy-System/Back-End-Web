@@ -116,3 +116,26 @@ export const refreshToken = async (req, res) => {
     });
   }
 };
+
+/**
+ * Customer login with OTP
+ */
+export const customerLoginWithOTP = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+    const result = await authService.customerLoginWithOTP(phone, otp);
+    
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Customer OTP login controller error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi đăng nhập'
+    });
+  }
+};
+

@@ -1,6 +1,7 @@
 import prisma from '../../config/db.js';
 import { comparePassword, generateRefreshToken, generateToken, hashPassword, verifyRefreshToken } from '../../utils/helpers.js';
 import { isValidEmail } from '../../utils/validation.js';
+import crypto from 'crypto';
 
 /**
  * Đăng ký user mới
@@ -365,3 +366,145 @@ export const refreshAccessToken = async (refreshToken) => {
     };
   }
 };
+
+/**
+ * Customer login with OTP (Phone verification)
+ */
+export const customerLoginWithOTP = async (phone, otpCode) => {
+  try {
+    // Validate
+    if (!phone || !otpCode) {
+      return {
+        success: false,
+        error: 'Số điện thoại và mã OTP là bắt buộc',
+        status: 400
+      };
+    }
+
+    // Normalize phone
+    const normalizedPhone = phone.startsWith('+84') 
+      ? phone 
+      : phone.replace(/^0/, '+84');
+
+    // Verify OTP first
+    const otpRecord = await prisma.otp_verifications.findFirst({
+      where: {
+        phone: normalizedPhone,
+        otp_code: otpCode,
+        verified: true,
+        created_at: {
+          gte: new Date(Date.now() - 10 * 60000) // Within last 10 minutes
+        }
+      },
+      orderBy: {
+        created_at: 'desc'
+      }
+    });
+
+    if (!otpRecord) {
+      return {
+        success: false,
+        error: 'Mã OTP không hợp lệ hoặc đã hết hạn',
+        status: 400
+      };
+    }
+
+    // Find or create customer
+    let user = await prisma.users.findFirst({
+      where: {
+        phone: normalizedPhone
+      },
+      include: {
+        rolepermissions: true,
+        customers: true
+      }
+    });
+
+    // If user doesn't exist, create new customer account
+    if (!user) {
+      // Create user with customer role (role_id = 3)
+      user = await prisma.users.create({
+        data: {
+          username: normalizedPhone,
+          phone: normalizedPhone,
+          email: `${normalizedPhone.replace('+', '')}@temp.com`, // Temporary email
+          password_hash: await hashPassword(crypto.randomBytes(32).toString('hex')), // Random password
+          role_id: 3, // Customer role
+          full_name: null
+        },
+        include: {
+          rolepermissions: true
+        }
+      });
+
+      // Create customer record
+      await prisma.customers.create({
+        data: {
+          user_id: user.id,
+          phone: normalizedPhone
+        }
+      });
+
+      // Reload user with customer data
+      user = await prisma.users.findUnique({
+        where: { id: user.id },
+        include: {
+          rolepermissions: true,
+          customers: true
+        }
+      });
+    }
+
+    // Check if user is customer role
+    if (user.role_id !== 3) {
+      return {
+        success: false,
+        error: 'Tài khoản này không phải là khách hàng. Vui lòng đăng nhập bằng username và password',
+        status: 403
+      };
+    }
+
+    // Generate tokens
+    const token = generateToken({
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      role_id: user.role_id,
+      role_name: user.rolepermissions?.role_name,
+      customer_id: user.customers?.id
+    });
+
+    const refreshToken = generateRefreshToken({
+      userId: user.id
+    });
+
+    // Remove password from response
+    const { password_hash: _, ...userWithoutPassword } = user;
+
+    // Delete used OTP
+    await prisma.otp_verifications.delete({
+      where: {
+        id: otpRecord.id
+      }
+    });
+
+    return {
+      success: true,
+      message: user.customers ? 'Đăng nhập thành công' : 'Tài khoản mới đã được tạo',
+      data: {
+        user: userWithoutPassword,
+        token,
+        refreshToken
+      }
+    };
+  } catch (error) {
+    console.error('Customer OTP login error:', error);
+    return {
+      success: false,
+      error: 'Lỗi khi đăng nhập',
+      status: 500
+    };
+  }
+};
+
