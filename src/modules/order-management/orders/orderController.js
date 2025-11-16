@@ -1,0 +1,161 @@
+import * as orderService from './orderService.js';
+
+/**
+ * Get all orders (Admin)
+ */
+export const getAllOrders = async (req, res, next) => {
+  try {
+    const filters = {
+      page: req.query.page,
+      limit: req.query.limit,
+      status: req.query.status,
+      customerId: req.query.customerId,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      sortBy: req.query.sortBy,
+      sortOrder: req.query.sortOrder
+    };
+
+    const result = await orderService.getAllOrders(filters);
+
+    if (!result.success) {
+      return res.status(result.status || 400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get order by ID
+ */
+export const getOrderById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const result = await orderService.getOrderById(id);
+
+    if (!result.success) {
+      return res.status(result.status || 400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get customer's orders
+ */
+export const getCustomerOrders = async (req, res, next) => {
+  try {
+    const { customerId } = req.params;
+    const filters = {
+      page: req.query.page,
+      limit: req.query.limit,
+      status: req.query.status
+    };
+
+    const result = await orderService.getCustomerOrders(customerId, filters);
+
+    if (!result.success) {
+      return res.status(result.status || 400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update order status
+ */
+export const updateOrderStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const userId = req.user?.id; // From auth middleware
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        error: 'Trạng thái đơn hàng là bắt buộc'
+      });
+    }
+
+    const result = await orderService.updateOrderStatus(id, status, userId);
+
+    if (!result.success) {
+      return res.status(result.status || 400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Cancel order
+ */
+export const cancelOrder = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const userId = req.user?.id; // From auth middleware
+
+    const result = await orderService.cancelOrder(id, userId, reason);
+
+    if (!result.success) {
+      return res.status(result.status || 400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get order statistics (Admin)
+ */
+export const getOrderStatistics = async (req, res, next) => {
+  try {
+    const filters = {
+      startDate: req.query.startDate,
+      endDate: req.query.endDate
+    };
+
+    const result = await orderService.getOrderStatistics(filters);
+
+    if (!result.success) {
+      return res.status(result.status || 400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};

@@ -9,8 +9,10 @@ export const ORDER_STATUS = {
   CONFIRMED: 'confirmed',
   PROCESSING: 'processing',
   SHIPPING: 'shipping',
+  DELIVERED: 'delivered',
   COMPLETED: 'completed',
-  CANCELLED: 'cancelled'
+  CANCELLED: 'cancelled',
+  RETURNED: 'returned'
 };
 
 // User Roles
@@ -85,6 +87,14 @@ export const INSURANCE_CLAIM_STATUS = {
   APPROVED: 'approved',
   REJECTED: 'rejected',
   PAID: 'paid'
+};
+
+// Prescription Status
+export const PRESCRIPTION_STATUS = {
+  PENDING: 'pending',
+  VERIFIED: 'verified',
+  REJECTED: 'rejected',
+  EXPIRED: 'expired'
 };
 
 // Pagination defaults
