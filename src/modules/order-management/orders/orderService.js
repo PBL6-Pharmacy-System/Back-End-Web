@@ -52,11 +52,14 @@ export const getAllOrders = async (filters = {}) => {
         },
         include: {
           customers: {
-            select: {
-              id: true,
-              full_name: true,
-              email: true,
-              phone: true
+            include: {
+              user: {
+                select: {
+                  full_name: true,
+                  email: true,
+                  phone: true
+                }
+              }
             }
           },
           orderitems: {
@@ -116,12 +119,14 @@ export const getOrderById = async (orderId) => {
       where: { id: Number(orderId) },
       include: {
         customers: {
-          select: {
-            id: true,
-            full_name: true,
-            email: true,
-            phone: true,
-            address: true
+          include: {
+            user: {
+              select: {
+                full_name: true,
+                email: true,
+                phone: true
+              }
+            }
           }
         },
         orderitems: {
