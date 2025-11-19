@@ -1,6 +1,6 @@
 import cron from 'node-cron';
-import { updateBestSellersCache } from '../modules/product-management/products/bestSellersService.js';
 import { cleanupExpiredOTPs } from '../modules/auth/otpService.js';
+import { updateBestSellersCache } from '../modules/product-management/products/bestSellersService.js';
 
 /**
  * Update best sellers cache every hour

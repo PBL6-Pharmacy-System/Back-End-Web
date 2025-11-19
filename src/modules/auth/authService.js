@@ -1,7 +1,7 @@
+import crypto from 'crypto';
 import prisma from '../../config/db.js';
 import { comparePassword, generateRefreshToken, generateToken, hashPassword, verifyRefreshToken } from '../../utils/helpers.js';
 import { isValidEmail } from '../../utils/validation.js';
-import crypto from 'crypto';
 
 /**
  * Đăng ký user mới

@@ -1,9 +1,9 @@
 import express from 'express';
-import * as productController from './productController.js';
-import * as bestSellersController from './bestSellersController.js';
-import { authenticateToken, authorizeAdmin } from '../../auth/auth.middleware.js';
 import { searchLimiter, writeLimiter } from '../../../middlewares/rateLimit.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
+import { authenticateToken, authorizeAdmin } from '../../auth/auth.middleware.js';
+import * as bestSellersController from './bestSellersController.js';
+import * as productController from './productController.js';
 
 const router = express.Router();
 

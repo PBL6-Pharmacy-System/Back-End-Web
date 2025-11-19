@@ -1,8 +1,8 @@
 import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
-import './src/jobs/flashsaleJob.js';
 import './src/jobs/bestSellersJob.js';
+import './src/jobs/flashsaleJob.js';
 
 // Middlewares
 import { errorHandler, notFound } from './src/middlewares/errorHandler.middleware.js';

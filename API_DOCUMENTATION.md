@@ -5,6 +5,7 @@
 ### Flow đăng nhập của Customer (qua OTP)
 
 #### Bước 1: Request OTP
+
 ```http
 POST /api/auth/otp/request
 Content-Type: application/json
@@ -15,6 +16,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -27,6 +29,7 @@ Content-Type: application/json
 ```
 
 #### Bước 2: Verify OTP
+
 ```http
 POST /api/auth/otp/verify
 Content-Type: application/json
@@ -38,6 +41,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -49,6 +53,7 @@ Content-Type: application/json
 ```
 
 #### Bước 3: Login với OTP
+
 ```http
 POST /api/auth/customer/login
 Content-Type: application/json
@@ -60,6 +65,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -84,6 +90,7 @@ Content-Type: application/json
 ```
 
 ### Lưu ý OTP
+
 - OTP có hiệu lực 5 phút
 - Chỉ có thể request OTP mới sau 1 phút
 - Tối đa 5 lần nhập sai OTP
@@ -97,6 +104,7 @@ Content-Type: application/json
 Cart sẽ được tự động tạo khi customer thêm sản phẩm đầu tiên.
 
 ### Add to Cart
+
 ```http
 POST /api/cart/:customerId/add
 Authorization: Bearer {token}
@@ -110,6 +118,7 @@ Content-Type: application/json
 ```
 
 **Response (Cart mới):**
+
 ```json
 {
   "success": true,
@@ -143,6 +152,7 @@ Content-Type: application/json
 ## 💳 3. Checkout với Voucher
 
 ### Checkout
+
 ```http
 POST /api/cart/checkout
 Authorization: Bearer {token}
@@ -156,6 +166,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -191,6 +202,7 @@ Content-Type: application/json
 ```
 
 ### Confirm Payment (sau khi thanh toán online)
+
 ```http
 POST /api/orders/:id/confirm-payment
 Authorization: Bearer {token}
@@ -203,6 +215,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -211,12 +224,14 @@ Content-Type: application/json
 ```
 
 ### Cancel Order
+
 ```http
 POST /api/orders/:id/cancel
 Authorization: Bearer {token}
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -229,11 +244,13 @@ Authorization: Bearer {token}
 ## ⭐ 4. Best Sellers (Top 10 sản phẩm bán chạy)
 
 ### Get Best Sellers
+
 ```http
 GET /api/products/best-sellers
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -266,11 +283,13 @@ GET /api/products/best-sellers
 ```
 
 ### Get Product Stats
+
 ```http
 GET /api/products/:id/stats
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -286,12 +305,14 @@ GET /api/products/:id/stats
 ```
 
 ### Update Best Sellers Cache (Admin only)
+
 ```http
 POST /api/products/best-sellers/update-cache
 Authorization: Bearer {admin_token}
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -310,11 +331,13 @@ Authorization: Bearer {admin_token}
 ### Best Sellers tự động cập nhật
 
 1. **Khi nào cập nhật:**
+
    - Mỗi giờ (cron job)
    - Sau khi xác nhận thanh toán đơn hàng
    - Khi admin manually trigger
 
 2. **Cách thức:**
+
    - Lấy top 10 sản phẩm có `sold_count` cao nhất
    - Lưu vào `best_sellers_cache` table
    - Cache có hiệu lực 1 giờ
@@ -329,16 +352,19 @@ Authorization: Bearer {admin_token}
 ## 📊 Voucher System
 
 ### Voucher Types
+
 - **percentage**: Giảm theo phần trăm (VD: 10%)
 - **fixed**: Giảm số tiền cố định (VD: 50,000 VNĐ)
 
 ### Voucher Validation
+
 - Kiểm tra thời gian hiệu lực (start_date, end_date)
 - Kiểm tra usage_limit (số lần sử dụng tối đa)
 - Kiểm tra min_order_value (giá trị đơn hàng tối thiểu)
 - Kiểm tra customer đã dùng voucher này chưa (mỗi customer chỉ dùng 1 lần)
 
 ### Example Vouchers
+
 ```sql
 -- Giảm 10% cho đơn từ 200k
 INSERT INTO vouchers (code, discount_type, discount_value, min_order_value, start_date, end_date, usage_limit)
@@ -354,6 +380,7 @@ VALUES ('SAVE50K', 'fixed', 50000, 300000, '2025-11-01', '2025-11-30', 500);
 ## 🔐 Role-based Access
 
 ### Admin & Staff (username/password login)
+
 ```http
 POST /api/auth/login
 Content-Type: application/json
@@ -365,6 +392,7 @@ Content-Type: application/json
 ```
 
 ### Customer (OTP login)
+
 ```http
 POST /api/auth/customer/login
 Content-Type: application/json
@@ -376,6 +404,7 @@ Content-Type: application/json
 ```
 
 ### Permission Check
+
 - **Admin**: Full access
 - **Staff**: Limited access (defined in rolepermissions table)
 - **Customer**: Can only access their own cart, orders, reviews
@@ -394,16 +423,17 @@ Content-Type: application/json
 
 5. **Add to cart** → Tự động tạo cart (nếu chưa có) → Thêm sản phẩm
 
-6. **Checkout** → 
+6. **Checkout** →
    - Chọn địa chỉ giao hàng
    - Nhập voucher code (nếu có)
    - Chọn phương thức thanh toán
-   
 7. **Payment**:
+
    - **Cash on delivery**: payment_status = "unpaid"
    - **Online payment**: payment_status = "pending" → Confirm payment → "paid"
 
 8. **After payment confirmed**:
+
    - Order status: pending → confirmed
    - Product stock giảm
    - Product sold_count tăng
@@ -416,21 +446,24 @@ Content-Type: application/json
 ## 🔧 Cron Jobs
 
 ### Best Sellers Update
+
 ```javascript
 // Chạy mỗi giờ
-cron.schedule('0 * * * *', updateBestSellersCache);
+cron.schedule("0 * * * *", updateBestSellersCache);
 ```
 
 ### OTP Cleanup
+
 ```javascript
 // Chạy mỗi 5 phút - xóa OTP hết hạn
-cron.schedule('*/5 * * * *', cleanupExpiredOTPs);
+cron.schedule("*/5 * * * *", cleanupExpiredOTPs);
 ```
 
 ### Flashsale Status Update
+
 ```javascript
 // Chạy mỗi phút - cập nhật trạng thái flashsale
-cron.schedule('* * * * *', updateFlashsaleStatuses);
+cron.schedule("* * * * *", updateFlashsaleStatuses);
 ```
 
 ---
@@ -438,14 +471,17 @@ cron.schedule('* * * * *', updateFlashsaleStatuses);
 ## 📝 Database Changes
 
 ### New Tables
+
 1. `otp_verifications` - Lưu OTP codes
 2. `best_sellers_cache` - Cache top 10 sản phẩm bán chạy
 
 ### Modified Tables
+
 1. `products` - Thêm `sold_count` column
 2. `orders` - Thêm `payment_status` column
 
 ### Run Migration
+
 ```bash
 # Apply migration
 psql -U username -d database_name -f prisma/migrations/add_otp_and_bestsellers.sql
@@ -459,6 +495,7 @@ npx prisma generate
 ## 🚀 Testing Guide
 
 ### 1. Test OTP Login
+
 ```bash
 # Request OTP
 curl -X POST http://localhost:3000/api/auth/otp/request \
@@ -479,6 +516,7 @@ curl -X POST http://localhost:3000/api/auth/customer/login \
 ```
 
 ### 2. Test Cart & Checkout
+
 ```bash
 # Add to cart
 curl -X POST http://localhost:3000/api/cart/1/add \
@@ -494,6 +532,7 @@ curl -X POST http://localhost:3000/api/cart/checkout \
 ```
 
 ### 3. Test Best Sellers
+
 ```bash
 # Get best sellers
 curl http://localhost:3000/api/products/best-sellers
@@ -511,4 +550,3 @@ curl http://localhost:3000/api/products/1/stats
 3. **Security**: Luôn validate customer_id từ token, không trust từ request body
 4. **Performance**: Best sellers cache giúp giảm query database
 5. **Stock Management**: Cần thêm transaction để đảm bảo consistency khi nhiều người mua cùng lúc
-

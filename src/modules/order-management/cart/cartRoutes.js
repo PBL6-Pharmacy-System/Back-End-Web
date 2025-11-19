@@ -1,9 +1,9 @@
 import express from 'express';
-import * as cartController from './cartController.js';
-import * as checkoutController from './checkoutController.js';
-import { authenticateToken } from '../../auth/auth.middleware.js';
 import { cartLimiter } from '../../../middlewares/rateLimit.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
+import { authenticateToken } from '../../auth/auth.middleware.js';
+import * as cartController from './cartController.js';
+import * as checkoutController from './checkoutController.js';
 
 const router = express.Router();
 

@@ -1,5 +1,5 @@
-import prisma from '../../../config/db.js';
 import crypto from 'crypto';
+import prisma from '../../config/db.js';
 
 /**
  * Generate random 6-digit OTP

@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../../../config/db.js';
 import { validateRequiredFields } from '../../../utils/validation.js';
-
-const prisma = new PrismaClient();
 
 // Validate branch data
 const validateBranchData = (data) => {
