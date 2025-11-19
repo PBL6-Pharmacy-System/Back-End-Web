@@ -37,7 +37,7 @@ export const register = async (data) => {
     }
 
     // Verify role exists
-    const role = await prisma.rolepermissions.findUnique({
+    const role = await prisma.roles.findUnique({
       where: { id: Number(role_id) }
     });
 
@@ -45,6 +45,15 @@ export const register = async (data) => {
       return {
         success: false,
         error: 'Role không hợp lệ',
+        status: 400
+      };
+    }
+
+    // Validate role_id (1=admin, 2=staff, 3=customer)
+    if (![1, 2, 3].includes(Number(role_id))) {
+      return {
+        success: false,
+        error: 'Role ID phải là 1 (admin), 2 (staff), hoặc 3 (customer)',
         status: 400
       };
     }
@@ -87,29 +96,84 @@ export const register = async (data) => {
     // Hash password
     const password_hash = await hashPassword(password);
 
-    // Create user
-    const user = await prisma.users.create({
-      data: {
-        username: username.trim(),
-        email: email.trim(),
-        password_hash,
-        phone,
-        full_name: full_name?.trim(),
-        role_id: Number(role_id)
-      },
-      include: {
-        rolepermissions: true
+    // Create user with transaction to ensure role-specific record is created
+    const user = await prisma.$transaction(async (tx) => {
+      // Create base user
+      const newUser = await tx.users.create({
+        data: {
+          username: username.trim(),
+          email: email.trim(),
+          password_hash,
+          phone,
+          full_name: full_name?.trim(),
+          role_id: Number(role_id)
+        },
+        include: {
+          role: true
+        }
+      });
+
+      // Create role-specific record based on role_id
+      if (role_id === 3) {
+        // Customer role
+        await tx.customers.create({
+          data: {
+            user_id: newUser.id
+          }
+        });
+      } else if (role_id === 2) {
+        // Staff role
+        await tx.staff.create({
+          data: {
+            user_id: newUser.id
+          }
+        });
+      } else if (role_id === 1) {
+        // Admin role
+        await tx.admin.create({
+          data: {
+            user_id: newUser.id
+          }
+        });
       }
+
+      // Return user with all relations
+      return tx.users.findUnique({
+        where: { id: newUser.id },
+        include: {
+          role: true,
+          customer: true,
+          staff: {
+            include: {
+              branch: true
+            }
+          },
+          admin: true
+        }
+      });
     });
 
-    // ✅ Generate tokens - chỉ cần role_name
-    const token = generateToken({
+    // Generate tokens with role and profile info
+    const tokenData = {
       userId: user.id,
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
-    });
+      role_name: user.role.role_name
+    };
+
+    // Add role-specific ID to token
+    if (user.customer) {
+      tokenData.customer_id = user.customer.id;
+    } else if (user.staff) {
+      tokenData.staff_id = user.staff.id;
+      tokenData.branch_id = user.staff.branch_id;
+    } else if (user.admin) {
+      tokenData.admin_id = user.admin.id;
+      tokenData.is_super_admin = user.admin.is_super_admin;
+    }
+
+    const token = generateToken(tokenData);
 
     const refreshToken = generateRefreshToken({
       userId: user.id
@@ -153,7 +217,7 @@ export const login = async (data) => {
       };
     }
 
-    // Find user by username or email
+    // Find user by username or email with all role relations
     const user = await prisma.users.findFirst({
       where: {
         OR: [
@@ -162,7 +226,14 @@ export const login = async (data) => {
         ]
       },
       include: {
-        rolepermissions: true
+        role: true,
+        customer: true,
+        staff: {
+          include: {
+            branch: true
+          }
+        },
+        admin: true
       }
     });
 
@@ -185,14 +256,33 @@ export const login = async (data) => {
       };
     }
 
-    // Generate tokens
-    const token = generateToken({
+    // Update last_login
+    await prisma.users.update({
+      where: { id: user.id },
+      data: { last_login: new Date() }
+    });
+
+    // Generate tokens with role and profile info
+    const tokenData = {
       userId: user.id,
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
-    });
+      role_name: user.role.role_name
+    };
+
+    // Add role-specific ID to token
+    if (user.customer) {
+      tokenData.customer_id = user.customer.id;
+    } else if (user.staff) {
+      tokenData.staff_id = user.staff.id;
+      tokenData.branch_id = user.staff.branch_id;
+    } else if (user.admin) {
+      tokenData.admin_id = user.admin.id;
+      tokenData.is_super_admin = user.admin.is_super_admin;
+    }
+
+    const token = generateToken(tokenData);
 
     const refreshToken = generateRefreshToken({
       userId: user.id
@@ -227,8 +317,14 @@ export const getCurrentUser = async (userId) => {
     const user = await prisma.users.findUnique({
       where: { id: Number(userId) },
       include: {
-        rolepermissions: true,
-        customers: true
+        role: true,
+        customer: true,
+        staff: {
+          include: {
+            branch: true
+          }
+        },
+        admin: true
       }
     });
 
@@ -342,11 +438,14 @@ export const refreshAccessToken = async (refreshToken) => {
     // Verify refresh token
     const decoded = verifyRefreshToken(refreshToken);
 
-    // Get user
+    // Get user with role info
     const user = await prisma.users.findUnique({
       where: { id: decoded.userId },
       include: {
-        rolepermissions: true
+        role: true,
+        customer: true,
+        staff: true,
+        admin: true
       }
     });
 
@@ -358,14 +457,27 @@ export const refreshAccessToken = async (refreshToken) => {
       };
     }
 
-    // Generate new access token
-    const token = generateToken({
+    // Generate new access token with role and profile info
+    const tokenData = {
       userId: user.id,
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
-    });
+      role_name: user.role.role_name
+    };
+
+    // Add role-specific ID
+    if (user.customer) {
+      tokenData.customer_id = user.customer.id;
+    } else if (user.staff) {
+      tokenData.staff_id = user.staff.id;
+      tokenData.branch_id = user.staff.branch_id;
+    } else if (user.admin) {
+      tokenData.admin_id = user.admin.id;
+      tokenData.is_super_admin = user.admin.is_super_admin;
+    }
+
+    const token = generateToken(tokenData);
 
     return {
       success: true,
@@ -431,43 +543,42 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
         phone: normalizedPhone
       },
       include: {
-        rolepermissions: true,
-        customers: true
+        role: true,
+        customer: true
       }
     });
 
     // If user doesn't exist, create new customer account
     if (!user) {
-      // Create user with customer role (role_id = 3)
-      user = await prisma.users.create({
-        data: {
-          username: normalizedPhone,
-          phone: normalizedPhone,
-          email: `${normalizedPhone.replace('+', '')}@temp.com`, // Temporary email
-          password_hash: await hashPassword(crypto.randomBytes(32).toString('hex')), // Random password
-          role_id: 3, // Customer role
-          full_name: null,
-          is_verified: true // Auto-verified via OTP
-        },
-        include: {
-          rolepermissions: true
-        }
-      });
+      // Create user with customer role (role_id = 3) in transaction
+      user = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.users.create({
+          data: {
+            username: normalizedPhone,
+            phone: normalizedPhone,
+            email: `${normalizedPhone.replace('+', '')}@temp.com`, // Temporary email
+            password_hash: await hashPassword(crypto.randomBytes(32).toString('hex')), // Random password
+            role_id: 3, // Customer role
+            full_name: null,
+            is_verified: true // Auto-verified via OTP
+          }
+        });
 
-      // Create customer record (without duplicate fields)
-      await prisma.customers.create({
-        data: {
-          user_id: user.id
-        }
-      });
+        // Create customer record
+        await tx.customers.create({
+          data: {
+            user_id: newUser.id
+          }
+        });
 
-      // Reload user with customer data
-      user = await prisma.users.findUnique({
-        where: { id: user.id },
-        include: {
-          rolepermissions: true,
-          customers: true
-        }
+        // Return user with all relations
+        return tx.users.findUnique({
+          where: { id: newUser.id },
+          include: {
+            role: true,
+            customer: true
+          }
+        });
       });
     }
 
@@ -493,8 +604,8 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
       email: user.email,
       phone: user.phone,
       role_id: user.role_id,
-      role_name: user.rolepermissions?.role_name,
-      customer_id: user.customers?.id
+      role_name: user.role?.role_name,
+      customer_id: user.customer?.id
     });
 
     const refreshToken = generateRefreshToken({
@@ -513,7 +624,7 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
 
     return {
       success: true,
-      message: user.customers ? 'Đăng nhập thành công' : 'Tài khoản mới đã được tạo',
+      message: user.customer ? 'Đăng nhập thành công' : 'Tài khoản mới đã được tạo',
       data: {
         user: userWithoutPassword,
         token,

@@ -120,6 +120,13 @@ export const VALIDATION = {
   MIN_QUANTITY: 1
 };
 
+// Cart limits
+export const CART_LIMITS = {
+  MAX_ITEMS_PER_CART: 100, // Maximum number of different items in cart
+  MAX_QUANTITY_PER_ITEM: 999, // Maximum quantity for a single product
+  CART_EXPIRATION_DAYS: 30 // Cart expires after 30 days
+};
+
 // HTTP Status Codes
 export const HTTP_STATUS = {
   OK: 200,

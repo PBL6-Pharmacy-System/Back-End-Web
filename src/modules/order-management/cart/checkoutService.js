@@ -185,7 +185,7 @@ export const checkout = async (data) => {
 
     // Apply voucher
     const voucherResult = await applyVoucher(voucherCode, totalAmount, customerId);
-    
+
     if (voucherCode && !voucherResult.valid) {
       return {
         success: false,
@@ -197,90 +197,114 @@ export const checkout = async (data) => {
     const discountAmount = voucherResult.discountAmount;
     const finalAmount = totalAmount - discountAmount;
 
-    // Update cart to pending order
-    const order = await prisma.orders.update({
-      where: {
-        id: cart.id
-      },
-      data: {
-        status: 'pending',
-        total_amount: totalAmount,
-        discount_amount: discountAmount,
-        final_amount: finalAmount,
-        voucher_id: voucherResult.voucher?.id,
-        shipping_address_id: shippingAddressId,
-        order_date: new Date(),
-        payment_status: paymentMethod === 'cash' ? 'unpaid' : 'pending'
-      },
-      include: {
-        orderitems: {
-          include: {
-            products: true,
-            productunits: true
-          }
-        },
-        vouchers: true,
-        shippingaddresses: true
-      }
-    });
-
-    // Create payment record
-    const payment = await prisma.payments.create({
-      data: {
-        order_id: order.id,
-        payment_method: paymentMethod,
-        amount: finalAmount,
-        status: paymentMethod === 'cash' ? 'pending' : 'pending',
-        transaction_id: `TXN-${Date.now()}-${order.id}`
-      }
-    });
-
-    // Update voucher usage if voucher was used
-    if (voucherResult.voucher) {
-      await prisma.vouchers.update({
+    // Use transaction to ensure atomicity and enable rollback on error
+    const result = await prisma.$transaction(async (tx) => {
+      // Update cart to pending order
+      const order = await tx.orders.update({
         where: {
-          id: voucherResult.voucher.id
+          id: cart.id
         },
         data: {
-          used_count: {
-            increment: 1
-          }
+          status: 'pending',
+          total_amount: totalAmount,
+          discount_amount: discountAmount,
+          final_amount: finalAmount,
+          voucher_id: voucherResult.voucher?.id,
+          shipping_address_id: shippingAddressId,
+          order_date: new Date(),
+          payment_status: paymentMethod === 'cash' ? 'unpaid' : 'pending'
+        },
+        include: {
+          orderitems: {
+            include: {
+              products: true,
+              productunits: true
+            }
+          },
+          vouchers: true,
+          shippingaddresses: true
         }
       });
 
-      // Create user voucher record
-      await prisma.uservouchers.create({
+      // Create payment record
+      const payment = await tx.payments.create({
         data: {
-          customer_id: customerId,
-          voucher_id: voucherResult.voucher.id,
           order_id: order.id,
-          is_used: true
+          payment_method: paymentMethod,
+          amount: finalAmount,
+          status: paymentMethod === 'cash' ? 'pending' : 'pending',
+          transaction_id: `TXN-${Date.now()}-${order.id}`
         }
       });
-    }
 
-    // Update product stock and sold count
-    for (const item of cart.orderitems) {
-      await prisma.products.update({
-        where: {
-          id: item.product_id
-        },
-        data: {
-          stock: {
-            decrement: item.quantity
+      // Update voucher usage if voucher was used
+      if (voucherResult.voucher) {
+        await tx.vouchers.update({
+          where: {
+            id: voucherResult.voucher.id
+          },
+          data: {
+            used_count: {
+              increment: 1
+            }
           }
+        });
+
+        // Create user voucher record
+        await tx.uservouchers.create({
+          data: {
+            customer_id: customerId,
+            voucher_id: voucherResult.voucher.id,
+            order_id: order.id,
+            is_used: true
+          }
+        });
+      }
+
+      // Update product stock (decrement)
+      for (const item of cart.orderitems) {
+        const updatedProduct = await tx.products.update({
+          where: {
+            id: item.product_id
+          },
+          data: {
+            stock: {
+              decrement: item.quantity
+            }
+          },
+          select: {
+            id: true,
+            stock: true
+          }
+        });
+
+        // Double-check stock didn't go negative (race condition protection)
+        if (updatedProduct.stock < 0) {
+          throw new Error(`Sản phẩm "${item.products.name}" không đủ số lượng trong kho`);
+        }
+
+        // Don't increment sold_count yet - only after payment confirmation
+      }
+
+      // Create order status history
+      await tx.order_status_history.create({
+        data: {
+          order_id: order.id,
+          status: 'pending',
+          changed_at: new Date()
         }
       });
 
-      // Don't increment sold_count yet - only after payment confirmation
-    }
+      return { order, payment };
+    });
 
+    // Transaction successful
     return {
       success: true,
       message: 'Đặt hàng thành công',
       data: {
-        order,
-        payment,
+        order: result.order,
+        payment: result.payment,
         summary: {
           subtotal: totalAmount,
           discount: discountAmount,
@@ -291,9 +315,19 @@ export const checkout = async (data) => {
     };
   } catch (error) {
     console.error('Checkout error:', error);
+
+    // If error message is from our validation, return it
+    if (error.message && error.message.includes('không đủ số lượng')) {
+      return {
+        success: false,
+        error: error.message,
+        status: 400
+      };
+    }
+
     return {
       success: false,
-      error: 'Lỗi khi thanh toán',
+      error: 'Lỗi khi thanh toán. Vui lòng thử lại',
       status: 500
     };
   }
