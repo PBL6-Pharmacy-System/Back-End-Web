@@ -44,12 +44,11 @@ const validateProduct = (data) => {
 
 // Check if product has related data and can be deleted
 const canDeleteProduct = async (id) => {
-  const [orderItems, cartItems] = await Promise.all([
-    prisma.orderItems.count({ where: { product_id: Number(id) } }),
-    prisma.cartItems.count({ where: { product_id: Number(id) } })
-  ]);
+  const orderItems = await prisma.orderitems.count({ 
+    where: { product_id: Number(id) } 
+  });
 
-  return orderItems === 0 && cartItems === 0;
+  return orderItems === 0;
 };
 
 export const getAllProducts = async ({ 
