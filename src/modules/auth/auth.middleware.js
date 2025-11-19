@@ -1,8 +1,8 @@
 import jwt from 'jsonwebtoken';
-import prisma from '../../config/db.js';
 
 /**
  * Middleware xác thực JWT token
+ * ✅ Refactored: Không cần query permissions, chỉ verify token
  */
 export const authenticateToken = async (req, res, next) => {
   try {
@@ -19,29 +19,13 @@ export const authenticateToken = async (req, res, next) => {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // Lấy thông tin user từ database
-    const user = await prisma.users.findUnique({
-      where: { id: decoded.userId },
-      include: {
-        rolepermissions: true
-      }
-    });
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: 'User không tồn tại'
-      });
-    }
-
-    // Gán user vào request để sử dụng ở các middleware/controller tiếp theo
+    // ✅ Attach user info từ JWT (KHÔNG CẦN QUERY DATABASE!)
     req.user = {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      role_id: user.role_id,
-      role_name: user.rolepermissions?.role_name,
-      permissions: user.rolepermissions?.permissions
+      id: decoded.userId,
+      username: decoded.username,
+      email: decoded.email,
+      role_id: decoded.role_id,
+      role_name: decoded.role_name  // ✅ Lấy từ JWT
     };
 
     next();
@@ -76,7 +60,7 @@ export const authorizeAdmin = (req, res, next) => {
     });
   }
 
-  if (req.user.role_name !== 'admin' && req.user.role_name !== 'Admin') {
+  if (req.user.role_name !== 'admin') {
     return res.status(403).json({
       success: false,
       error: 'Không có quyền truy cập. Chỉ admin mới được phép.'
@@ -87,9 +71,11 @@ export const authorizeAdmin = (req, res, next) => {
 };
 
 /**
- * Middleware kiểm tra quyền theo role names
+ * Middleware kiểm tra quyền theo danh sách roles
+ * @param {...string} roles - Danh sách role names được phép
+ * @example requireRoles('admin', 'staff')
  */
-export const authorizeRoles = (...roles) => {
+export const requireRoles = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
@@ -110,9 +96,11 @@ export const authorizeRoles = (...roles) => {
 };
 
 /**
- * Middleware kiểm tra user có phải là chủ sở hữu tài nguyên
+ * Middleware kiểm tra user có phải chủ sở hữu tài nguyên hoặc admin
+ * @param {string} resourceIdParam - Tên param chứa ID tài nguyên (default: 'id')
+ * @example authorizeOwnerOrAdmin('id')
  */
-export const authorizeOwner = (resourceIdParam = 'id') => {
+export const authorizeOwnerOrAdmin = (resourceIdParam = 'id') => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
@@ -124,7 +112,7 @@ export const authorizeOwner = (resourceIdParam = 'id') => {
     const resourceId = parseInt(req.params[resourceIdParam]);
     
     // Admin có thể truy cập tất cả
-    if (req.user.role_name === 'admin' || req.user.role_name === 'Admin') {
+    if (req.user.role_name === 'admin') {
       return next();
     }
 
@@ -154,21 +142,14 @@ export const optionalAuth = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await prisma.users.findUnique({
-      where: { id: decoded.userId },
-      include: {
-        rolepermissions: true
-      }
-    });
-
-    req.user = user ? {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      role_id: user.role_id,
-      role_name: user.rolepermissions?.role_name,
-      permissions: user.rolepermissions?.permissions
-    } : null;
+    
+    req.user = {
+      id: decoded.userId,
+      username: decoded.username,
+      email: decoded.email,
+      role_id: decoded.role_id,
+      role_name: decoded.role_name
+    };
 
     next();
   } catch (error) {
@@ -176,3 +157,7 @@ export const optionalAuth = async (req, res, next) => {
     next();
   }
 };
+
+// ✅ Backward compatibility - alias cho các tên cũ
+export const authorizeRoles = requireRoles;
+export const authorizeOwner = authorizeOwnerOrAdmin;

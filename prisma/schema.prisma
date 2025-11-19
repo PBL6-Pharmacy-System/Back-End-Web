@@ -122,7 +122,6 @@ model notifications {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model order_status_history {
   id         Int       @id @default(autoincrement())
   order_id   Int
@@ -152,7 +151,6 @@ model orderitems {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model orders {
   id                   Int                    @id @default(autoincrement())
   customer_id          Int
@@ -179,7 +177,6 @@ model orders {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model payments {
   id             Int       @id @default(autoincrement())
   order_id       Int
@@ -222,6 +219,7 @@ model products {
   manufactor            String?
   legalDeclaration      String?
   faq                   Json?
+  embedding_google      Unsupported("vector(768)")?
   branchinventory       branchinventory[]
   flashsale_products    flashsale_products[]
   insuranceclaims       insuranceclaims[]
@@ -231,6 +229,7 @@ model products {
   suppliers             suppliers?           @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   productunits          productunits[]
   reviews               reviews[]
+  product_embeddings    product_embeddings?
 
   @@index([category_id], map: "idx_products_category_id")
   @@index([supplier_id], map: "idx_products_supplier_id")
@@ -250,7 +249,6 @@ model productunits {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model reviews {
   id          Int       @id @default(autoincrement())
   customer_id Int
@@ -266,18 +264,17 @@ model reviews {
   @@index([product_id], map: "idx_reviews_product_id")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// Simple Role-Based model - Chỉ cần role_name
+/// ✅ Refactored: Xóa permissions column
 model rolepermissions {
   id          Int       @id @default(autoincrement())
   role_name   String    @unique @db.VarChar(100)
-  permissions Json      @default("{}")
   created_at  DateTime? @default(now()) @db.Timestamp(6)
   updated_at  DateTime? @default(now()) @db.Timestamp(6)
   users       users[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model shipments {
   id                  Int               @id @default(autoincrement())
   order_id            Int
@@ -301,8 +298,8 @@ model shipments {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model shippingaddresses {
   id           Int         @id @default(autoincrement())
-  customer_id  Int
-  address_line String
+  customer_id  Int         // ✅ FIXED: Thêm field này
+  address_line String      // ✅ FIXED: Thêm field này
   city         String?     @db.VarChar(100)
   state        String?     @db.VarChar(100)
   postal_code  String?     @db.VarChar(20)
@@ -366,7 +363,6 @@ model uservouchers {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model vouchers {
   id              Int            @id @default(autoincrement())
   code            String         @unique @db.VarChar(50)
@@ -411,11 +407,6 @@ model flashsale_products {
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model roles {
-  id         BigInt   @id @default(autoincrement())
-  role       String?
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-}
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model prescriptions {
@@ -444,4 +435,31 @@ model prescriptions {
   @@index([customer_id])
   @@index([order_id])
   @@index([status])
+}
+
+/// ✅ AI Feature: Medical Q&A table (GIỮ LẠI)
+model medical_qa {
+  id         Int       @id @default(autoincrement())
+  question   String    @db.Text
+  answer     String    @db.Text
+  category   String?   @db.VarChar(100)
+  embedding  Unsupported("vector(768)")?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+
+  @@map("medical_qa")
+}
+
+/// ✅ AI Feature: Product embeddings for search (GIỮ LẠI)
+model product_embeddings {
+  id                 Int       @id @default(autoincrement())
+  product_id         Int       @unique
+  name_embedding     Unsupported("vector(768)")?
+  desc_embedding     Unsupported("vector(768)")?
+  combined_embedding Unsupported("vector(768)")?
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+  updated_at         DateTime? @default(now()) @db.Timestamp(6)
+  product            products  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@map("product_embeddings")
 }

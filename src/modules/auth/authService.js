@@ -4,12 +4,13 @@ import { isValidEmail } from '../../utils/validation.js';
 
 /**
  * Đăng ký user mới
+ * ✅ Refactored: Không cần validate permissions
  */
 export const register = async (data) => {
   try {
     const { username, email, password, phone, full_name, role_id = 3 } = data;
 
-    // Validate
+    // Validate input
     if (!username || !email || !password) {
       return {
         success: false,
@@ -30,6 +31,19 @@ export const register = async (data) => {
       return {
         success: false,
         error: 'Password phải có ít nhất 8 ký tự',
+        status: 400
+      };
+    }
+
+    // Verify role exists
+    const role = await prisma.rolepermissions.findUnique({
+      where: { id: Number(role_id) }
+    });
+
+    if (!role) {
+      return {
+        success: false,
+        error: 'Role không hợp lệ',
         status: 400
       };
     }
@@ -87,12 +101,13 @@ export const register = async (data) => {
       }
     });
 
-    // Generate tokens
+    // ✅ Generate tokens - chỉ cần role_name
     const token = generateToken({
       userId: user.id,
       username: user.username,
       email: user.email,
-      role_id: user.role_id
+      role_id: user.role_id,
+      role_name: user.rolepermissions.role_name
     });
 
     const refreshToken = generateRefreshToken({
@@ -122,6 +137,7 @@ export const register = async (data) => {
 
 /**
  * Đăng nhập
+ * ✅ Refactored: Không cần validate permissions
  */
 export const login = async (data) => {
   try {
@@ -174,7 +190,7 @@ export const login = async (data) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions?.role_name
+      role_name: user.rolepermissions.role_name
     });
 
     const refreshToken = generateRefreshToken({
@@ -347,7 +363,7 @@ export const refreshAccessToken = async (refreshToken) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions?.role_name
+      role_name: user.rolepermissions.role_name
     });
 
     return {
