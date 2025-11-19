@@ -51,11 +51,8 @@ model categories {
 model customers {
   id                Int                 @id @default(autoincrement())
   user_id           Int?                @unique
-  full_name         String?             @db.VarChar(255)
   dob               DateTime?           @db.Date
   gender            String?             @db.VarChar(10)
-  phone             String?             @db.VarChar(20)
-  email             String?             @db.VarChar(255)
   address           String?
   created_at        DateTime?           @default(now()) @db.Timestamp(6)
   updated_at        DateTime?           @default(now()) @db.Timestamp(6)
@@ -219,6 +216,7 @@ model products {
   manufactor            String?
   legalDeclaration      String?
   faq                   Json?
+  sold_count            Int                  @default(0)
   embedding_google      Unsupported("vector(768)")?
   branchinventory       branchinventory[]
   flashsale_products    flashsale_products[]
@@ -233,6 +231,7 @@ model products {
 
   @@index([category_id], map: "idx_products_category_id")
   @@index([supplier_id], map: "idx_products_supplier_id")
+  @@index([sold_count])
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -339,6 +338,9 @@ model users {
   role_id              Int
   full_name            String?                @db.VarChar(255)
   avatar_url           String?                @db.VarChar(500)
+  is_active            Boolean?               @default(true)
+  is_verified          Boolean?               @default(false)
+  last_login           DateTime?              @db.Timestamp(6)
   created_at           DateTime?              @default(now()) @db.Timestamp(6)
   updated_at           DateTime?              @default(now()) @db.Timestamp(6)
   customers               customers?
@@ -398,8 +400,8 @@ model flashsale_products {
   flash_price  Decimal    @db.Decimal(12, 2)
   stock_limit  Int        @default(0)
   sold_count   Int        @default(0)
-  created_at   DateTime?  @default(now()) @db.Timestamp(6)
-  updated_at   DateTime?  @default(now()) @db.Timestamp(6)
+  created_at   DateTime?  @default(now())
+  updated_at   DateTime?  @default(now())
   flashsale    flashsales @relation(fields: [flashsale_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   product      products   @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 

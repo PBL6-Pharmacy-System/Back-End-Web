@@ -1,4 +1,6 @@
+import crypto from 'crypto';
 import prisma from '../../../config/db.js';
+import { hashPassword } from '../../../utils/helpers.js';
 
 // Validate email format
 const isValidEmail = (email) => {
@@ -32,18 +34,10 @@ export const getAllCustomers = async ({ search, membership, status, page = 1, li
     
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search } },
-        { email: { contains: search, mode: 'insensitive' } }
+        { users: { full_name: { contains: search, mode: 'insensitive' } } },
+        { users: { phone: { contains: search } } },
+        { users: { email: { contains: search, mode: 'insensitive' } } }
       ];
-    }
-    
-    if (membership) {
-      where.membership = membership;
-    }
-    
-    if (status) {
-      where.status = status;
     }
 
     const [customers, total] = await Promise.all([
@@ -53,6 +47,19 @@ export const getAllCustomers = async ({ search, membership, status, page = 1, li
         take: limit,
         orderBy: { created_at: 'desc' },
         include: {
+          users: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              phone: true,
+              full_name: true,
+              avatar_url: true,
+              is_active: true,
+              is_verified: true,
+              last_login: true
+            }
+          },
           orders: {
             include: {
               orderitems: true
@@ -83,6 +90,20 @@ export const getCustomerById = async (id) => {
     return await prisma.customers.findUnique({
       where: { id: Number(id) },
       include: {
+        users: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            phone: true,
+            full_name: true,
+            avatar_url: true,
+            is_active: true,
+            is_verified: true,
+            last_login: true,
+            created_at: true
+          }
+        },
         orders: {
           include: {
             orderitems: true,
@@ -103,20 +124,26 @@ export const getCustomerById = async (id) => {
 
 export const createCustomer = async (data) => {
   try {
-    const { full_name, gender, address, email, phone, dob } = data;
+    const { full_name, gender, address, email, phone, dob, username, password } = data;
 
     // Validate required fields
-    if (!full_name?.trim() || !phone?.trim()) {
+    if (!full_name?.trim() || !email?.trim() || !phone?.trim()) {
       return {
         success: false,
         status: 400,
-        error: 'Vui lòng điền đầy đủ thông tin bắt buộc (họ tên, số điện thoại)'
+        error: 'Vui lòng điền đầy đủ thông tin bắt buộc (họ tên, email, số điện thoại)'
       };
     }
 
-    if (gender != "Nam" || gender != "Nữ"){
-      return { error:' Giới tính không hợp lệ'}
+    // Validate gender
+    if (gender && gender !== "Nam" && gender !== "Nữ") {
+      return {
+        success: false,
+        status: 400,
+        error: 'Giới tính không hợp lệ'
+      };
     }
+
     // Validate phone format
     if (!isValidPhone(phone)) {
       return {
@@ -126,8 +153,8 @@ export const createCustomer = async (data) => {
       };
     }
 
-    // Validate email format if provided
-    if (email && !isValidEmail(email)) {
+    // Validate email format
+    if (!isValidEmail(email)) {
       return {
         success: false,
         status: 400,
@@ -144,15 +171,63 @@ export const createCustomer = async (data) => {
       };
     }
 
-    const customer = await prisma.customers.create({
+    // Check if user already exists
+    const existingUser = await prisma.users.findFirst({
+      where: {
+        OR: [
+          { email },
+          { phone },
+          ...(username ? [{ username }] : [])
+        ]
+      }
+    });
+
+    if (existingUser) {
+      return {
+        success: false,
+        status: 409,
+        error: existingUser.email === email 
+          ? 'Email đã tồn tại' 
+          : existingUser.phone === phone 
+          ? 'Số điện thoại đã tồn tại'
+          : 'Username đã tồn tại'
+      };
+    }
+
+    // Create user first, then customer
+    const user = await prisma.users.create({
       data: {
-        full_name,
+        username: username || email,
         email,
         phone,
-        dob: dob ? new Date(dob) : undefined,
-        created_at: new Date(),
+        full_name,
+        password_hash: password ? await hashPassword(password) : await hashPassword(crypto.randomBytes(32).toString('hex')),
+        role_id: 3, // Customer role
+        is_verified: false
+      }
+    });
+
+    // Create customer record
+    const customer = await prisma.customers.create({
+      data: {
+        user_id: user.id,
+        dob: dob ? new Date(dob) : null,
+        gender,
+        address
       },
       include: {
+        users: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            phone: true,
+            full_name: true,
+            avatar_url: true,
+            is_active: true,
+            is_verified: true
+          }
+        },
         orders: true,
         reviews: true
       }
@@ -164,20 +239,11 @@ export const createCustomer = async (data) => {
     };
   } catch (error) {
     if (error.code === 'P2002') {
-      if (error.meta?.target?.includes('phone')) {
-        return {
-          success: false,
-          status: 409,
-          error: 'Số điện thoại đã tồn tại'
-        };
-      }
-      if (error.meta?.target?.includes('email')) {
-        return {
-          success: false,
-          status: 409,
-          error: 'Email đã tồn tại'
-        };
-      }
+      return {
+        success: false,
+        status: 409,
+        error: 'Email hoặc số điện thoại đã tồn tại'
+      };
     }
     throw error;
   }
@@ -185,7 +251,21 @@ export const createCustomer = async (data) => {
 
 export const updateCustomer = async (id, data) => {
   try {
-    const { email, phone, dob } = data;
+    const { email, phone, full_name, dob, gender, address, avatar_url } = data;
+
+    // Get customer with user info
+    const customer = await prisma.customers.findUnique({
+      where: { id: Number(id) },
+      include: { users: true }
+    });
+
+    if (!customer) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy khách hàng'
+      };
+    }
 
     // Validate phone format if provided
     if (phone && !isValidPhone(phone)) {
@@ -214,13 +294,44 @@ export const updateCustomer = async (id, data) => {
       };
     }
 
-    const customer = await prisma.customers.update({
+    // Update user info (email, phone, full_name, avatar_url)
+    if (customer.user_id) {
+      const userUpdateData = {};
+      if (email) userUpdateData.email = email;
+      if (phone) userUpdateData.phone = phone;
+      if (full_name) userUpdateData.full_name = full_name;
+      if (avatar_url !== undefined) userUpdateData.avatar_url = avatar_url;
+
+      if (Object.keys(userUpdateData).length > 0) {
+        await prisma.users.update({
+          where: { id: customer.user_id },
+          data: userUpdateData
+        });
+      }
+    }
+
+    // Update customer info (dob, gender, address)
+    const customerUpdateData = {};
+    if (dob !== undefined) customerUpdateData.dob = dob ? new Date(dob) : null;
+    if (gender !== undefined) customerUpdateData.gender = gender;
+    if (address !== undefined) customerUpdateData.address = address;
+
+    const updatedCustomer = await prisma.customers.update({
       where: { id: Number(id) },
-      data: {
-        ...data,
-        dob: dob ? new Date(dob) : undefined
-      },
+      data: customerUpdateData,
       include: {
+        users: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            phone: true,
+            full_name: true,
+            avatar_url: true,
+            is_active: true,
+            is_verified: true
+          }
+        },
         orders: true,
         reviews: true
       }
@@ -228,31 +339,15 @@ export const updateCustomer = async (id, data) => {
 
     return {
       success: true,
-      data: customer
+      data: updatedCustomer
     };
   } catch (error) {
-    if (error.code === 'P2025') {
+    if (error.code === 'P2002') {
       return {
         success: false,
-        status: 404,
-        error: 'Không tìm thấy khách hàng'
+        status: 409,
+        error: 'Email hoặc số điện thoại đã tồn tại'
       };
-    }
-    if (error.code === 'P2002') {
-      if (error.meta?.target?.includes('phone')) {
-        return {
-          success: false,
-          status: 409,
-          error: 'Số điện thoại đã tồn tại'
-        };
-      }
-      if (error.meta?.target?.includes('email')) {
-        return {
-          success: false,
-          status: 409,
-          error: 'Email đã tồn tại'
-        };
-      }
     }
     throw error;
   }

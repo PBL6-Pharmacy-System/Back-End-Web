@@ -1,5 +1,5 @@
 import prisma from '../../../config/db.js';
-import { incrementProductSoldCount } from '../../product-management/products/bestSellersService.js';
+import { updateProductSoldCount } from '../../product-management/products/bestSellersService.js';
 
 /**
  * Apply voucher to order and calculate discount
@@ -347,7 +347,7 @@ export const confirmPayment = async (orderId, transactionId) => {
 
     // Update sold count for products (real-time best sellers update)
     for (const item of order.orderitems) {
-      await incrementProductSoldCount(item.product_id, item.quantity);
+      await updateProductSoldCount(item.product_id, item.quantity);
     }
 
     return {

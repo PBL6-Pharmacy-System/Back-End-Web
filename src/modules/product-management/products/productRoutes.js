@@ -19,6 +19,5 @@ router.get('/products/:id/stats', validateId(), bestSellersController.getProduct
 router.post('/products', authenticateToken, authorizeAdmin, writeLimiter, productController.createProduct);
 router.put('/products/:id', authenticateToken, authorizeAdmin, validateId(), writeLimiter, productController.updateProduct);
 router.delete('/products/:id', authenticateToken, authorizeAdmin, validateId(), writeLimiter, productController.deleteProduct);
-router.post('/products/best-sellers/update-cache', authenticateToken, authorizeAdmin, bestSellersController.updateBestSellersCache);
 
 export default router;

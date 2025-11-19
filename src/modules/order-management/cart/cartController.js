@@ -1,8 +1,8 @@
-import * as orderService from './cartService.js';
+import * as cartService from './orderService.js';
 
 export const getCart = async (req, res) => {
   try {
-    const result = await orderService.getCart(req.params.customerId);
+    const result = await cartService.getCart(req.params.customerId);
     if (!result.success) {
       return res.status(result.status).json({ error: result.error });
     }
@@ -15,7 +15,7 @@ export const getCart = async (req, res) => {
 
 export const addToCart = async (req, res) => {
   try {
-    const result = await orderService.addToCart(
+    const result = await cartService.addToCart(
       req.params.customerId,
       req.body
     );
@@ -31,7 +31,7 @@ export const addToCart = async (req, res) => {
 
 export const removeFromCart = async (req, res) => {
   try {
-    const result = await orderService.removeCartItem(req.params.itemId);
+    const result = await cartService.removeCartItem(req.params.itemId);
     if (!result.success) {
       return res.status(result.status).json({ error: result.error });
     }
@@ -47,7 +47,7 @@ export const removeFromCart = async (req, res) => {
 
 export const checkout = async (req, res) => {
   try {
-    const result = await orderService.checkout(req.params.orderId);
+    const result = await cartService.checkout(req.params.orderId);
     if (!result.success) {
       return res.status(result.status).json({ error: result.error });
     }

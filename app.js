@@ -1,7 +1,6 @@
 import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
-import './src/jobs/bestSellersJob.js';
 import './src/jobs/flashsaleJob.js';
 
 // Middlewares
@@ -28,9 +27,9 @@ import branchRoutes from './src/modules/inventory-management/branches/branchRout
 // Order Management
 import cartRoutes from './src/modules/order-management/cart/cartRoutes.js';
 import orderRoutes from './src/modules/order-management/orders/orderRoutes.js';
-import shippingAddressRoutes from './src/modules/order-management/shipping-addresses/shippingAddressRoutes.js';
 import paymentRoutes from './src/modules/order-management/payments/paymentRoutes.js';
 import shipmentRoutes from './src/modules/order-management/shipments/shipmentRoutes.js';
+import shippingAddressRoutes from './src/modules/order-management/shipping-addresses/shippingAddressRoutes.js';
 
 // Promotion Management
 import flashsaleRoutes from './src/modules/promotion-management/flashsales/flashsaleRoutes.js';

@@ -5,7 +5,8 @@ import * as bestSellersService from './bestSellersService.js';
  */
 export const getBestSellers = async (req, res) => {
   try {
-    const result = await bestSellersService.getBestSellers();
+    const limit = parseInt(req.query.limit) || 10;
+    const result = await bestSellersService.getBestSellers(limit);
 
     if (!result.success) {
       return res.status(result.status || 500).json(result);
@@ -17,31 +18,6 @@ export const getBestSellers = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Lỗi khi lấy sản phẩm nổi bật'
-    });
-  }
-};
-
-/**
- * Force update best sellers cache (Admin only)
- */
-export const updateBestSellersCache = async (req, res) => {
-  try {
-    const result = await bestSellersService.updateBestSellersCache();
-
-    if (!result.success) {
-      return res.status(500).json(result);
-    }
-
-    res.json({
-      success: true,
-      message: 'Đã cập nhật cache sản phẩm nổi bật',
-      data: result
-    });
-  } catch (error) {
-    console.error('Update best sellers cache controller error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Lỗi khi cập nhật cache'
     });
   }
 };

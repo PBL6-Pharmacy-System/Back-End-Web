@@ -1,61 +1,36 @@
 import prisma from '../../../config/db.js';
 
 /**
- * Get top 10 best selling products
+ * Get top best selling products (sản phẩm nổi bật)
+ * Tính toán trực tiếp từ orderitems - không cần cache
  */
-export const getBestSellers = async () => {
+export const getBestSellers = async (limit = 10) => {
   try {
-    // Try to get from cache first
-    const cachedBestSellers = await prisma.best_sellers_cache.findMany({
-      orderBy: {
-        rank: 'asc'
+    // Tính tổng số lượng bán của mỗi sản phẩm từ orderitems
+    const productSales = await prisma.orderitems.groupBy({
+      by: ['product_id'],
+      _sum: {
+        quantity: true
       },
-      take: 10,
-      include: {
-        product: {
-          include: {
-            categories: true,
-            productunits: true,
-            reviews: {
-              select: {
-                rating: true
-              }
-            }
-          }
+      orderBy: {
+        _sum: {
+          quantity: 'desc'
         }
-      }
+      },
+      take: limit
     });
 
-    // If cache exists and is recent (updated within last hour), return it
-    if (cachedBestSellers.length > 0) {
-      const latestUpdate = cachedBestSellers[0].updated_at;
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-      
-      if (latestUpdate >= oneHourAgo) {
-        return {
-          success: true,
-          data: cachedBestSellers.map(item => ({
-            ...item.product,
-            rank: item.rank,
-            sold_count: item.sold_count,
-            average_rating: item.product.reviews.length > 0
-              ? item.product.reviews.reduce((sum, r) => sum + r.rating, 0) / item.product.reviews.length
-              : 0
-          })),
-          cached: true,
-          lastUpdate: latestUpdate
-        };
-      }
-    }
-
-    // If no cache or cache is old, get fresh data from products
-    const bestSellers = await prisma.products.findMany({
-      orderBy: {
-        sold_count: 'desc'
+    // Lấy thông tin chi tiết của các sản phẩm bán chạy
+    const productIds = productSales.map(item => item.product_id);
+    
+    const products = await prisma.products.findMany({
+      where: {
+        id: { in: productIds }
       },
-      take: 10,
       include: {
         categories: true,
+        suppliers: true,
+        unittype: true,
         productunits: true,
         reviews: {
           select: {
@@ -65,25 +40,28 @@ export const getBestSellers = async () => {
       }
     });
 
-    // Calculate average ratings
-    const productsWithRatings = bestSellers.map(product => ({
-      ...product,
-      average_rating: product.reviews.length > 0
+    // Map products với sold_count và rank
+    const productsMap = new Map(products.map(p => [p.id, p]));
+    
+    const bestSellers = productSales.map((sale, index) => {
+      const product = productsMap.get(sale.product_id);
+      
+      const averageRating = product.reviews.length > 0
         ? product.reviews.reduce((sum, r) => sum + r.rating, 0) / product.reviews.length
-        : 0
-    }));
+        : 0;
 
-    // Update cache
-    await updateBestSellersCache(bestSellers);
+      return {
+        ...product,
+        rank: index + 1,
+        sold_count: sale._sum.quantity || 0,
+        average_rating: Math.round(averageRating * 10) / 10,
+        review_count: product.reviews.length
+      };
+    });
 
     return {
       success: true,
-      data: productsWithRatings.map((p, index) => ({
-        ...p,
-        rank: index + 1
-      })),
-      cached: false,
-      lastUpdate: new Date()
+      data: bestSellers
     };
   } catch (error) {
     console.error('Get best sellers error:', error);
@@ -96,53 +74,10 @@ export const getBestSellers = async () => {
 };
 
 /**
- * Update best sellers cache
+ * Update product sold_count after order completion
+ * Cập nhật sold_count trong bảng products khi đơn hàng hoàn thành
  */
-export const updateBestSellersCache = async (products = null) => {
-  try {
-    // If products not provided, fetch them
-    if (!products) {
-      products = await prisma.products.findMany({
-        orderBy: {
-          sold_count: 'desc'
-        },
-        take: 10
-      });
-    }
-
-    // Delete old cache
-    await prisma.best_sellers_cache.deleteMany({});
-
-    // Insert new cache
-    const cacheData = products.map((product, index) => ({
-      product_id: product.id,
-      rank: index + 1,
-      sold_count: product.sold_count || 0
-    }));
-
-    await prisma.best_sellers_cache.createMany({
-      data: cacheData
-    });
-
-    console.log(`📊 Updated best sellers cache with ${cacheData.length} products`);
-    
-    return {
-      success: true,
-      count: cacheData.length
-    };
-  } catch (error) {
-    console.error('Update best sellers cache error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-};
-
-/**
- * Increment product sold count (called after order completion)
- */
-export const incrementProductSoldCount = async (productId, quantity = 1) => {
+export const updateProductSoldCount = async (productId, quantity = 1) => {
   try {
     const updated = await prisma.products.update({
       where: {
@@ -155,31 +90,12 @@ export const incrementProductSoldCount = async (productId, quantity = 1) => {
       }
     });
 
-    // Check if this product should be in top 10
-    const currentBestSellers = await prisma.best_sellers_cache.findMany({
-      orderBy: {
-        rank: 'asc'
-      },
-      take: 10
-    });
-
-    // If cache has less than 10 items, or this product sold more than the 10th item
-    if (currentBestSellers.length < 10) {
-      await updateBestSellersCache();
-    } else {
-      const tenthPlace = currentBestSellers[currentBestSellers.length - 1];
-      if (updated.sold_count > tenthPlace.sold_count) {
-        // Product should be in top 10, update cache
-        await updateBestSellersCache();
-      }
-    }
-
     return {
       success: true,
       data: updated
     };
   } catch (error) {
-    console.error('Increment sold count error:', error);
+    console.error('Update sold count error:', error);
     return {
       success: false,
       error: error.message
@@ -192,6 +108,16 @@ export const incrementProductSoldCount = async (productId, quantity = 1) => {
  */
 export const getProductStats = async (productId) => {
   try {
+    // Lấy tổng số lượng đã bán từ orderitems
+    const salesData = await prisma.orderitems.aggregate({
+      where: {
+        product_id: productId
+      },
+      _sum: {
+        quantity: true
+      }
+    });
+
     const product = await prisma.products.findUnique({
       where: {
         id: productId
@@ -201,8 +127,7 @@ export const getProductStats = async (productId) => {
           select: {
             rating: true
           }
-        },
-        best_sellers_cache: true
+        }
       }
     });
 
@@ -222,11 +147,9 @@ export const getProductStats = async (productId) => {
       success: true,
       data: {
         product_id: product.id,
-        sold_count: product.sold_count || 0,
+        sold_count: salesData._sum.quantity || 0,
         review_count: product.reviews.length,
-        average_rating: averageRating,
-        rank: product.best_sellers_cache?.rank || null,
-        is_best_seller: !!product.best_sellers_cache
+        average_rating: Math.round(averageRating * 10) / 10
       }
     };
   } catch (error) {

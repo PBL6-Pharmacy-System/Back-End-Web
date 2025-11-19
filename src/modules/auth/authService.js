@@ -446,18 +446,18 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
           email: `${normalizedPhone.replace('+', '')}@temp.com`, // Temporary email
           password_hash: await hashPassword(crypto.randomBytes(32).toString('hex')), // Random password
           role_id: 3, // Customer role
-          full_name: null
+          full_name: null,
+          is_verified: true // Auto-verified via OTP
         },
         include: {
           rolepermissions: true
         }
       });
 
-      // Create customer record
+      // Create customer record (without duplicate fields)
       await prisma.customers.create({
         data: {
-          user_id: user.id,
-          phone: normalizedPhone
+          user_id: user.id
         }
       });
 
@@ -479,6 +479,12 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
         status: 403
       };
     }
+
+    // Update last_login
+    await prisma.users.update({
+      where: { id: user.id },
+      data: { last_login: new Date() }
+    });
 
     // Generate tokens
     const token = generateToken({
