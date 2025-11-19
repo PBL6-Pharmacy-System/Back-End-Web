@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -16,7 +17,7 @@ model branches {
   manager_id      Int?
   created_at      DateTime?         @default(now()) @db.Timestamp(6)
   updated_at      DateTime?         @default(now()) @db.Timestamp(6)
-  is_active       Boolean           @default(true) 
+  is_active       Boolean?          @default(true)
   branchinventory branchinventory[]
   shipments       shipments[]
 }
@@ -62,6 +63,7 @@ model customers {
   insuranceclaims   insuranceclaims[]
   notifications     notifications[]
   orders            orders[]
+  prescriptions     prescriptions[]
   reviews           reviews[]
   shippingaddresses shippingaddresses[]
   uservouchers      uservouchers[]
@@ -120,7 +122,6 @@ model notifications {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model order_status_history {
   id         Int       @id @default(autoincrement())
   order_id   Int
@@ -150,7 +151,6 @@ model orderitems {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model orders {
   id                   Int                    @id @default(autoincrement())
   customer_id          Int
@@ -160,7 +160,6 @@ model orders {
   discount_amount      Decimal?               @default(0) @db.Decimal(12, 2)
   final_amount         Decimal                @db.Decimal(12, 2)
   status               String?                @default("pending") @db.VarChar(50)
-  payment_status       String?                @default("unpaid") @db.VarChar(50) // unpaid, paid, refunded
   order_date           DateTime?              @default(now()) @db.Timestamp(6)
   updated_at           DateTime?              @default(now()) @db.Timestamp(6)
   insuranceclaims      insuranceclaims[]
@@ -170,15 +169,14 @@ model orders {
   shippingaddresses    shippingaddresses?     @relation(fields: [shipping_address_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   vouchers             vouchers?              @relation(fields: [voucher_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payments             payments[]
+  prescriptions        prescriptions[]
   shipments            shipments[]
   uservouchers         uservouchers[]
 
-  @@unique([customer_id, status], map: "unique_customer_cart")
-
+  @@index([customer_id], map: "idx_orders_customer_id")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model payments {
   id             Int       @id @default(autoincrement())
   order_id       Int
@@ -196,18 +194,18 @@ model payments {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model products {
-  id                    Int               @id @default(autoincrement())
-  name                  String            @db.VarChar(255)
+  id                    Int                  @id @default(autoincrement())
+  name                  String               @db.VarChar(255)
   description           String?
-  price                 Decimal           @db.Decimal(12, 2)
-  stock                 Int?              @default(0)
+  price                 Decimal              @db.Decimal(12, 2)
+  stock                 Int?                 @default(0)
   category_id           Int?
   supplier_id           Int?
-  image_url             String?           @db.VarChar(500)
-  prescription_required Boolean?          @default(false)
-  created_at            DateTime?         @default(now()) @db.Timestamp(6)
-  updated_at            DateTime?         @default(now()) @db.Timestamp(6)
-  tax_fee               Decimal?          @default(0) @db.Decimal(14, 2)
+  image_url             String?              @db.VarChar(500)
+  prescription_required Boolean?             @default(false)
+  created_at            DateTime?            @default(now()) @db.Timestamp(6)
+  updated_at            DateTime?            @default(now()) @db.Timestamp(6)
+  tax_fee               Decimal?             @default(0) @db.Decimal(14, 2)
   base_unit_id          Int?
   images                Json?
   manufacturer          String?
@@ -221,20 +219,20 @@ model products {
   manufactor            String?
   legalDeclaration      String?
   faq                   Json?
-  sold_count            Int?              @default(0) // Track total sales
+  embedding_google      Unsupported("vector(768)")?
   branchinventory       branchinventory[]
+  flashsale_products    flashsale_products[]
   insuranceclaims       insuranceclaims[]
   orderitems            orderitems[]
-  unittype              unittype?         @relation(fields: [base_unit_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  categories            categories?       @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  suppliers             suppliers?        @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  unittype              unittype?            @relation(fields: [base_unit_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categories            categories?          @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  suppliers             suppliers?           @relation(fields: [supplier_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   productunits          productunits[]
   reviews               reviews[]
-  flashsale_products   flashsale_products[]
-  best_sellers_cache   best_sellers_cache?
+  product_embeddings    product_embeddings?
+
   @@index([category_id], map: "idx_products_category_id")
   @@index([supplier_id], map: "idx_products_supplier_id")
-  @@index([sold_count], map: "idx_products_sold_count")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -251,7 +249,6 @@ model productunits {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model reviews {
   id          Int       @id @default(autoincrement())
   customer_id Int
@@ -267,18 +264,17 @@ model reviews {
   @@index([product_id], map: "idx_reviews_product_id")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// Simple Role-Based model - Chỉ cần role_name
+/// ✅ Refactored: Xóa permissions column
 model rolepermissions {
   id          Int       @id @default(autoincrement())
   role_name   String    @unique @db.VarChar(100)
-  permissions Json      @default("{}")
   created_at  DateTime? @default(now()) @db.Timestamp(6)
   updated_at  DateTime? @default(now()) @db.Timestamp(6)
   users       users[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model shipments {
   id                  Int               @id @default(autoincrement())
   order_id            Int
@@ -302,8 +298,8 @@ model shipments {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model shippingaddresses {
   id           Int         @id @default(autoincrement())
-  customer_id  Int
-  address_line String
+  customer_id  Int         // ✅ FIXED: Thêm field này
+  address_line String      // ✅ FIXED: Thêm field này
   city         String?     @db.VarChar(100)
   state        String?     @db.VarChar(100)
   postal_code  String?     @db.VarChar(20)
@@ -345,11 +341,12 @@ model users {
   avatar_url           String?                @db.VarChar(500)
   created_at           DateTime?              @default(now()) @db.Timestamp(6)
   updated_at           DateTime?              @default(now()) @db.Timestamp(6)
-  customers            customers?
-  logs                 logs[]
-  notifications        notifications[]
-  order_status_history order_status_history[]
-  rolepermissions      rolepermissions        @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customers               customers?
+  logs                    logs[]
+  notifications           notifications[]
+  order_status_history    order_status_history[]
+  prescriptions_verified  prescriptions[]        @relation("fk_prescriptions_verified_by")
+  rolepermissions         rolepermissions        @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -366,7 +363,6 @@ model uservouchers {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model vouchers {
   id              Int            @id @default(autoincrement())
   code            String         @unique @db.VarChar(50)
@@ -384,55 +380,86 @@ model vouchers {
 }
 
 model flashsales {
-  id          Int       @id @default(autoincrement())
-  name        String    @db.VarChar(255)
+  id          Int                  @id @default(autoincrement())
+  name        String               @db.VarChar(255)
   description String?
-  start_time  DateTime  @db.Timestamp(6)
-  end_time    DateTime  @db.Timestamp(6)
-  status      String    @default("pending") @db.VarChar(50) // pending, active, ended
-  created_at  DateTime? @default(now()) @db.Timestamp(6)
-  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+  start_time  DateTime             @db.Timestamp(6)
+  end_time    DateTime             @db.Timestamp(6)
+  status      String?              @default("pending") @db.VarChar(50)
+  created_at  DateTime?            @default(now()) @db.Timestamp(6)
+  updated_at  DateTime?            @default(now()) @db.Timestamp(6)
   products    flashsale_products[]
 }
 
 model flashsale_products {
-  id           Int       @id @default(autoincrement())
+  id           Int        @id @default(autoincrement())
   flashsale_id Int
   product_id   Int
-  flash_price  Decimal   @db.Decimal(12, 2)
-  stock_limit  Int       // Giới hạn số lượng có thể bán trong flashsale
-  sold_count   Int       @default(0)
-  created_at   DateTime? @default(now()) @db.Timestamp(6)
-  updated_at   DateTime? @default(now()) @db.Timestamp(6)
-  flashsale    flashsales @relation(fields: [flashsale_id], references: [id], onDelete: Cascade)
-  product      products   @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  flash_price  Decimal    @db.Decimal(12, 2)
+  stock_limit  Int        @default(0)
+  sold_count   Int        @default(0)
+  created_at   DateTime?  @default(now()) @db.Timestamp(6)
+  updated_at   DateTime?  @default(now()) @db.Timestamp(6)
+  flashsale    flashsales @relation(fields: [flashsale_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product      products   @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([flashsale_id, product_id])
-  @@index([product_id])
+  @@unique([flashsale_id, product_id], map: "unique_flashsale_product")
 }
 
-/// OTP verification for customer phone authentication
-model otp_verifications {
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model prescriptions {
+  id                  Int       @id @default(autoincrement())
+  customer_id         Int
+  order_id            Int?
+  prescription_number String?   @unique @db.VarChar(50)
+  doctor_name         String?   @db.VarChar(255)
+  doctor_license      String?   @db.VarChar(100)
+  hospital_name       String?   @db.VarChar(255)
+  diagnosis           String?
+  prescribed_date     DateTime? @db.Date
+  expiry_date         DateTime? @db.Date
+  image_url           String?   @db.VarChar(500)
+  pdf_url             String?   @db.VarChar(500)
+  status              String    @default("pending") @db.VarChar(50)
+  verified_by         Int?
+  verified_at         DateTime? @db.Timestamp(6)
+  verification_notes  String?
+  created_at          DateTime? @default(now()) @db.Timestamp(6)
+  updated_at          DateTime? @default(now()) @db.Timestamp(6)
+  customers           customers @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  orders              orders?   @relation(fields: [order_id], references: [id], onDelete: NoAction)
+  verified_by_user    users?    @relation("fk_prescriptions_verified_by", fields: [verified_by], references: [id], onDelete: NoAction)
+
+  @@index([customer_id])
+  @@index([order_id])
+  @@index([status])
+}
+
+/// ✅ AI Feature: Medical Q&A table (GIỮ LẠI)
+model medical_qa {
   id         Int       @id @default(autoincrement())
-  phone      String    @db.VarChar(20)
-  otp_code   String    @db.VarChar(6)
-  expires_at DateTime  @db.Timestamp(6)
-  verified   Boolean   @default(false)
+  question   String    @db.Text
+  answer     String    @db.Text
+  category   String?   @db.VarChar(100)
+  embedding  Unsupported("vector(768)")?
   created_at DateTime? @default(now()) @db.Timestamp(6)
-  attempts   Int       @default(0)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
 
-  @@index([phone])
-  @@index([expires_at])
+  @@map("medical_qa")
 }
 
-/// Cache for top 10 best selling products
-model best_sellers_cache {
-  id         Int      @id @default(autoincrement())
-  product_id Int      @unique
-  rank       Int      @unique
-  sold_count Int
-  updated_at DateTime @default(now()) @db.Timestamp(6)
-  product    products @relation(fields: [product_id], references: [id], onDelete: Cascade)
+/// ✅ AI Feature: Product embeddings for search (GIỮ LẠI)
+model product_embeddings {
+  id                 Int       @id @default(autoincrement())
+  product_id         Int       @unique
+  name_embedding     Unsupported("vector(768)")?
+  desc_embedding     Unsupported("vector(768)")?
+  combined_embedding Unsupported("vector(768)")?
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+  updated_at         DateTime? @default(now()) @db.Timestamp(6)
+  product            products  @relation(fields: [product_id], references: [id], onDelete: Cascade)
 
-  @@index([rank])
+  @@map("product_embeddings")
 }

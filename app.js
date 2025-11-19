@@ -27,7 +27,10 @@ import branchRoutes from './src/modules/inventory-management/branches/branchRout
 
 // Order Management
 import cartRoutes from './src/modules/order-management/cart/cartRoutes.js';
-// import orderRoutes from './src/modules/order-management/orders/orderRoutes.js';
+import orderRoutes from './src/modules/order-management/orders/orderRoutes.js';
+import shippingAddressRoutes from './src/modules/order-management/shipping-addresses/shippingAddressRoutes.js';
+import paymentRoutes from './src/modules/order-management/payments/paymentRoutes.js';
+import shipmentRoutes from './src/modules/order-management/shipments/shipmentRoutes.js';
 
 // Promotion Management
 import flashsaleRoutes from './src/modules/promotion-management/flashsales/flashsaleRoutes.js';
@@ -38,6 +41,9 @@ import reviewRoutes from './src/modules/review-management/reviews/reviewRoutes.j
 
 // Notification Management
 import notificationRoutes from './src/modules/notification-management/notifications/notificationRoutes.js';
+
+// Medical Management
+import prescriptionRoutes from './src/modules/medical/prescriptions/prescriptionRoutes.js';
 
 const app = express();
 
@@ -81,7 +87,10 @@ app.use('/api', branchInventoryRoutes);
 
 // Order management
 app.use('/api', cartRoutes);
-// app.use('/api', orderRoutes);
+app.use('/api', orderRoutes);
+app.use('/api', shippingAddressRoutes);
+app.use('/api', paymentRoutes);
+app.use('/api', shipmentRoutes);
 
 // Promotion management
 app.use('/api', voucherRoutes);
@@ -92,6 +101,9 @@ app.use('/api', reviewRoutes);
 
 // Notification management
 app.use('/api', notificationRoutes);
+
+// Medical management
+app.use('/api', prescriptionRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
