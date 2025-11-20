@@ -5,8 +5,8 @@ export const getAllReviews = async (req, res) => {
   try {
     const { page, limit, productId, customerId, rating, sortBy, sortOrder } = req.query;
     const result = await reviewService.getAllReviews({
-      page: parseInt(page),
-      limit: parseInt(limit),
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
       productId,
       customerId,
       rating,
@@ -44,7 +44,25 @@ export const getReviewById = async (req, res) => {
 // Create new review
 export const createReview = async (req, res) => {
   try {
-    const result = await reviewService.createReview(req.body);
+    // Get customer_id from authenticated user
+    const customer_id = req.user?.customer_id;
+    
+    if (!customer_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Chỉ khách hàng mới có thể tạo đánh giá'
+      });
+    }
+
+    // Map productId to product_id if needed
+    const reviewData = {
+      customer_id,
+      product_id: req.body.productId || req.body.product_id,
+      rating: req.body.rating,
+      comment: req.body.comment
+    };
+
+    const result = await reviewService.createReview(reviewData);
     if (!result.success) {
       return res.status(result.status).json(result);
     }
@@ -53,7 +71,7 @@ export const createReview = async (req, res) => {
     console.error('Error in createReview:', err);
     res.status(500).json({ 
       success: false, 
-      error: 'Lỗi khi tạo đánh giá' 
+      error: 'Lỗi khi tạo đánh giá'
     });
   }
 };

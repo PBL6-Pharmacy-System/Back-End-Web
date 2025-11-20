@@ -8,9 +8,9 @@ export const getAllFlashsales = async ({ page = 1, limit = 10 }) => {
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          products: {
+          flashsale_products: {
             include: {
-              product: true
+              products: true
             }
           }
         },
@@ -48,9 +48,9 @@ export const getActiveFlashsale = async () => {
         status: 'active'
       },
       include: {
-        products: {
+        flashsale_products: {
           include: {
-            product: true
+            products: true
           }
         }
       }
@@ -131,7 +131,7 @@ export const createFlashsale = async (data) => {
         description,
         start_time: new Date(start_time),
         end_time: new Date(end_time),
-        products: {
+        flashsale_products: {
           create: products.map(p => ({
             product_id: p.product_id,
             flash_price: p.flash_price,
@@ -140,9 +140,9 @@ export const createFlashsale = async (data) => {
         }
       },
       include: {
-        products: {
+        flashsale_products: {
           include: {
-            product: true
+            products: true
           }
         }
       }

@@ -42,7 +42,8 @@ export const checkout = async (req, res) => {
  */
 export const confirmPayment = async (req, res) => {
   try {
-    const { orderId, transactionId } = req.body;
+    const orderId = parseInt(req.params.id);
+    const { transactionId } = req.body;
     
     const result = await checkoutService.confirmPayment(orderId, transactionId);
 

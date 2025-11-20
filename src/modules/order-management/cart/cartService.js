@@ -11,8 +11,12 @@ const validateOrderItem = (item) => {
     };
   }
 
-  // Validate numeric fields
-  const numericFields = ['productId', 'productUnitId', 'quantity', 'unitPrice'];
+  // Validate numeric fields (unitPrice is optional, will be fetched from DB)
+  const numericFields = ['productId', 'productUnitId', 'quantity'];
+  if (item.unitPrice !== undefined && item.unitPrice !== null) {
+    numericFields.push('unitPrice');
+  }
+  
   const invalidNumbers = validateNumericFields(item, numericFields);
   if (invalidNumbers.length > 0) {
     return {
@@ -39,7 +43,7 @@ const validateStockAvailability = async (items) => {
     // Check product exists
     const product = await prisma.products.findUnique({
       where: { id: Number(productId) },
-      include: { productUnits: true }
+      include: { productunits: true }
     });
 
     if (!product) {
@@ -50,7 +54,7 @@ const validateStockAvailability = async (items) => {
     }
 
     // Check product unit exists and belongs to product
-    const productUnit = product.productUnits.find(
+    const productUnit = product.productunits.find(
       unit => unit.id === Number(productUnitId)
     );
 
@@ -230,12 +234,11 @@ export const addToCart = async (customerId, orderData) => {
   try {
     const { productId, productUnitId, quantity, unitPrice } = orderData;
 
-    // Validate order item
+    // Validate order item (without unitPrice since we'll get it from DB)
     const validation = validateOrderItem({
       productId,
       productUnitId,
-      quantity,
-      unitPrice
+      quantity
     });
 
     if (!validation.isValid) {
@@ -281,21 +284,24 @@ export const addToCart = async (customerId, orderData) => {
       };
     }
 
-    // Verify price matches current product unit price
+    // Get current price from product unit
     const productUnit = product.productunits[0];
     const currentPrice = Number(productUnit.price);
-    const providedPrice = Number(unitPrice);
 
-    if (Math.abs(currentPrice - providedPrice) > 0.01) {
-      return {
-        success: false,
-        status: 400,
-        error: `Giá sản phẩm đã thay đổi. Giá hiện tại: ${currentPrice} VNĐ`,
-        data: {
-          currentPrice,
-          providedPrice
-        }
-      };
+    // If unitPrice is provided, verify it matches current price
+    if (unitPrice !== undefined && unitPrice !== null) {
+      const providedPrice = Number(unitPrice);
+      if (Math.abs(currentPrice - providedPrice) > 0.01) {
+        return {
+          success: false,
+          status: 400,
+          error: `Giá sản phẩm đã thay đổi. Giá hiện tại: ${currentPrice} VNĐ`,
+          data: {
+            currentPrice,
+            providedPrice
+          }
+        };
+      }
     }
 
     // Check stock availability
@@ -365,53 +371,76 @@ export const addToCart = async (customerId, orderData) => {
       }
     }
 
-    // Add/update item in cart
-    const item = await prisma.orderitems.upsert({
-      where: {
-        order_id_product_id_unit_id: {
+    // Use transaction to ensure data consistency
+    const result = await prisma.$transaction(async (tx) => {
+      // Check if item already exists in cart
+      const existingCartItem = await tx.orderitems.findFirst({
+        where: {
           order_id: cart.id,
           product_id: Number(productId),
           unit_id: Number(productUnitId)
         }
-      },
-      update: {
-        quantity: { increment: Number(quantity) },
-        subtotal: {
-          increment: Number(quantity) * currentPrice
+      });
+
+      let item;
+      if (existingCartItem) {
+        // Update existing item
+        const newQuantity = existingCartItem.quantity + Number(quantity);
+        
+        item = await tx.orderitems.update({
+          where: { id: existingCartItem.id },
+          data: {
+            quantity: newQuantity,
+            price: currentPrice, // Update price to current price
+            subtotal: newQuantity * currentPrice,
+            updated_at: new Date()
+          },
+          include: {
+            products: true,
+            productunits: true
+          }
+        });
+      } else {
+        // Create new item
+        item = await tx.orderitems.create({
+          data: {
+            order_id: cart.id,
+            product_id: Number(productId),
+            unit_id: Number(productUnitId),
+            quantity: Number(quantity),
+            price: currentPrice,
+            subtotal: Number(quantity) * currentPrice
+          },
+          include: {
+            products: true,
+            productunits: true
+          }
+        });
+      }
+
+      // Recalculate cart totals
+      const allItems = await tx.orderitems.findMany({
+        where: { order_id: cart.id }
+      });
+
+      const total = allItems.reduce((sum, item) => sum + Number(item.subtotal), 0);
+
+      // Update order totals and timestamp
+      await tx.orders.update({
+        where: { id: cart.id },
+        data: {
+          total_amount: total,
+          final_amount: total,
+          updated_at: new Date()
         }
-      },
-      create: {
-        order_id: cart.id,
-        product_id: Number(productId),
-        unit_id: Number(productUnitId),
-        quantity: Number(quantity),
-        price: currentPrice,
-        subtotal: Number(quantity) * currentPrice
-      },
-      include: {
-        products: true,
-        productunits: true
-      }
-    });
+      });
 
-    // Recalculate cart totals
-    const allItems = await prisma.orderitems.findMany({
-      where: { order_id: cart.id }
-    });
-
-    const total = allItems.reduce((sum, item) => sum + Number(item.subtotal), 0);
-
-    await prisma.orders.update({
-      where: { id: cart.id },
-      data: {
-        total_amount: total,
-        final_amount: total
-      }
+      return item;
     });
 
     return {
       success: true,
-      data: item
+      data: result
     };
   } catch (error) {
     throw error;
@@ -776,11 +805,11 @@ export const clearCart = async (customerId) => {
     // Get cart
     const cart = await prisma.orders.findFirst({
       where: {
-        user_id: Number(customerId),
+        customer_id: Number(customerId),
         status: ORDER_STATUS.CART
       },
       include: {
-        orderItems: true
+        orderitems: true
       }
     });
 
@@ -794,14 +823,16 @@ export const clearCart = async (customerId) => {
 
     // Delete all cart items and reset cart
     await prisma.$transaction([
-      prisma.orderItems.deleteMany({
+      prisma.orderitems.deleteMany({
         where: { order_id: cart.id }
       }),
       prisma.orders.update({
         where: { id: cart.id },
         data: {
           total_amount: 0,
-          total_quantity: 0
+          final_amount: 0,
+          discount_amount: 0,
+          updated_at: new Date()
         }
       })
     ]);
@@ -823,13 +854,13 @@ export const getCartSummary = async (customerId) => {
     // Get cart
     const cart = await prisma.orders.findFirst({
       where: {
-        user_id: Number(customerId),
+        customer_id: Number(customerId),
         status: ORDER_STATUS.CART
       },
       include: {
-        orderItems: {
+        orderitems: {
           include: {
-            product: {
+            products: {
               select: {
                 id: true,
                 name: true,
@@ -838,7 +869,7 @@ export const getCartSummary = async (customerId) => {
                 stock: true
               }
             },
-            productUnit: {
+            productunits: {
               select: {
                 id: true,
                 unit_name: true,
@@ -868,7 +899,7 @@ export const getCartSummary = async (customerId) => {
     let subtotal = 0;
     let itemCount = 0;
 
-    const items = await Promise.all(cart.orderItems.map(async (item) => {
+    const items = await Promise.all(cart.orderitems.map(async (item) => {
       const itemTotal = Number(item.unit_price) * item.quantity;
       subtotal += itemTotal;
       itemCount += item.quantity;

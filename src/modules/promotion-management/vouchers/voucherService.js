@@ -358,8 +358,8 @@ export const applyVoucher = async (orderId, voucherCode) => {
     const order = await prisma.orders.findUnique({
       where: { id: Number(orderId) },
       include: {
-        orderItems: true,
-        voucher: true
+        orderitems: true,
+        vouchers: true
       }
     });
 
@@ -407,8 +407,8 @@ export const applyVoucher = async (orderId, voucherCode) => {
           final_amount: finalAmount
         },
         include: {
-          orderItems: true,
-          voucher: true
+          orderitems: true,
+          vouchers: true
         }
       }),
       prisma.vouchers.update({

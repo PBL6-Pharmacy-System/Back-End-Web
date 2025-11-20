@@ -61,17 +61,12 @@ export const getAllSuppliers = async ({
   try {
     const where = {
       AND: [
-        isActive !== undefined ? { is_active: isActive } : {},
         search ? {
           OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { address: { contains: search, mode: 'insensitive' } },
-            { phone: { contains: search } },
-            { email: { contains: search, mode: 'insensitive' } },
-            { contact_person: { contains: search, mode: 'insensitive' } }
+            { name: { contains: search, mode: 'insensitive' } }
           ]
         } : {}
-      ]
+      ].filter(obj => Object.keys(obj).length > 0)
     };
 
     const [total, suppliers] = await Promise.all([
@@ -81,8 +76,7 @@ export const getAllSuppliers = async ({
         include: {
           _count: {
             select: {
-              products: true,
-              import_orders: true
+              products: true
             }
           }
         },

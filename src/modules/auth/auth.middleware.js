@@ -25,7 +25,10 @@ export const authenticateToken = async (req, res, next) => {
       username: decoded.username,
       email: decoded.email,
       role_id: decoded.role_id,
-      role_name: decoded.role_name  // ✅ Lấy từ JWT
+      role_name: decoded.role_name,
+      customer_id: decoded.customer_id,  // ✅ Include customer_id for customer role
+      staff_id: decoded.staff_id,        // ✅ Include staff_id for staff role
+      admin_id: decoded.admin_id         // ✅ Include admin_id for admin role
     };
 
     next();
@@ -148,7 +151,10 @@ export const optionalAuth = async (req, res, next) => {
       username: decoded.username,
       email: decoded.email,
       role_id: decoded.role_id,
-      role_name: decoded.role_name
+      role_name: decoded.role_name,
+      customer_id: decoded.customer_id,
+      staff_id: decoded.staff_id,
+      admin_id: decoded.admin_id
     };
 
     next();

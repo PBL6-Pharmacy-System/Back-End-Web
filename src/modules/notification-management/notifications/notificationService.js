@@ -71,7 +71,8 @@ export const getAllNotifications = async ({
       prisma.notifications.findMany({
         where,
         include: {
-          user: true
+          users: true,
+          customers: true
         },
         orderBy: { [sortBy]: sortOrder.toLowerCase() },
         skip: (page - 1) * limit,

@@ -120,7 +120,7 @@ export const getOrderById = async (orderId) => {
       include: {
         customers: {
           include: {
-            user: {
+            users: {
               select: {
                 full_name: true,
                 email: true,

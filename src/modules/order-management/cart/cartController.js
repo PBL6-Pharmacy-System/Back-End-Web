@@ -1,4 +1,4 @@
-import * as cartService from './orderService.js';
+import * as cartService from './cartService.js';
 
 export const getCart = async (req, res) => {
   try {

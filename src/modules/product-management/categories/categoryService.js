@@ -96,7 +96,6 @@ export const getAllCategories = async ({
   try {
     const where = {
       AND: [
-        !includeInactive ? { is_active: true } : {},
         parentId ? { parent_id: parentId } : {},
         search ? {
           OR: [
@@ -104,7 +103,7 @@ export const getAllCategories = async ({
             { description: { contains: search, mode: 'insensitive' } }
           ]
         } : {}
-      ]
+      ].filter(obj => Object.keys(obj).length > 0)
     };
 
     const [total, categories] = await Promise.all([
@@ -112,9 +111,7 @@ export const getAllCategories = async ({
       prisma.categories.findMany({
         where,
         include: {
-          products: includeProducts,
-          parent: true,
-          children: true
+          products: includeProducts
         },
         orderBy: { [sortBy]: sortOrder.toLowerCase() },
         skip: (page - 1) * limit,
@@ -149,9 +146,7 @@ export const getCategoryById = async (id, includeProducts = true) => {
     const category = await prisma.categories.findUnique({
       where: { id: Number(id) },
       include: {
-        products: includeProducts,
-        parent: true,
-        children: true
+        products: includeProducts
       }
     });
 

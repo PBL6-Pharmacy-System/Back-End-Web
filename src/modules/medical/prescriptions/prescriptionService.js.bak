@@ -165,7 +165,7 @@ export const getPrescriptionById = async (prescriptionId) => {
             order_date: true
           }
         },
-        users: {
+        verified_by_user: {
           select: {
             id: true,
             username: true,
@@ -245,7 +245,7 @@ export const getAllPrescriptions = async (filters = {}) => {
               phone: true
             }
           },
-          users: {
+          verified_by_user: {
             select: {
               id: true,
               full_name: true
@@ -325,7 +325,7 @@ export const getCustomerPrescriptions = async (customerId, filters = {}) => {
               status: true
             }
           },
-          users: {
+          verified_by_user: {
             select: {
               full_name: true
             }
@@ -409,7 +409,7 @@ export const verifyPrescription = async (prescriptionId, verificationData, userI
             email: true
           }
         },
-        users: {
+        verified_by_user: {
           select: {
             full_name: true
           }

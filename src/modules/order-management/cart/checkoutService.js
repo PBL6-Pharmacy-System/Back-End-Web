@@ -212,7 +212,7 @@ export const checkout = async (data) => {
           voucher_id: voucherResult.voucher?.id,
           shipping_address_id: shippingAddressId,
           order_date: new Date(),
-          payment_status: paymentMethod === 'cash' ? 'unpaid' : 'pending'
+          updated_at: new Date()
         },
         include: {
           orderitems: {
@@ -368,14 +368,14 @@ export const confirmPayment = async (orderId, transactionId) => {
       }
     });
 
-    // Update order payment status
+    // Update order status
     await prisma.orders.update({
       where: {
         id: orderId
       },
       data: {
-        payment_status: 'paid',
-        status: 'confirmed'
+        status: 'confirmed',
+        updated_at: new Date()
       }
     });
 
@@ -429,18 +429,25 @@ export const cancelOrder = async (orderId, customerId) => {
       };
     }
 
-    // Restore product stock
+    // Restore branch inventory stock
     for (const item of order.orderitems) {
-      await prisma.products.update({
+      // Find branch inventory to restore
+      const inventory = await prisma.branchinventory.findFirst({
         where: {
-          id: item.product_id
-        },
-        data: {
-          stock: {
-            increment: item.quantity
-          }
+          product_id: item.product_id
         }
       });
+
+      if (inventory) {
+        await prisma.branchinventory.update({
+          where: { id: inventory.id },
+          data: {
+            stock: {
+              increment: item.quantity
+            }
+          }
+        });
+      }
     }
 
     // Update order status
@@ -450,7 +457,7 @@ export const cancelOrder = async (orderId, customerId) => {
       },
       data: {
         status: 'cancelled',
-        payment_status: 'refunded'
+        updated_at: new Date()
       }
     });
 

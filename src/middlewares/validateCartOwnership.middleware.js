@@ -18,7 +18,7 @@ export const validateCartOwnership = async (req, res, next) => {
     }
 
     // Admin and staff can access any cart
-    if (req.user?.role === 'admin' || req.user?.role === 'staff') {
+    if (req.user?.role_name === 'admin' || req.user?.role_name === 'staff') {
       return next();
     }
 
@@ -27,6 +27,18 @@ export const validateCartOwnership = async (req, res, next) => {
       return res.status(403).json({
         success: false,
         error: 'Tài khoản không phải là khách hàng'
+      });
+    }
+
+    // Verify customer exists in database
+    const customerExists = await prisma.customers.findUnique({
+      where: { id: Number(customerId) }
+    });
+
+    if (!customerExists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Khách hàng không tồn tại'
       });
     }
 
@@ -80,7 +92,7 @@ export const validateOrderOwnership = async (req, res, next) => {
     }
 
     // Admin and staff can access any order
-    if (req.user?.role === 'admin' || req.user?.role === 'staff') {
+    if (req.user?.role_name === 'admin' || req.user?.role_name === 'staff') {
       return next();
     }
 

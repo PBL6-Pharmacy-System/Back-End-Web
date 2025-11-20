@@ -109,7 +109,7 @@ export const register = async (data) => {
           role_id: Number(role_id)
         },
         include: {
-          role: true
+          roles: true
         }
       });
 
@@ -141,11 +141,11 @@ export const register = async (data) => {
       return tx.users.findUnique({
         where: { id: newUser.id },
         include: {
-          role: true,
-          customer: true,
+          roles: true,
+          customers: true,
           staff: {
             include: {
-              branch: true
+              branches: true
             }
           },
           admin: true
@@ -159,12 +159,12 @@ export const register = async (data) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.role.role_name
+      role_name: user.roles.role_name
     };
 
     // Add role-specific ID to token
-    if (user.customer) {
-      tokenData.customer_id = user.customer.id;
+    if (user.customers) {
+      tokenData.customer_id = user.customers.id;
     } else if (user.staff) {
       tokenData.staff_id = user.staff.id;
       tokenData.branch_id = user.staff.branch_id;
@@ -226,11 +226,11 @@ export const login = async (data) => {
         ]
       },
       include: {
-        role: true,
-        customer: true,
+        roles: true,
+        customers: true,
         staff: {
           include: {
-            branch: true
+            branches: true
           }
         },
         admin: true
@@ -268,12 +268,12 @@ export const login = async (data) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.role.role_name
+      role_name: user.roles.role_name
     };
 
     // Add role-specific ID to token
-    if (user.customer) {
-      tokenData.customer_id = user.customer.id;
+    if (user.customers) {
+      tokenData.customer_id = user.customers.id;
     } else if (user.staff) {
       tokenData.staff_id = user.staff.id;
       tokenData.branch_id = user.staff.branch_id;
@@ -317,11 +317,11 @@ export const getCurrentUser = async (userId) => {
     const user = await prisma.users.findUnique({
       where: { id: Number(userId) },
       include: {
-        role: true,
-        customer: true,
+        roles: true,
+        customers: true,
         staff: {
           include: {
-            branch: true
+            branches: true
           }
         },
         admin: true
@@ -442,8 +442,8 @@ export const refreshAccessToken = async (refreshToken) => {
     const user = await prisma.users.findUnique({
       where: { id: decoded.userId },
       include: {
-        role: true,
-        customer: true,
+        roles: true,
+        customers: true,
         staff: true,
         admin: true
       }
@@ -463,12 +463,12 @@ export const refreshAccessToken = async (refreshToken) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.role.role_name
+      role_name: user.roles.role_name
     };
 
     // Add role-specific ID
-    if (user.customer) {
-      tokenData.customer_id = user.customer.id;
+    if (user.customers) {
+      tokenData.customer_id = user.customers.id;
     } else if (user.staff) {
       tokenData.staff_id = user.staff.id;
       tokenData.branch_id = user.staff.branch_id;
@@ -543,8 +543,8 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
         phone: normalizedPhone
       },
       include: {
-        role: true,
-        customer: true
+        roles: true,
+        customers: true
       }
     });
 
@@ -575,8 +575,8 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
         return tx.users.findUnique({
           where: { id: newUser.id },
           include: {
-            role: true,
-            customer: true
+            roles: true,
+            customers: true
           }
         });
       });
@@ -605,7 +605,7 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
       phone: user.phone,
       role_id: user.role_id,
       role_name: user.role?.role_name,
-      customer_id: user.customer?.id
+      customer_id: user.customers?.id
     });
 
     const refreshToken = generateRefreshToken({
@@ -624,7 +624,7 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
 
     return {
       success: true,
-      message: user.customer ? 'Đăng nhập thành công' : 'Tài khoản mới đã được tạo',
+      message: user.customers ? 'Đăng nhập thành công' : 'Tài khoản mới đã được tạo',
       data: {
         user: userWithoutPassword,
         token,
