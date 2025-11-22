@@ -1,7 +1,7 @@
 import express from 'express';
 import * as staffController from './staffController.js';
-import { authenticateToken, authorizeRoles } from '../auth/auth.middleware.js';
-import { validateId } from '../../middlewares/validate.middleware.js';
+import { authenticateToken, authorizeRoles } from '../../auth/auth.middleware.js';
+import { validateId } from '../../../middlewares/validate.middleware.js';
 
 const router = express.Router();
 

@@ -150,11 +150,12 @@ export const checkout = async (data) => {
       };
     }
 
-    // Validate shipping address if provided
+    // Get shipping address - use provided or default
+    let address;
     if (shippingAddressId) {
-      const address = await prisma.shippingaddresses.findFirst({
+      address = await prisma.shippingaddresses.findFirst({
         where: {
-          id: shippingAddressId,
+          id: parseInt(shippingAddressId),
           customer_id: customerId
         }
       });
@@ -166,10 +167,35 @@ export const checkout = async (data) => {
           status: 400
         };
       }
+    } else {
+      // Use default address if not provided
+      address = await prisma.shippingaddresses.findFirst({
+        where: {
+          customer_id: customerId,
+          is_default: true
+        }
+      });
+
+      if (!address) {
+        // If no default, get any address
+        address = await prisma.shippingaddresses.findFirst({
+          where: {
+            customer_id: customerId
+          }
+        });
+      }
+
+      if (!address) {
+        return {
+          success: false,
+          error: 'Vui lòng thêm địa chỉ giao hàng trước khi thanh toán',
+          status: 400
+        };
+      }
     }
 
     // Get customer city ID for optimal branch selection
-    const customerCityId = await getCustomerCityId(customerId, shippingAddressId);
+    const customerCityId = await getCustomerCityId(customerId, address.id);
 
     // Prepare order items for branch selection
     const orderItemsForBranch = cart.orderitems.map(item => ({
@@ -235,7 +261,7 @@ export const checkout = async (data) => {
           discount_amount: discountAmount,
           final_amount: finalAmount,
           voucher_id: voucherResult.voucher?.id,
-          shipping_address_id: shippingAddressId,
+          shipping_address_id: address.id,
           order_date: new Date(),
           updated_at: new Date()
         },
