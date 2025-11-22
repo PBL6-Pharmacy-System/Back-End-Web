@@ -54,6 +54,23 @@ export const getProductUnitById = async (req, res) => {
   }
 };
 
+export const getProductUnitsByProduct = async (req, res) => {
+  try {
+    const result = await productUnitService.getProductUnitsByProduct(req.params.productId);
+    if (!result.success) {
+      return res.status(result.status || 500).json(result);
+    }
+    
+    res.json(result);
+  } catch (err) {
+    console.error('Error in getProductUnitsByProduct:', err);
+    res.status(500).json({ 
+      success: false,
+      error: 'Lỗi khi lấy đơn vị sản phẩm' 
+    });
+  }
+};
+
 export const createProductUnit = async (req, res) => {
   try {
     const result = await productUnitService.createProductUnit(req.body);

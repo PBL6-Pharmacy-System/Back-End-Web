@@ -166,6 +166,40 @@ export const getProductUnitById = async (id) => {
   }
 };
 
+export const getProductUnitsByProduct = async (productId) => {
+  try {
+    const units = await prisma.productunits.findMany({
+      where: { 
+        product_id: Number(productId)
+      },
+      include: {
+        products: {
+          select: {
+            id: true,
+            name: true,
+            price: true
+          }
+        }
+      },
+      orderBy: {
+        conversion_factor: 'asc'
+      }
+    });
+
+    return {
+      success: true,
+      data: units
+    };
+  } catch (error) {
+    console.error('Error in getProductUnitsByProduct service:', error);
+    return {
+      success: false,
+      status: 500,
+      error: 'Lỗi khi lấy đơn vị sản phẩm'
+    };
+  }
+};
+
 export const findProductUnitByName = async (productId, unitName) => {
   return prisma.productUnits.findFirst({
     where: {

@@ -18,4 +18,13 @@ router.post('/customers', customerController.createCustomer);
 // Admin only - Xóa customer
 router.delete('/customers/:id', authenticateToken, authorizeAdmin, validateId(), customerController.deleteCustomer);
 
+// Customer orders
+router.get('/customers/:id/orders', authenticateToken, validateId(), customerController.getCustomerOrders);
+
+// Customer stats
+router.get('/customers/:id/stats', authenticateToken, validateId(), customerController.getCustomerStats);
+
+// Customer reviews
+router.get('/customers/:id/reviews', authenticateToken, validateId(), customerController.getCustomerReviews);
+
 export default router;

@@ -1,5 +1,6 @@
 import prisma from '../../../config/db.js';
 import { updateProductSoldCount } from '../../product-management/products/bestSellersService.js';
+import { findOptimalBranchesForOrder, getCustomerCityId } from '../../../utils/branchSelection.js';
 
 /**
  * Apply voucher to order and calculate discount
@@ -167,16 +168,40 @@ export const checkout = async (data) => {
       }
     }
 
-    // Validate stock availability
-    for (const item of cart.orderitems) {
-      if (item.products.stock < item.quantity) {
-        return {
-          success: false,
-          error: `Sản phẩm "${item.products.name}" không đủ số lượng trong kho`,
-          status: 400
-        };
-      }
+    // Get customer city ID for optimal branch selection
+    const customerCityId = await getCustomerCityId(customerId, shippingAddressId);
+
+    // Prepare order items for branch selection
+    const orderItemsForBranch = cart.orderitems.map(item => ({
+      productId: item.product_id,
+      quantity: item.quantity,
+      conversionFactor: Number(item.productunits.conversion_factor)
+    }));
+
+    // Find optimal branch(es) for the order
+    let branchAllocation;
+    try {
+      branchAllocation = await findOptimalBranchesForOrder(orderItemsForBranch, customerCityId);
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message || 'Không đủ hàng trong kho',
+        status: 400
+      };
     }
+
+    // For simplicity, use single branch strategy for now
+    // If multiple branches needed, would need more complex logic
+    if (!branchAllocation.branches || branchAllocation.branches.length === 0) {
+      return {
+        success: false,
+        error: 'Không tìm thấy chi nhánh có đủ hàng',
+        status: 400
+      };
+    }
+
+    const primaryBranch = branchAllocation.branches[0];
+    const branchId = primaryBranch.branch.id;
 
     // Calculate total amount
     const totalAmount = cart.orderitems.reduce((sum, item) => {
@@ -261,27 +286,56 @@ export const checkout = async (data) => {
         });
       }
 
-      // Update product stock (decrement)
+      // Update branch inventory stock (decrement)
       for (const item of cart.orderitems) {
-        const updatedProduct = await tx.products.update({
+        // Calculate base quantity needed
+        const conversionFactor = Number(item.productunits.conversion_factor);
+        const baseQuantityNeeded = item.quantity * conversionFactor;
+        
+        // Update branch inventory
+        const updatedInventory = await tx.branchinventory.updateMany({
           where: {
-            id: item.product_id
+            branch_id: branchId,
+            product_id: item.product_id,
+            stock: {
+              gte: baseQuantityNeeded
+            }
           },
           data: {
             stock: {
-              decrement: item.quantity
-            }
-          },
-          select: {
-            id: true,
-            stock: true
+              decrement: baseQuantityNeeded
+            },
+            last_updated: new Date()
           }
         });
 
-        // Double-check stock didn't go negative (race condition protection)
-        if (updatedProduct.stock < 0) {
-          throw new Error(`Sản phẩm "${item.products.name}" không đủ số lượng trong kho`);
+        // Check if update was successful
+        if (updatedInventory.count === 0) {
+          throw new Error(`Sản phẩm "${item.products.name}" không đủ số lượng trong kho chi nhánh`);
         }
+
+        // Create inventory log
+        const inventoryLog = await tx.inventoryLog.create({
+          data: {
+            branch_id: branchId,
+            product_id: item.product_id,
+            unit_id: item.unit_id,
+            quantity: -baseQuantityNeeded,
+            type: 'OUT',
+            reference_type: 'order',
+            reference_id: cart.id,
+            note: `Xuất kho cho đơn hàng #${cart.id}`,
+            date: new Date()
+          }
+        });
+
+        // Create junction table entry
+        await tx.inventoryLog_Order.create({
+          data: {
+            inventory_log_id: inventoryLog.id,
+            order_id: cart.id
+          }
+        });
 
         // Don't increment sold_count yet - only after payment confirmation
       }
@@ -344,7 +398,12 @@ export const confirmPayment = async (orderId, transactionId) => {
         id: orderId
       },
       include: {
-        orderitems: true
+        orderitems: {
+          include: {
+            products: true,
+            productunits: true
+          }
+        }
       }
     });
 
@@ -356,33 +415,62 @@ export const confirmPayment = async (orderId, transactionId) => {
       };
     }
 
-    // Update payment status
-    await prisma.payments.updateMany({
-      where: {
-        order_id: orderId,
-        transaction_id: transactionId
-      },
-      data: {
-        status: 'completed',
-        payment_date: new Date()
-      }
-    });
-
-    // Update order status
-    await prisma.orders.update({
-      where: {
-        id: orderId
-      },
-      data: {
-        status: 'confirmed',
-        updated_at: new Date()
-      }
-    });
-
-    // Update sold count for products (real-time best sellers update)
-    for (const item of order.orderitems) {
-      await updateProductSoldCount(item.product_id, item.quantity);
+    if (order.status !== 'pending') {
+      return {
+        success: false,
+        error: 'Đơn hàng không ở trạng thái chờ xác nhận',
+        status: 400
+      };
     }
+
+    await prisma.$transaction(async (tx) => {
+      // Update payment status
+      await tx.payments.updateMany({
+        where: {
+          order_id: orderId,
+          transaction_id: transactionId
+        },
+        data: {
+          status: 'completed',
+          payment_date: new Date()
+        }
+      });
+
+      // Update order status
+      await tx.orders.update({
+        where: {
+          id: orderId
+        },
+        data: {
+          status: 'confirmed',
+          updated_at: new Date()
+        }
+      });
+
+      // Create order status history
+      await tx.order_status_history.create({
+        data: {
+          order_id: orderId,
+          status: 'confirmed',
+          changed_at: new Date()
+        }
+      });
+
+      // Update sold count for products (real-time best sellers update)
+      for (const item of order.orderitems) {
+        await updateProductSoldCount(item.product_id, item.quantity);
+        
+        // Update product sold_count
+        await tx.products.update({
+          where: { id: item.product_id },
+          data: {
+            sold_count: {
+              increment: item.quantity
+            }
+          }
+        });
+      }
+    });
 
     return {
       success: true,
@@ -409,7 +497,12 @@ export const cancelOrder = async (orderId, customerId) => {
         customer_id: customerId
       },
       include: {
-        orderitems: true
+        orderitems: {
+          include: {
+            products: true,
+            productunits: true
+          }
+        }
       }
     });
 
@@ -421,44 +514,100 @@ export const cancelOrder = async (orderId, customerId) => {
       };
     }
 
-    if (order.status === 'delivered' || order.status === 'shipped') {
+    if (order.status === 'delivered' || order.status === 'shipping' || order.status === 'cancelled') {
       return {
         success: false,
-        error: 'Không thể hủy đơn hàng đã giao',
+        error: 'Không thể hủy đơn hàng ở trạng thái này',
         status: 400
       };
     }
 
-    // Restore branch inventory stock
-    for (const item of order.orderitems) {
-      // Find branch inventory to restore
-      const inventory = await prisma.branchinventory.findFirst({
+    await prisma.$transaction(async (tx) => {
+      // Restore branch inventory stock
+      for (const item of order.orderitems) {
+        // Calculate base quantity to restore
+        const conversionFactor = Number(item.productunits.conversion_factor);
+        const baseQuantityToRestore = item.quantity * conversionFactor;
+        
+        // Find branch inventory to restore (from inventory logs)
+        const inventoryLog = await tx.inventoryLog.findFirst({
+          where: {
+            reference_type: 'order',
+            reference_id: orderId,
+            product_id: item.product_id,
+            type: 'EXPORT'
+          }
+        });
+
+        if (inventoryLog) {
+          // Restore to the same branch
+          await tx.branchinventory.updateMany({
+            where: {
+              branch_id: inventoryLog.branch_id,
+              product_id: item.product_id
+            },
+            data: {
+              stock: {
+                increment: baseQuantityToRestore
+              },
+              last_updated: new Date()
+            }
+          });
+
+          // Create inventory log for restoration
+          const returnLog = await tx.inventoryLog.create({
+            data: {
+              branch_id: inventoryLog.branch_id,
+              product_id: item.product_id,
+              unit_id: item.unit_id,
+              quantity: baseQuantityToRestore,
+              type: 'IN',
+              reference_type: 'order_cancel',
+              reference_id: orderId,
+              note: `Hoàn kho do hủy đơn hàng #${orderId}`,
+              date: new Date()
+            }
+          });
+
+          // Create junction table entry
+          await tx.inventoryLog_Order.create({
+            data: {
+              inventory_log_id: returnLog.id,
+              order_id: orderId
+            }
+          });
+        }
+        
+        // Decrease sold_count if order was confirmed
+        if (order.status === 'confirmed' || order.status === 'delivered') {
+          await tx.products.update({
+            where: { id: item.product_id },
+            data: {
+              sold_count: { decrement: item.quantity }
+            }
+          });
+        }
+      }
+
+      // Update order status
+      await tx.orders.update({
         where: {
-          product_id: item.product_id
+          id: orderId
+        },
+        data: {
+          status: 'cancelled',
+          updated_at: new Date()
         }
       });
 
-      if (inventory) {
-        await prisma.branchinventory.update({
-          where: { id: inventory.id },
-          data: {
-            stock: {
-              increment: item.quantity
-            }
-          }
-        });
-      }
-    }
-
-    // Update order status
-    await prisma.orders.update({
-      where: {
-        id: orderId
-      },
-      data: {
-        status: 'cancelled',
-        updated_at: new Date()
-      }
+      // Create order status history
+      await tx.order_status_history.create({
+        data: {
+          order_id: orderId,
+          status: 'cancelled',
+          changed_at: new Date()
+        }
+      });
     });
 
     return {

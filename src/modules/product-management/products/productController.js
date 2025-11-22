@@ -86,10 +86,11 @@ export const deleteProduct = async (req, res) => {
 
 export const searchProducts = async (req, res) => {
   try {
-    const { q: keyword, page = 1, limit = 10 } = req.query;
+    const { q, keyword, page = 1, limit = 10 } = req.query;
+    const searchKeyword = q || keyword;
 
     const result = await productService.searchProducts({
-      keyword,
+      keyword: searchKeyword,
       page: parseInt(page),
       limit: parseInt(limit)
     });

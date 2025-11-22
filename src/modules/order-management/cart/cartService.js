@@ -1,6 +1,7 @@
 import prisma from '../../../config/db.js';
 import { ORDER_STATUS, CART_LIMITS } from '../../../utils/constants.js';
 import { validateNumericFields } from '../../../utils/validation.js';
+import { findOptimalBranchesForOrder, getCustomerLocation } from '../../../utils/branchSelection.js';
 
 const validateOrderItem = (item) => {
   // Required fields
@@ -65,19 +66,40 @@ const validateStockAvailability = async (items) => {
       };
     }
 
+    // Calculate base quantity needed using conversion factor
+    const conversionFactor = Number(productUnit.conversion_factor);
+    const baseQuantityNeeded = Number(quantity) * conversionFactor;
+
     // Check stock if branchId is provided
     if (branchId) {
-      const stock = await prisma.branchInventory.findFirst({
+      const stock = await prisma.branchinventory.findFirst({
         where: {
           branch_id: Number(branchId),
           product_id: Number(productId)
         }
       });
 
-      if (!stock || stock.quantity < quantity) {
+      if (!stock || stock.stock < baseQuantityNeeded) {
         return {
           isValid: false,
-          error: `Sản phẩm ${product.name} không đủ số lượng trong kho`
+          error: `Sản phẩm ${product.name} không đủ số lượng trong kho (cần ${baseQuantityNeeded} đơn vị, còn ${stock?.stock || 0})`
+        };
+      }
+    } else {
+      // Check if product is available in any branch
+      const availableBranch = await prisma.branchinventory.findFirst({
+        where: {
+          product_id: Number(productId),
+          stock: {
+            gte: baseQuantityNeeded
+          }
+        }
+      });
+
+      if (!availableBranch) {
+        return {
+          isValid: false,
+          error: `Sản phẩm ${product.name} không đủ số lượng trong kho (cần ${baseQuantityNeeded} đơn vị)`
         };
       }
     }
@@ -99,7 +121,7 @@ const getFlashsalePrice = async (productId) => {
         status: 'active'
       },
       include: {
-        products: {
+        flashsale_products: {
           where: {
             product_id: productId
           }
@@ -107,11 +129,11 @@ const getFlashsalePrice = async (productId) => {
       }
     });
 
-    if (!flashsale || !flashsale.products.length) {
+    if (!flashsale || !flashsale.flashsale_products.length) {
       return null;
     }
 
-    const flashsaleProduct = flashsale.products[0];
+    const flashsaleProduct = flashsale.flashsale_products[0];
     
     // Kiểm tra còn hàng flashsale không
     if (flashsaleProduct.sold_count >= flashsaleProduct.stock_limit) {
@@ -232,7 +254,7 @@ export const getCart = async (customerId) => {
 
 export const addToCart = async (customerId, orderData) => {
   try {
-    const { productId, productUnitId, quantity, unitPrice } = orderData;
+    const { productId, productUnitId, quantity, unitPrice, branchId } = orderData;
 
     // Validate order item (without unitPrice since we'll get it from DB)
     const validation = validateOrderItem({
@@ -304,11 +326,42 @@ export const addToCart = async (customerId, orderData) => {
       }
     }
 
-    // Check stock availability
+    // Check branch inventory if branchId is provided
+    if (branchId) {
+      const branchInventory = await prisma.branchinventory.findFirst({
+        where: {
+          branch_id: Number(branchId),
+          product_id: Number(productId)
+        }
+      });
+
+      if (!branchInventory) {
+        return {
+          success: false,
+          status: 404,
+          error: 'Sản phẩm không có sẵn tại chi nhánh này'
+        };
+      }
+
+      // Calculate total quantity needed (convert unit to base unit using conversion_factor)
+      const conversionFactor = Number(productUnit.conversion_factor);
+      const baseQuantityNeeded = Number(quantity) * conversionFactor;
+
+      if (branchInventory.stock < baseQuantityNeeded) {
+        return {
+          success: false,
+          status: 400,
+          error: `Sản phẩm không đủ số lượng tại chi nhánh (còn ${branchInventory.stock} ${product.base_unit_id ? 'đơn vị cơ bản' : ''})`
+        };
+      }
+    }
+
+    // Check stock availability (general stock check)
     const stockValidation = await validateStockAvailability([{
       productId,
       productUnitId,
-      quantity
+      quantity,
+      branchId
     }]);
 
     if (!stockValidation.isValid) {
@@ -492,12 +545,25 @@ export const updateCartItem = async (itemId, quantity) => {
       };
     }
 
-    // Check stock availability
-    if (currentItem.products.stock < Number(quantity)) {
+    // Check stock availability from branch inventory
+    const conversionFactor = Number(currentItem.productunits.conversion_factor);
+    const baseQuantityNeeded = Number(quantity) * conversionFactor;
+    
+    // Check if product is available in any branch
+    const availableBranch = await prisma.branchinventory.findFirst({
+      where: {
+        product_id: currentItem.product_id,
+        stock: {
+          gte: baseQuantityNeeded
+        }
+      }
+    });
+
+    if (!availableBranch) {
       return {
         success: false,
         status: 400,
-        error: `Sản phẩm "${currentItem.products.name}" không đủ số lượng trong kho (còn ${currentItem.products.stock})`
+        error: `Sản phẩm "${currentItem.products.name}" không đủ số lượng trong kho (cần ${baseQuantityNeeded} đơn vị cơ bản)`
       };
     }
 
@@ -553,9 +619,25 @@ export const updateCartItem = async (itemId, quantity) => {
   }
 };
 
-export const removeCartItem = async (itemId) => {
+export const removeCartItem = async (customerId, itemId) => {
   try {
-    // Get current item
+    // Get customer's cart first
+    const cart = await prisma.orders.findFirst({
+      where: {
+        customer_id: Number(customerId),
+        status: ORDER_STATUS.CART
+      }
+    });
+
+    if (!cart) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy giỏ hàng'
+      };
+    }
+
+    // Get item and verify it belongs to this cart
     const currentItem = await prisma.orderitems.findUnique({
       where: { id: Number(itemId) },
       include: { orders: true }
@@ -566,6 +648,15 @@ export const removeCartItem = async (itemId) => {
         success: false,
         status: 404,
         error: 'Không tìm thấy sản phẩm trong giỏ hàng'
+      };
+    }
+
+    // Verify item belongs to customer's cart
+    if (currentItem.order_id !== cart.id) {
+      return {
+        success: false,
+        status: 403,
+        error: 'Sản phẩm không thuộc giỏ hàng của bạn'
       };
     }
 
@@ -588,7 +679,8 @@ export const removeCartItem = async (itemId) => {
         where: { id: currentItem.order_id },
         data: {
           total_amount: { decrement: subtotal },
-          final_amount: { decrement: subtotal }
+          final_amount: { decrement: subtotal },
+          updated_at: new Date()
         }
       })
     ]);
@@ -608,10 +700,10 @@ export const checkout = async (orderId) => {
     const order = await prisma.orders.findUnique({
       where: { id: Number(orderId) },
       include: {
-        orderItems: {
+        orderitems: {
           include: {
-            product: true,
-            productUnit: true
+            products: true,
+            productunits: true
           }
         }
       }
@@ -633,7 +725,7 @@ export const checkout = async (orderId) => {
       };
     }
 
-    if (order.orderItems.length === 0) {
+    if (order.orderitems.length === 0) {
       return {
         success: false,
         status: 400,
@@ -641,44 +733,123 @@ export const checkout = async (orderId) => {
       };
     }
 
-    // Check stock availability
-    const stockValidation = await validateStockAvailability(
-      order.orderItems.map(item => ({
-        productId: item.product_id,
-        productUnitId: item.product_unit_id,
-        quantity: item.quantity
-      }))
-    );
+    // Get customer location for branch selection
+    const customerLocation = await getCustomerLocation(order.customer_id);
 
-    if (!stockValidation.isValid) {
+    // Prepare order items for branch selection
+    const orderItemsForBranch = order.orderitems.map(item => ({
+      productId: item.product_id,
+      quantity: item.quantity,
+      conversionFactor: Number(item.productunits.conversion_factor)
+    }));
+
+    // Find optimal branches to fulfill the order
+    let branchAllocation;
+    try {
+      branchAllocation = await findOptimalBranchesForOrder(orderItemsForBranch, customerLocation);
+    } catch (error) {
       return {
         success: false,
         status: 400,
-        error: stockValidation.error
+        error: error.message
       };
     }
 
-    // Process checkout
-    const updatedOrder = await prisma.orders.update({
-      where: { id: Number(orderId) },
-      data: {
-        status: ORDER_STATUS.PENDING,
-        checkout_date: new Date()
-      },
-      include: {
-        orderItems: {
-          include: {
-            product: true,
-            productUnit: true
-          }
+    // Process checkout in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Update order status
+      const updatedOrder = await tx.orders.update({
+        where: { id: Number(orderId) },
+        data: {
+          status: ORDER_STATUS.PENDING,
+          updated_at: new Date()
         },
-        user: true
+        include: {
+          orderitems: {
+            include: {
+              products: true,
+              productunits: true
+            }
+          },
+          customers: true
+        }
+      });
+
+      // Reserve inventory from allocated branches
+      for (const branchAlloc of branchAllocation.branches) {
+        for (const item of branchAlloc.items) {
+          const requiredQty = Number(item.quantity) * Number(item.conversionFactor);
+          
+          await tx.branchinventory.update({
+            where: {
+              branch_id_product_id: {
+                branch_id: branchAlloc.branch.id,
+                product_id: Number(item.productId)
+              }
+            },
+            data: {
+              stock: {
+                decrement: requiredQty
+              }
+            }
+          });
+
+          // Log inventory decrease
+          const inventoryLogEntry = await tx.inventoryLog.create({
+            data: {
+              branch_id: branchAlloc.branch.id,
+              product_id: Number(item.productId),
+              quantity: -requiredQty,
+              type: 'sale',
+              note: 'Checkout order',
+              reference_id: orderId,
+              reference_type: 'order',
+              created_by: order.customer_id
+            }
+          });
+
+          // Create junction table entry
+          await tx.inventoryLog_Order.create({
+            data: {
+              inventory_log_id: inventoryLogEntry.id,
+              order_id: orderId
+            }
+          });
+        }
+
+        // Create shipment record for this branch
+        await tx.shipments.create({
+          data: {
+            order_id: updatedOrder.id,
+            branch_id: branchAlloc.branch.id,
+            tracking_number: `SHIP-${Date.now()}-${branchAlloc.branch.id}`,
+            status: 'pending',
+            shipped_date: null,
+            estimated_delivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+          }
+        });
       }
+
+      return {
+        order: updatedOrder,
+        branchAllocation
+      };
     });
 
     return {
       success: true,
-      data: updatedOrder
+      data: {
+        ...result.order,
+        fulfillment: {
+          strategy: result.branchAllocation.strategy,
+          branches: result.branchAllocation.branches.map(b => ({
+            branchId: b.branch.id,
+            branchName: b.branch.name,
+            distance: b.distance ? `${b.distance.toFixed(2)} km` : 'N/A',
+            items: b.items.length
+          }))
+        }
+      }
     };
   } catch (error) {
     throw error;
@@ -721,35 +892,41 @@ export const createOrder = async (customerId, orderData) => {
     const totals = await calculateOrderTotals(items);
 
     // Create order and items in transaction
-    const order = await prisma.$transaction(async (prisma) => {
+    const order = await prisma.$transaction(async (tx) => {
       // Create order
-      const newOrder = await prisma.orders.create({
+      const newOrder = await tx.orders.create({
         data: {
-          user_id: Number(customerId),
-          branch_id: Number(branchId),
+          customer_id: Number(customerId),
           voucher_id: voucherId ? Number(voucherId) : undefined,
           status: ORDER_STATUS.PENDING,
           order_date: new Date(),
-          total_quantity: totals.totalQuantity,
-          total_amount: totals.totalAmount
+          total_amount: totals.totalAmount,
+          final_amount: totals.totalAmount
         }
       });
 
       // Create order items
-      await prisma.orderItems.createMany({
+      await tx.orderitems.createMany({
         data: items.map(item => ({
           order_id: newOrder.id,
           product_id: Number(item.productId),
-          product_unit_id: Number(item.productUnitId),
+          unit_id: Number(item.productUnitId),
           quantity: Number(item.quantity),
-          unit_price: Number(item.unitPrice),
-          base_qty_total: Number(item.quantity)
+          price: Number(item.unitPrice),
+          subtotal: Number(item.quantity) * Number(item.unitPrice)
         }))
       });
 
-      // Update branch inventory
+      // Update branch inventory - use conversion factor
       for (const item of items) {
-        await prisma.branchInventory.update({
+        const productUnit = await tx.productunits.findUnique({
+          where: { id: Number(item.productUnitId) }
+        });
+        
+        const conversionFactor = Number(productUnit.conversion_factor);
+        const baseQuantity = Number(item.quantity) * conversionFactor;
+        
+        await tx.branchinventory.update({
           where: {
             branch_id_product_id: {
               branch_id: Number(branchId),
@@ -757,7 +934,7 @@ export const createOrder = async (customerId, orderData) => {
             }
           },
           data: {
-            quantity: { decrement: Number(item.quantity) }
+            stock: { decrement: baseQuantity }
           }
         });
       }
@@ -769,15 +946,14 @@ export const createOrder = async (customerId, orderData) => {
     const completeOrder = await prisma.orders.findUnique({
       where: { id: order.id },
       include: {
-        orderItems: {
+        orderitems: {
           include: {
-            product: true,
-            productUnit: true
+            products: true,
+            productunits: true
           }
         },
-        user: true,
-        branch: true,
-        voucher: true
+        customers: true,
+        vouchers: true
       }
     });
 
@@ -865,8 +1041,7 @@ export const getCartSummary = async (customerId) => {
                 id: true,
                 name: true,
                 price: true,
-                image_url: true,
-                stock: true
+                image_url: true
               }
             },
             productunits: {
@@ -900,7 +1075,7 @@ export const getCartSummary = async (customerId) => {
     let itemCount = 0;
 
     const items = await Promise.all(cart.orderitems.map(async (item) => {
-      const itemTotal = Number(item.unit_price) * item.quantity;
+      const itemTotal = Number(item.price) * item.quantity;
       subtotal += itemTotal;
       itemCount += item.quantity;
 
@@ -911,10 +1086,10 @@ export const getCartSummary = async (customerId) => {
 
       return {
         id: item.id,
-        product: item.product,
-        productUnit: item.productUnit,
+        product: item.products,
+        productUnit: item.productunits,
         quantity: item.quantity,
-        unitPrice: Number(item.unit_price),
+        unitPrice: Number(item.price),
         subtotal: itemTotal,
         hasFlashsale,
         flashPrice
@@ -1068,15 +1243,14 @@ export const mergeGuestCart = async (guestCartId, customerId) => {
     // Get guest cart
     const guestCart = await prisma.orders.findUnique({
       where: {
-        id: Number(guestCartId),
-        status: ORDER_STATUS.CART
+        id: Number(guestCartId)
       },
       include: {
-        orderItems: true
+        orderitems: true
       }
     });
 
-    if (!guestCart) {
+    if (!guestCart || guestCart.status !== ORDER_STATUS.CART) {
       return {
         success: false,
         status: 404,
@@ -1087,7 +1261,7 @@ export const mergeGuestCart = async (guestCartId, customerId) => {
     // Get or create customer cart
     let customerCart = await prisma.orders.findFirst({
       where: {
-        user_id: Number(customerId),
+        customer_id: Number(customerId),
         status: ORDER_STATUS.CART
       }
     });
@@ -1095,58 +1269,61 @@ export const mergeGuestCart = async (guestCartId, customerId) => {
     if (!customerCart) {
       customerCart = await prisma.orders.create({
         data: {
-          user_id: Number(customerId),
+          customer_id: Number(customerId),
           status: ORDER_STATUS.CART,
           order_date: new Date(),
           total_amount: 0,
-          total_quantity: 0
+          final_amount: 0
         }
       });
     }
 
     // Merge items
-    for (const guestItem of guestCart.orderItems) {
-      await prisma.orderItems.upsert({
+    for (const guestItem of guestCart.orderitems) {
+      const existingItem = await prisma.orderitems.findFirst({
         where: {
-          order_id_product_id_product_unit_id: {
-            order_id: customerCart.id,
-            product_id: guestItem.product_id,
-            product_unit_id: guestItem.product_unit_id
-          }
-        },
-        update: {
-          quantity: { increment: guestItem.quantity },
-          base_qty_total: { increment: guestItem.quantity }
-        },
-        create: {
           order_id: customerCart.id,
           product_id: guestItem.product_id,
-          product_unit_id: guestItem.product_unit_id,
-          quantity: guestItem.quantity,
-          unit_price: guestItem.unit_price,
-          base_qty_total: guestItem.quantity
+          unit_id: guestItem.unit_id
         }
       });
+
+      if (existingItem) {
+        await prisma.orderitems.update({
+          where: { id: existingItem.id },
+          data: {
+            quantity: { increment: guestItem.quantity },
+            subtotal: { increment: guestItem.subtotal }
+          }
+        });
+      } else {
+        await prisma.orderitems.create({
+          data: {
+            order_id: customerCart.id,
+            product_id: guestItem.product_id,
+            unit_id: guestItem.unit_id,
+            quantity: guestItem.quantity,
+            price: guestItem.price,
+            subtotal: guestItem.subtotal
+          }
+        });
+      }
     }
 
     // Recalculate customer cart totals
-    const items = await prisma.orderItems.findMany({
+    const items = await prisma.orderitems.findMany({
       where: { order_id: customerCart.id }
     });
 
     const total = items.reduce((sum, item) =>
-      sum + (Number(item.unit_price) * item.quantity), 0
-    );
-
-    const totalQuantity = items.reduce((sum, item) =>
-      sum + item.quantity, 0
+      sum + Number(item.subtotal), 0
     );
 
     await prisma.orders.update({
       where: { id: customerCart.id },
       data: {
         total_amount: total,
-        total_quantity: totalQuantity
+        final_amount: total
       }
     });
 
@@ -1173,14 +1350,14 @@ export const validateCartBeforeCheckout = async (customerId) => {
     // Get cart
     const cart = await prisma.orders.findFirst({
       where: {
-        user_id: Number(customerId),
+        customer_id: Number(customerId),
         status: ORDER_STATUS.CART
       },
       include: {
-        orderItems: {
+        orderitems: {
           include: {
-            product: true,
-            productUnit: true
+            products: true,
+            productunits: true
           }
         }
       }
@@ -1194,7 +1371,7 @@ export const validateCartBeforeCheckout = async (customerId) => {
       };
     }
 
-    if (!cart.orderItems || cart.orderItems.length === 0) {
+    if (!cart.orderitems || cart.orderitems.length === 0) {
       return {
         success: false,
         status: 400,
@@ -1206,29 +1383,41 @@ export const validateCartBeforeCheckout = async (customerId) => {
     const warnings = [];
 
     // Validate each item
-    for (const item of cart.orderItems) {
+    for (const item of cart.orderitems) {
       // Check if product still exists and is active
-      if (!item.product) {
+      if (!item.products) {
         errors.push(`Sản phẩm ID ${item.product_id} không còn tồn tại`);
         continue;
       }
 
-      // Check stock availability
-      if (item.product.stock < item.quantity) {
-        errors.push(`Sản phẩm "${item.product.name}" không đủ số lượng trong kho (còn ${item.product.stock})`);
+      // Check stock availability from branch inventory
+      const conversionFactor = Number(item.productunits.conversion_factor);
+      const baseQuantityNeeded = item.quantity * conversionFactor;
+      
+      const availableBranch = await prisma.branchinventory.findFirst({
+        where: {
+          product_id: item.product_id,
+          stock: {
+            gte: baseQuantityNeeded
+          }
+        }
+      });
+
+      if (!availableBranch) {
+        errors.push(`Sản phẩm "${item.products.name}" không đủ số lượng trong kho (cần ${baseQuantityNeeded} đơn vị cơ bản)`);
       }
 
       // Check if price has changed
-      const currentPrice = Number(item.productUnit.price);
-      const cartPrice = Number(item.unit_price);
+      const currentPrice = Number(item.productunits.price);
+      const cartPrice = Number(item.price);
 
       if (currentPrice !== cartPrice) {
         warnings.push({
           productId: item.product_id,
-          productName: item.product.name,
+          productName: item.products.name,
           oldPrice: cartPrice,
           newPrice: currentPrice,
-          message: `Giá sản phẩm "${item.product.name}" đã thay đổi từ ${cartPrice} VNĐ thành ${currentPrice} VNĐ`
+          message: `Giá sản phẩm "${item.products.name}" đã thay đổi từ ${cartPrice} VNĐ thành ${currentPrice} VNĐ`
         });
       }
     }

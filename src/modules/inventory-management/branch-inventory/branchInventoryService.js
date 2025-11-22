@@ -194,11 +194,11 @@ export const createBranchInventory = async (data) => {
         last_updated: new Date()
       },
       include: {
-        branch: true,
-        product: {
+        branches: true,
+        products: {
           include: {
-            baseUnit: true,
-            productUnits: true
+            unittype: true,
+            productunits: true
           }
         }
       }
@@ -217,7 +217,7 @@ export const createBranchInventory = async (data) => {
 export const updateBranchInventory = async (id, data) => {
   try {
     // Check if inventory exists
-    const existingInventory = await prisma.branchInventory.findUnique({
+    const existingInventory = await prisma.branchinventory.findUnique({
       where: { id: Number(id) }
     });
 
@@ -249,20 +249,20 @@ export const updateBranchInventory = async (id, data) => {
       }
     }
 
-    const inventory = await prisma.branchInventory.update({
+    const inventory = await prisma.branchinventory.update({
       where: { id: Number(id) },
       data: {
-        stock: data.stock ? Number(data.stock) : undefined,
-        min_stock: data.min_stock ? Number(data.min_stock) : undefined,
-        max_stock: data.max_stock ? Number(data.max_stock) : undefined,
+        stock: data.stock !== undefined ? Number(data.stock) : undefined,
+        min_stock: data.min_stock !== undefined ? Number(data.min_stock) : undefined,
+        max_stock: data.max_stock !== undefined ? Number(data.max_stock) : undefined,
         last_updated: new Date()
       },
       include: {
-        branch: true,
-        product: {
+        branches: true,
+        products: {
           include: {
-            baseUnit: true,
-            productUnits: true
+            unittype: true,
+            productunits: true
           }
         }
       }
@@ -281,7 +281,7 @@ export const updateBranchInventory = async (id, data) => {
 export const deleteBranchInventory = async (id) => {
   try {
     // Check if inventory exists
-    const inventory = await prisma.branchInventory.findUnique({
+    const inventory = await prisma.branchinventory.findUnique({
       where: { id: Number(id) }
     });
 
@@ -309,14 +309,14 @@ export const deleteBranchInventory = async (id) => {
       };
     }
 
-    const deleted = await prisma.branchInventory.delete({
+    const deleted = await prisma.branchinventory.delete({
       where: { id: Number(id) },
       include: {
-        branch: true,
-        product: {
+        branches: true,
+        products: {
           include: {
-            baseUnit: true,
-            productUnits: true
+            unittype: true,
+            productunits: true
           }
         }
       }
@@ -384,16 +384,16 @@ export const importToBranchInventory = async (data) => {
     }
 
     // Get current inventory
-    const inventory = await prisma.branchInventory.findFirst({
+    const inventory = await prisma.branchinventory.findFirst({
       where: {
         branch_id: Number(branch_id),
         product_id: Number(product_id)
       },
       include: {
-        product: {
+        products: {
           include: {
-            baseUnit: true,
-            productUnits: true
+            unittype: true,
+            productunits: true
           }
         }
       }
@@ -411,56 +411,61 @@ export const importToBranchInventory = async (data) => {
       }
     }
 
-    // Create inventory log
-    await prisma.inventoryLog.create({
-      data: {
-        branch_id: Number(branch_id),
-        product_id: Number(product_id),
-        quantity: Number(quantity),
-        type: 'IMPORT',
-        unit_id: unit_id ? Number(unit_id) : undefined,
-        date: new Date(),
-        note: note || 'Nhập kho'
-      }
-    });
+    // Use transaction to ensure atomicity
+    const updatedInventory = await prisma.$transaction(async (tx) => {
+      // Create inventory log
+      await tx.inventoryLog.create({
+        data: {
+          branch_id: Number(branch_id),
+          product_id: Number(product_id),
+          quantity: Number(quantity),
+          type: 'IMPORT',
+          unit_id: unit_id ? Number(unit_id) : undefined,
+          date: new Date(),
+          note: note || 'Nhập kho'
+        }
+      });
 
-    // Update or create inventory
-    const updatedInventory = inventory 
-      ? await prisma.branchInventory.update({
-          where: { id: inventory.id },
-          data: {
-            stock: {
-              increment: Number(quantity)
+      // Update or create inventory
+      const result = inventory
+        ? await tx.branchinventory.update({
+            where: { id: inventory.id },
+            data: {
+              stock: {
+                increment: Number(quantity)
+              },
+              last_updated: new Date()
             },
-            last_updated: new Date()
-          },
-          include: {
-            branch: true,
-            product: {
-              include: {
-                baseUnit: true,
-                productUnits: true
+            include: {
+              branches: true,
+              products: {
+                include: {
+                  unittype: true,
+                  productunits: true
+                }
               }
             }
-          }
-        })
-      : await prisma.branchInventory.create({
-          data: {
-            branch_id: Number(branch_id),
-            product_id: Number(product_id),
-            stock: Number(quantity),
-            last_updated: new Date()
-          },
-          include: {
-            branch: true,
-            product: {
-              include: {
-                baseUnit: true,
-                productUnits: true
+          })
+        : await tx.branchinventory.create({
+            data: {
+              branch_id: Number(branch_id),
+              product_id: Number(product_id),
+              stock: Number(quantity),
+              last_updated: new Date()
+            },
+            include: {
+              branches: true,
+              products: {
+                include: {
+                  unittype: true,
+                  productunits: true
+                }
               }
             }
-          }
-        });
+          });
+      
+      return result;
+    });
 
     return {
       success: true,
@@ -497,7 +502,7 @@ export const exportFromBranchInventory = async (data) => {
     }
 
     // Get current inventory
-    const inventory = await prisma.branchInventory.findFirst({
+    const inventory = await prisma.branchinventory.findFirst({
       where: {
         branch_id: Number(branch_id),
         product_id: Number(product_id)
@@ -524,37 +529,42 @@ export const exportFromBranchInventory = async (data) => {
       }
     }
 
-    // Create inventory log
-    await prisma.inventoryLog.create({
-      data: {
-        branch_id: Number(branch_id),
-        product_id: Number(product_id),
-        quantity: Number(quantity),
-        type: 'EXPORT',
-        unit_id: unit_id ? Number(unit_id) : undefined,
-        date: new Date(),
-        note: note || 'Xuất kho'
-      }
-    });
+    // Use transaction to ensure atomicity
+    const updatedInventory = await prisma.$transaction(async (tx) => {
+      // Create inventory log
+      await tx.inventoryLog.create({
+        data: {
+          branch_id: Number(branch_id),
+          product_id: Number(product_id),
+          quantity: Number(quantity),
+          type: 'EXPORT',
+          unit_id: unit_id ? Number(unit_id) : undefined,
+          date: new Date(),
+          note: note || 'Xuất kho'
+        }
+      });
 
-    // Update inventory
-    const updatedInventory = await prisma.branchInventory.update({
-      where: { id: inventory.id },
-      data: {
-        stock: {
-          decrement: Number(quantity)
+      // Update inventory
+      const result = await tx.branchinventory.update({
+        where: { id: inventory.id },
+        data: {
+          stock: {
+            decrement: Number(quantity)
+          },
+          last_updated: new Date()
         },
-        last_updated: new Date()
-      },
-      include: {
-        branch: true,
-        product: {
-          include: {
-            baseUnit: true,
-            productUnits: true
+        include: {
+          branches: true,
+          products: {
+            include: {
+              unittype: true,
+              productunits: true
+            }
           }
         }
-      }
+      });
+      
+      return result;
     });
 
     return {
@@ -577,16 +587,16 @@ export const getBranchProductStock = async (branchId, productId) => {
       };
     }
 
-    const inventory = await prisma.branchInventory.findFirst({
+    const inventory = await prisma.branchinventory.findFirst({
       where: {
         branch_id: Number(branchId),
         product_id: Number(productId)
       },
       include: {
-        product: {
+        products: {
           include: {
-            baseUnit: true,
-            productUnits: true
+            unittype: true,
+            productunits: true
           }
         }
       }
@@ -615,19 +625,24 @@ export const getLowStockProducts = async (branchId) => {
       };
     }
 
-    const products = await prisma.branchInventory.findMany({
+    const products = await prisma.branchinventory.findMany({
       where: {
         branch_id: Number(branchId),
-        stock: {
-          lte: prisma.branchInventory.fields.min_stock
-        }
+        AND: [
+          { min_stock: { not: null } },
+          {
+            OR: [
+              { stock: { lte: prisma.sql`min_stock` } },
+            ]
+          }
+        ]
       },
       include: {
-        branch: true,
-        product: {
+        branches: true,
+        products: {
           include: {
-            baseUnit: true,
-            productUnits: true
+            unittype: true,
+            productunits: true
           }
         }
       },
@@ -681,9 +696,16 @@ export const getInventoryLogs = async ({
       prisma.inventoryLog.findMany({
         where,
         include: {
-          branch: true,
-          product: true,
-          unit: true
+          branches: true,
+          products: true,
+          productunits: true,
+          users: {
+            select: {
+              id: true,
+              username: true,
+              full_name: true
+            }
+          }
         },
         orderBy: {
           date: 'desc'

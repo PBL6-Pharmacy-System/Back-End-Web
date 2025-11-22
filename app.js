@@ -24,6 +24,9 @@ import supplierRoutes from './src/modules/product-management/suppliers/supplierR
 // Inventory Management
 import branchInventoryRoutes from './src/modules/inventory-management/branch-inventory/branchInventoryRoutes.js';
 import branchRoutes from './src/modules/inventory-management/branches/branchRoutes.js';
+import inventoryTransferRoutes from './src/modules/inventory-management/inventory-transfer/inventoryTransferRoutes.js';
+import productBatchRoutes from './src/modules/inventory-management/product-batch/productBatchRoutes.js';
+import stockTakeRoutes from './src/modules/inventory-management/stock-take/stockTakeRoutes.js';
 
 // Order Management
 import cartRoutes from './src/modules/order-management/cart/cartRoutes.js';
@@ -44,6 +47,17 @@ import notificationRoutes from './src/modules/notification-management/notificati
 
 // Medical Management
 import prescriptionRoutes from './src/modules/medical/prescriptions/prescriptionRoutes.js';
+
+// Statistics
+import inventoryStatisticsRoutes from './src/modules/statistics/inventory/inventoryStatisticsRoutes.js';
+import businessStatisticsRoutes from './src/modules/statistics/business/businessStatisticsRoutes.js';
+
+// Staff & Admin Management
+import staffRoutes from './src/modules/staff/staffRoutes.js';
+import adminRoutes from './src/modules/admin/adminRoutes.js';
+
+// Location Management
+import citiesRoutes from './src/modules/location/cities/citiesRoutes.js';
 
 const app = express();
 
@@ -84,6 +98,9 @@ app.use('/api', supplierRoutes);
 // Inventory management
 app.use('/api', branchRoutes);
 app.use('/api', branchInventoryRoutes);
+app.use('/api', inventoryTransferRoutes);
+app.use('/api', productBatchRoutes);
+app.use('/api', stockTakeRoutes);
 
 // Order management
 app.use('/api', cartRoutes);
@@ -104,6 +121,17 @@ app.use('/api', notificationRoutes);
 
 // Medical management
 app.use('/api', prescriptionRoutes);
+
+// Statistics
+app.use('/api', inventoryStatisticsRoutes);
+app.use('/api', businessStatisticsRoutes);
+
+// Staff & Admin management
+app.use('/api', staffRoutes);
+app.use('/api', adminRoutes);
+
+// Location management
+app.use('/api/cities', citiesRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {

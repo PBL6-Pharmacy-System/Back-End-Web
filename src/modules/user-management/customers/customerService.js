@@ -60,6 +60,12 @@ export const getAllCustomers = async ({ search, membership, status, page = 1, li
               last_login: true
             }
           },
+          cities: {
+            select: {
+              id: true,
+              name: true
+            }
+          },
           orders: {
             include: {
               orderitems: true
@@ -213,7 +219,8 @@ export const createCustomer = async (data) => {
         user_id: user.id,
         dob: dob ? new Date(dob) : null,
         gender,
-        address
+        address,
+        city_id: data.city_id ? Number(data.city_id) : null
       },
       include: {
         users: {
@@ -226,6 +233,12 @@ export const createCustomer = async (data) => {
             avatar_url: true,
             is_active: true,
             is_verified: true
+          }
+        },
+        cities: {
+          select: {
+            id: true,
+            name: true
           }
         },
         orders: true,
@@ -310,11 +323,12 @@ export const updateCustomer = async (id, data) => {
       }
     }
 
-    // Update customer info (dob, gender, address)
+    // Update customer info (dob, gender, address, city_id)
     const customerUpdateData = {};
     if (dob !== undefined) customerUpdateData.dob = dob ? new Date(dob) : null;
     if (gender !== undefined) customerUpdateData.gender = gender;
     if (address !== undefined) customerUpdateData.address = address;
+    if (data.city_id !== undefined) customerUpdateData.city_id = data.city_id ? Number(data.city_id) : null;
 
     const updatedCustomer = await prisma.customers.update({
       where: { id: Number(id) },
@@ -330,6 +344,12 @@ export const updateCustomer = async (id, data) => {
             avatar_url: true,
             is_active: true,
             is_verified: true
+          }
+        },
+        cities: {
+          select: {
+            id: true,
+            name: true
           }
         },
         orders: true,

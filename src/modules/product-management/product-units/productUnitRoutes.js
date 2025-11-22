@@ -8,6 +8,7 @@ const router = express.Router();
 // Public routes - User có thể xem đơn vị sản phẩm
 router.get('/productunits', productUnitController.getAllProductUnits);
 router.get('/productunits/:id', validateId(), productUnitController.getProductUnitById);
+router.get('/product-units/product/:productId', validateId('productId'), productUnitController.getProductUnitsByProduct);
 
 // Admin only routes - Chỉ admin mới được quản lý đơn vị sản phẩm
 router.post('/productunits', authenticateToken, authorizeAdmin, productUnitController.createProductUnit);

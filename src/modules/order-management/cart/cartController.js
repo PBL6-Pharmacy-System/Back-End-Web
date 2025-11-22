@@ -98,7 +98,7 @@ export const updateCartItem = async (req, res) => {
 
 export const removeFromCart = async (req, res) => {
   try {
-    const result = await cartService.removeCartItem(req.params.itemId);
+    const result = await cartService.removeCartItem(req.params.customerId, req.params.itemId);
     if (!result.success) {
       return res.status(result.status).json({
         success: false,
