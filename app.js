@@ -52,9 +52,9 @@ import prescriptionRoutes from './src/modules/medical/prescriptions/prescription
 import inventoryStatisticsRoutes from './src/modules/statistics/inventory/inventoryStatisticsRoutes.js';
 import businessStatisticsRoutes from './src/modules/statistics/business/businessStatisticsRoutes.js';
 
-// Staff & Admin Management
-import staffRoutes from './src/modules/staff/staffRoutes.js';
-import adminRoutes from './src/modules/admin/adminRoutes.js';
+// Staff & Admin Management (now under user-management)
+import staffRoutes from './src/modules/user-management/staff/staffRoutes.js';
+import adminRoutes from './src/modules/user-management/admin/adminRoutes.js';
 
 // Location Management
 import citiesRoutes from './src/modules/location/cities/citiesRoutes.js';

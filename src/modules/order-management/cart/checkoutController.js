@@ -14,13 +14,18 @@ export const checkout = async (req, res) => {
       });
     }
 
-    const { voucherCode, shippingAddressId, paymentMethod } = req.body;
+    // Support both camelCase and snake_case for shipping address ID
+    const {
+      voucher_code,
+      shipping_address_id,
+      payment_method 
+    } = req.body;
     
     const result = await checkoutService.checkout({
       customerId,
-      voucherCode,
-      shippingAddressId,
-      paymentMethod
+      voucherCode: voucher_code,
+      shippingAddressId: shipping_address_id,
+      paymentMethod: payment_method
     });
 
     if (!result.success) {

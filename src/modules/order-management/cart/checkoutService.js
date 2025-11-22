@@ -100,8 +100,24 @@ export const checkout = async (data) => {
       customerId,
       voucherCode,
       shippingAddressId,
-      paymentMethod = 'cash' // cash, card, bank_transfer, momo, zalopay
+      paymentMethod = 'cash'
     } = data;
+
+    // Map payment method aliases to database values
+    const paymentMethodMap = {
+      'COD': 'cash',
+      'cod': 'cash',
+      'cash': 'cash',
+      'card': 'credit_card',
+      'credit_card': 'credit_card',
+      'momo': 'e_wallet',
+      'zalopay': 'e_wallet',
+      'e_wallet': 'e_wallet',
+      'bank_transfer': 'bank_transfer',
+      'banking': 'bank_transfer'
+    };
+
+    const normalizedPaymentMethod = paymentMethodMap[paymentMethod] || 'cash';
 
     // Validate customer
     const customer = await prisma.customers.findUnique({
@@ -150,14 +166,23 @@ export const checkout = async (data) => {
       };
     }
 
-    // Validate shipping address if provided
+    // Get shipping address - use provided or default
+    let address;
+    let finalShippingAddressId;
+    
     if (shippingAddressId) {
-      const address = await prisma.shippingaddresses.findFirst({
+      // Use the specific address provided
+      const parsedAddressId = parseInt(shippingAddressId);
+      console.log(`[CHECKOUT] Looking for shipping address ID: ${parsedAddressId} for customer: ${customerId}`);
+      
+      address = await prisma.shippingaddresses.findFirst({
         where: {
-          id: shippingAddressId,
+          id: parsedAddressId,
           customer_id: customerId
         }
       });
+
+      console.log(`[CHECKOUT] Found address:`, address ? `ID ${address.id}` : 'NOT FOUND');
 
       if (!address) {
         return {
@@ -166,10 +191,39 @@ export const checkout = async (data) => {
           status: 400
         };
       }
+      finalShippingAddressId = parsedAddressId;
+    } else {
+      // Use default address if not provided
+      address = await prisma.shippingaddresses.findFirst({
+        where: {
+          customer_id: customerId,
+          is_default: true
+        }
+      });
+
+      if (!address) {
+        // If no default, get any address
+        address = await prisma.shippingaddresses.findFirst({
+          where: {
+            customer_id: customerId
+          }
+        });
+      }
+
+      if (!address) {
+        return {
+          success: false,
+          error: 'Vui lòng cung cấp địa chỉ giao hàng',
+          status: 400
+        };
+      }
+      finalShippingAddressId = address.id;
     }
 
+    console.log(`[CHECKOUT] Final shipping address ID to use: ${finalShippingAddressId}`);
+
     // Get customer city ID for optimal branch selection
-    const customerCityId = await getCustomerCityId(customerId, shippingAddressId);
+    const customerCityId = await getCustomerCityId(customerId, address.id);
 
     // Prepare order items for branch selection
     const orderItemsForBranch = cart.orderitems.map(item => ({
@@ -225,6 +279,8 @@ export const checkout = async (data) => {
     // Use transaction to ensure atomicity and enable rollback on error
     const result = await prisma.$transaction(async (tx) => {
       // Update cart to pending order
+      console.log(`[CHECKOUT] Updating order ${cart.id} with shipping_address_id: ${finalShippingAddressId}`);
+      
       const order = await tx.orders.update({
         where: {
           id: cart.id
@@ -235,7 +291,7 @@ export const checkout = async (data) => {
           discount_amount: discountAmount,
           final_amount: finalAmount,
           voucher_id: voucherResult.voucher?.id,
-          shipping_address_id: shippingAddressId,
+          shipping_address_id: finalShippingAddressId,
           order_date: new Date(),
           updated_at: new Date()
         },
@@ -255,9 +311,9 @@ export const checkout = async (data) => {
       const payment = await tx.payments.create({
         data: {
           order_id: order.id,
-          payment_method: paymentMethod,
+          payment_method: normalizedPaymentMethod,
           amount: finalAmount,
-          status: paymentMethod === 'cash' ? 'pending' : 'pending',
+          status: normalizedPaymentMethod === 'cash' ? 'pending' : 'pending',
           transaction_id: `TXN-${Date.now()}-${order.id}`
         }
       });

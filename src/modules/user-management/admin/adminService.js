@@ -1,9 +1,9 @@
-import prisma from '../../config/db.js';
-import { hashPassword } from '../../utils/helpers.js';
-import { validateRequiredFields, validateNumericFields } from '../../utils/validation.js';
+import prisma from '../../../config/db.js';
+import { hashPassword } from '../../../utils/helpers.js';
+import { validateRequiredFields } from '../../../utils/validation.js';
 
-// Validate staff data
-const validateStaffData = (data, isUpdate = false) => {
+// Validate admin data
+const validateAdminData = (data, isUpdate = false) => {
   const requiredFields = isUpdate ? [] : ['username', 'email', 'password', 'full_name'];
   const missingFields = validateRequiredFields(data, requiredFields);
 
@@ -22,19 +22,22 @@ const validateStaffData = (data, isUpdate = false) => {
     };
   }
 
+  // Validate admin level
+  if (data.admin_level && (data.admin_level < 1 || data.admin_level > 5)) {
+    return {
+      isValid: false,
+      error: 'Admin level phải từ 1 đến 5'
+    };
+  }
+
   return { isValid: true };
 };
 
-// Get all staff
-export const getAllStaff = async ({ branchId, page = 1, limit = 10, isActive }) => {
+// Get all admins
+export const getAllAdmins = async ({ page = 1, limit = 10 }) => {
   try {
-    const where = {};
-    if (branchId) where.branch_id = Number(branchId);
-    if (isActive !== undefined) where.is_active = isActive === 'true';
-
-    const [staff, total] = await Promise.all([
-      prisma.staff.findMany({
-        where,
+    const [admins, total] = await Promise.all([
+      prisma.admin.findMany({
         include: {
           users: {
             select: {
@@ -46,6 +49,7 @@ export const getAllStaff = async ({ branchId, page = 1, limit = 10, isActive }) 
               avatar_url: true,
               is_active: true,
               created_at: true,
+              last_login: true,
               roles: {
                 select: {
                   id: true,
@@ -53,28 +57,21 @@ export const getAllStaff = async ({ branchId, page = 1, limit = 10, isActive }) 
                 }
               }
             }
-          },
-          branches: {
-            select: {
-              id: true,
-              name: true,
-              address: true
-            }
           }
         },
         orderBy: {
-          created_at: 'desc'
+          admin_level: 'desc'
         },
         skip: (page - 1) * limit,
         take: limit
       }),
-      prisma.staff.count({ where })
+      prisma.admin.count()
     ]);
 
     return {
       success: true,
       data: {
-        staff,
+        admins,
         pagination: {
           page,
           limit,
@@ -88,10 +85,10 @@ export const getAllStaff = async ({ branchId, page = 1, limit = 10, isActive }) 
   }
 };
 
-// Get staff by ID
-export const getStaffById = async (id) => {
+// Get admin by ID
+export const getAdminById = async (id) => {
   try {
-    const staff = await prisma.staff.findUnique({
+    const admin = await prisma.admin.findUnique({
       where: { id: Number(id) },
       include: {
         users: {
@@ -112,40 +109,32 @@ export const getStaffById = async (id) => {
               }
             }
           }
-        },
-        branches: {
-          select: {
-            id: true,
-            name: true,
-            address: true,
-            phone: true
-          }
         }
       }
     });
 
-    if (!staff) {
+    if (!admin) {
       return {
         success: false,
         status: 404,
-        error: 'Không tìm thấy nhân viên'
+        error: 'Không tìm thấy admin'
       };
     }
 
     return {
       success: true,
-      data: staff
+      data: admin
     };
   } catch (error) {
     throw error;
   }
 };
 
-// Create staff
-export const createStaff = async (data) => {
+// Create admin
+export const createAdmin = async (data) => {
   try {
     // Validate data
-    const validation = validateStaffData(data);
+    const validation = validateAdminData(data);
     if (!validation.isValid) {
       return {
         success: false,
@@ -173,23 +162,23 @@ export const createStaff = async (data) => {
       };
     }
 
-    // Get staff role
-    const staffRole = await prisma.roles.findUnique({
-      where: { role_name: 'staff' }
+    // Get admin role
+    const adminRole = await prisma.roles.findUnique({
+      where: { role_name: 'admin' }
     });
 
-    if (!staffRole) {
+    if (!adminRole) {
       return {
         success: false,
         status: 500,
-        error: 'Không tìm thấy role staff'
+        error: 'Không tìm thấy role admin'
       };
     }
 
     // Hash password
     const password_hash = await hashPassword(data.password);
 
-    // Create user and staff in transaction
+    // Create user and admin in transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create user
       const user = await tx.users.create({
@@ -200,28 +189,19 @@ export const createStaff = async (data) => {
           full_name: data.full_name,
           avatar_url: data.avatar_url,
           password_hash,
-          role_id: staffRole.id,
+          role_id: adminRole.id,
           is_active: true,
           is_verified: true
         }
       });
 
-      // Create staff
-      const staff = await tx.staff.create({
+      // Create admin
+      const admin = await tx.admin.create({
         data: {
           user_id: user.id,
-          employee_id: data.employee_id,
-          branch_id: data.branch_id ? Number(data.branch_id) : null,
-          position: data.position,
-          department: data.department,
-          hire_date: data.hire_date ? new Date(data.hire_date) : null,
-          hometown: data.hometown,
-          id_number: data.id_number,
-          emergency_contact: data.emergency_contact,
-          emergency_name: data.emergency_name,
-          salary: data.salary ? parseFloat(data.salary) : null,
-          bank_account: data.bank_account,
-          bank_name: data.bank_name,
+          admin_level: data.admin_level || 1,
+          permissions: data.permissions || {},
+          is_super_admin: data.is_super_admin || false,
           notes: data.notes
         },
         include: {
@@ -240,18 +220,11 @@ export const createStaff = async (data) => {
                 }
               }
             }
-          },
-          branches: {
-            select: {
-              id: true,
-              name: true,
-              address: true
-            }
           }
         }
       });
 
-      return staff;
+      return admin;
     });
 
     return {
@@ -263,11 +236,11 @@ export const createStaff = async (data) => {
   }
 };
 
-// Update staff
-export const updateStaff = async (id, data) => {
+// Update admin
+export const updateAdmin = async (id, data) => {
   try {
-    // Check if staff exists
-    const existing = await prisma.staff.findUnique({
+    // Check if admin exists
+    const existing = await prisma.admin.findUnique({
       where: { id: Number(id) },
       include: { users: true }
     });
@@ -276,7 +249,7 @@ export const updateStaff = async (id, data) => {
       return {
         success: false,
         status: 404,
-        error: 'Không tìm thấy nhân viên'
+        error: 'Không tìm thấy admin'
       };
     }
 
@@ -317,24 +290,15 @@ export const updateStaff = async (id, data) => {
         });
       }
 
-      // Update staff
-      const staff = await tx.staff.update({
+      // Update admin
+      const admin = await tx.admin.update({
         where: { id: Number(id) },
         data: {
-          ...(data.employee_id && { employee_id: data.employee_id }),
-          ...(data.branch_id !== undefined && { branch_id: data.branch_id ? Number(data.branch_id) : null }),
-          ...(data.position && { position: data.position }),
-          ...(data.department && { department: data.department }),
-          ...(data.hire_date && { hire_date: new Date(data.hire_date) }),
-          ...(data.hometown && { hometown: data.hometown }),
-          ...(data.id_number && { id_number: data.id_number }),
-          ...(data.emergency_contact && { emergency_contact: data.emergency_contact }),
-          ...(data.emergency_name && { emergency_name: data.emergency_name }),
-          ...(data.salary !== undefined && { salary: data.salary ? parseFloat(data.salary) : null }),
-          ...(data.bank_account && { bank_account: data.bank_account }),
-          ...(data.bank_name && { bank_name: data.bank_name }),
+          ...(data.admin_level && { admin_level: Number(data.admin_level) }),
+          ...(data.permissions && { permissions: data.permissions }),
+          ...(data.is_super_admin !== undefined && { is_super_admin: data.is_super_admin }),
           ...(data.notes !== undefined && { notes: data.notes }),
-          ...(data.is_active !== undefined && { is_active: data.is_active })
+          last_activity: new Date()
         },
         include: {
           users: {
@@ -353,18 +317,11 @@ export const updateStaff = async (id, data) => {
                 }
               }
             }
-          },
-          branches: {
-            select: {
-              id: true,
-              name: true,
-              address: true
-            }
           }
         }
       });
 
-      return staff;
+      return admin;
     });
 
     return {
@@ -383,42 +340,64 @@ export const updateStaff = async (id, data) => {
   }
 };
 
-// Delete staff
-export const deleteStaff = async (id) => {
+// Delete admin
+export const deleteAdmin = async (id) => {
   try {
-    const staff = await prisma.staff.findUnique({
+    const admin = await prisma.admin.findUnique({
       where: { id: Number(id) }
     });
 
-    if (!staff) {
+    if (!admin) {
       return {
         success: false,
         status: 404,
-        error: 'Không tìm thấy nhân viên'
+        error: 'Không tìm thấy admin'
       };
     }
 
-    // Delete staff (cascade will delete user)
-    await prisma.staff.delete({
+    // Check if super admin
+    if (admin.is_super_admin) {
+      return {
+        success: false,
+        status: 403,
+        error: 'Không thể xóa super admin'
+      };
+    }
+
+    // Delete admin (cascade will delete user)
+    await prisma.admin.delete({
       where: { id: Number(id) }
     });
 
     return {
       success: true,
-      message: 'Đã xóa nhân viên thành công'
+      message: 'Đã xóa admin thành công'
     };
   } catch (error) {
     throw error;
   }
 };
 
-// Get staff by branch
-export const getStaffByBranch = async (branchId) => {
+// Update admin permissions
+export const updateAdminPermissions = async (id, permissions) => {
   try {
-    const staff = await prisma.staff.findMany({
-      where: {
-        branch_id: Number(branchId),
-        is_active: true
+    const admin = await prisma.admin.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!admin) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy admin'
+      };
+    }
+
+    const updated = await prisma.admin.update({
+      where: { id: Number(id) },
+      data: {
+        permissions,
+        last_activity: new Date()
       },
       include: {
         users: {
@@ -426,20 +405,15 @@ export const getStaffByBranch = async (branchId) => {
             id: true,
             username: true,
             email: true,
-            phone: true,
-            full_name: true,
-            avatar_url: true
+            full_name: true
           }
         }
-      },
-      orderBy: {
-        created_at: 'desc'
       }
     });
 
     return {
       success: true,
-      data: staff
+      data: updated
     };
   } catch (error) {
     throw error;
