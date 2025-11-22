@@ -437,7 +437,7 @@ export const getCustomerOrders = async (customerId, { page, limit, status }) => 
       };
     }
 
-    const where = { user_id: Number(customerId) };
+    const where = { customer_id: Number(customerId) };
     if (status) {
       where.status = status;
     }
@@ -449,13 +449,13 @@ export const getCustomerOrders = async (customerId, { page, limit, status }) => 
         take: limit,
         orderBy: { order_date: 'desc' },
         include: {
-          orderItems: {
+          orderitems: {
             include: {
-              product: true,
-              productUnit: true
+              products: true,
+              productunits: true
             }
           },
-          voucher: true
+          vouchers: true
         }
       }),
       prisma.orders.count({ where })
