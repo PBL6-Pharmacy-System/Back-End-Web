@@ -82,12 +82,19 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
+// Promotion management routes - MUST be early to avoid middleware conflicts
+app.use('/api', voucherRoutes);
+app.use('/api', flashsaleRoutes);
+
 // Auth routes
 app.use('/api', authRoutes);
 
 // User management
 app.use('/api', userRoutes);
 app.use('/api', customerRoutes);
+
+// Review management - MUST be before product routes to match /products/:id/reviews
+app.use('/api', reviewRoutes);
 
 // Product management
 app.use('/api', productRoutes);
@@ -109,12 +116,7 @@ app.use('/api', shippingAddressRoutes);
 app.use('/api', paymentRoutes);
 app.use('/api', shipmentRoutes);
 
-// Promotion management
-app.use('/api', voucherRoutes);
-app.use('/api', flashsaleRoutes);
 
-// Review management
-app.use('/api', reviewRoutes);
 
 // Notification management
 app.use('/api', notificationRoutes);

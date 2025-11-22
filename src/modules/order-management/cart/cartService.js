@@ -254,7 +254,12 @@ export const getCart = async (customerId) => {
 
 export const addToCart = async (customerId, orderData) => {
   try {
-    const { productId, productUnitId, quantity, unitPrice, branchId } = orderData;
+    // Support both camelCase and snake_case
+    const productId = orderData.productId || orderData.product_id;
+    const productUnitId = orderData.productUnitId || orderData.unit_id || orderData.productUnitId;
+    const quantity = orderData.quantity;
+    const unitPrice = orderData.unitPrice || orderData.unit_price;
+    const branchId = orderData.branchId || orderData.branch_id;
 
     // Validate order item (without unitPrice since we'll get it from DB)
     const validation = validateOrderItem({
