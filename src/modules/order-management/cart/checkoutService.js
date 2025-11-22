@@ -154,7 +154,7 @@ export const checkout = async (data) => {
     if (shippingAddressId) {
       const address = await prisma.shippingaddresses.findFirst({
         where: {
-          id: shippingAddressId,
+          id: parseInt(shippingAddressId),
           customer_id: customerId
         }
       });
@@ -235,7 +235,7 @@ export const checkout = async (data) => {
           discount_amount: discountAmount,
           final_amount: finalAmount,
           voucher_id: voucherResult.voucher?.id,
-          shipping_address_id: shippingAddressId,
+          shipping_address_id: shippingAddressId ? parseInt(shippingAddressId) : null,
           order_date: new Date(),
           updated_at: new Date()
         },

@@ -22,10 +22,10 @@ export const getAllProducts = async (req, res) => {
       limit: parseInt(limit)
     });
 
-    res.json(result.data);
+    res.json({ success: true, data: result.data });
   } catch (err) {
     console.error('Error in getAllProducts:', err);
-    res.status(500).json({ error: 'Lỗi khi lấy danh sách sản phẩm' });
+    res.status(500).json({ success: false, error: 'Lỗi khi lấy danh sách sản phẩm' });
   }
 };
 
@@ -33,12 +33,12 @@ export const getProductById = async (req, res) => {
   try {
     const result = await productService.getProductById(req.params.id);
     if (!result.success) {
-      return res.status(result.status).json({ error: result.error });
+      return res.status(result.status).json({ success: false, error: result.error });
     }
-    res.json(result.data);
+    res.json({ success: true, data: result.data });
   } catch (err) {
     console.error('Error in getProductById:', err);
-    res.status(500).json({ error: 'Lỗi khi lấy thông tin sản phẩm' });
+    res.status(500).json({ success: false, error: 'Lỗi khi lấy thông tin sản phẩm' });
   }
 };
 
@@ -96,12 +96,12 @@ export const searchProducts = async (req, res) => {
     });
 
     if (!result.success) {
-      return res.status(result.status).json({ error: result.error });
+      return res.status(result.status).json({ success: false, error: result.error });
     }
-    res.json(result.data);
+    res.json({ success: true, data: result.data });
   } catch (err) {
     console.error('Error in searchProducts:', err);
-    res.status(500).json({ error: 'Lỗi khi tìm kiếm sản phẩm' });
+    res.status(500).json({ success: false, error: 'Lỗi khi tìm kiếm sản phẩm' });
   }
 };
 

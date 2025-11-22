@@ -68,13 +68,13 @@ router.put(
 
 /**
  * POST /api/orders/:id/cancel
- * Cancel an order
+ * Cancel an order (Staff/Admin only)
  * Body: { reason: string (optional) }
- * Accessible by: Admin, Staff, or the customer who owns the order
  */
 router.post(
   '/orders/:id/cancel',
   authenticateToken,
+  authorizeRoles('admin', 'staff'),
   validateId(),
   orderController.cancelOrder
 );
