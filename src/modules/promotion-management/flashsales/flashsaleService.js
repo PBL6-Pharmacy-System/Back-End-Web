@@ -160,7 +160,7 @@ export const createFlashsale = async (data) => {
 // Cập nhật flashsale
 export const updateFlashsale = async (id, data) => {
   try {
-    const { name, description, start_time, end_time, products } = data;
+    const { name, description, start_time, end_time, status, products } = data;
 
     // Kiểm tra flashsale tồn tại
     const existing = await prisma.flashsales.findUnique({
@@ -175,7 +175,7 @@ export const updateFlashsale = async (id, data) => {
     }
 
     // Validate sản phẩm nếu có cập nhật
-    if (products) {
+    if (products && Array.isArray(products)) {
       for (const product of products) {
         if (!product.product_id || !product.flash_price || !product.stock_limit) {
           return {
@@ -192,19 +192,33 @@ export const updateFlashsale = async (id, data) => {
       }
     }
 
+    // Validate thời gian nếu có cập nhật
+    const newStartTime = start_time ? new Date(start_time) : existing.start_time;
+    const newEndTime = end_time ? new Date(end_time) : existing.end_time;
+    
+    if (newStartTime >= newEndTime) {
+      return {
+        success: false,
+        error: 'Thời gian kết thúc phải sau thời gian bắt đầu'
+      };
+    }
+
+    // Prepare update data
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (start_time) updateData.start_time = new Date(start_time);
+    if (end_time) updateData.end_time = new Date(end_time);
+    if (status !== undefined) updateData.status = status;
+
     // Cập nhật thông tin cơ bản
-    const flashsale = await prisma.flashsales.update({
+    await prisma.flashsales.update({
       where: { id: Number(id) },
-      data: {
-        name,
-        description,
-        start_time: start_time ? new Date(start_time) : undefined,
-        end_time: end_time ? new Date(end_time) : undefined
-      }
+      data: updateData
     });
 
     // Nếu có cập nhật sản phẩm
-    if (products && products.length > 0) {
+    if (products && Array.isArray(products) && products.length > 0) {
       // Xóa các sản phẩm cũ
       await prisma.flashsale_products.deleteMany({
         where: { flashsale_id: Number(id) }
@@ -216,16 +230,31 @@ export const updateFlashsale = async (id, data) => {
           flashsale_id: Number(id),
           product_id: p.product_id,
           flash_price: p.flash_price,
-          stock_limit: p.stock_limit
+          stock_limit: p.stock_limit,
+          sold_count: p.sold_count || 0
         }))
       });
     }
 
+    // Lấy flashsale đã cập nhật với đầy đủ thông tin
+    const updatedFlashsale = await prisma.flashsales.findUnique({
+      where: { id: Number(id) },
+      include: {
+        flashsale_products: {
+          include: {
+            products: true
+          }
+        }
+      }
+    });
+
     return {
       success: true,
-      data: flashsale
+      data: updatedFlashsale,
+      message: 'Cập nhật flashsale thành công'
     };
   } catch (error) {
+    console.error('[FLASHSALE SERVICE ERROR]', error);
     throw error;
   }
 };

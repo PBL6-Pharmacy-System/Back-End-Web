@@ -9,13 +9,13 @@ const validateVoucherData = (data) => {
 
   if (!data.discount_type) {
     errors.push('Loại giảm giá là bắt buộc');
-  } else if (!['amount', 'percent'].includes(data.discount_type)) {
-    errors.push('Loại giảm giá không hợp lệ. Chỉ chấp nhận "amount" hoặc "percent"');
+  } else if (!['fixed', 'percentage'].includes(data.discount_type)) {
+    errors.push('Loại giảm giá không hợp lệ. Chỉ chấp nhận "fixed" hoặc "percentage"');
   }
 
   if (!data.discount_value) {
     errors.push('Giá trị giảm giá là bắt buộc');
-  } else if (data.discount_type === 'percent' && (Number(data.discount_value) <= 0 || Number(data.discount_value) > 100)) {
+  } else if (data.discount_type === 'percentage' && (Number(data.discount_value) <= 0 || Number(data.discount_value) > 100)) {
     errors.push('Giá trị phần trăm giảm giá phải từ 1 đến 100');
   }
 
@@ -47,10 +47,7 @@ export const getAllVouchers = async ({
     const now = new Date();
     const where = {
       ...(search && {
-        OR: [
-          { code: { contains: search, mode: 'insensitive' } },
-          { description: { contains: search, mode: 'insensitive' } }
-        ]
+        code: { contains: search, mode: 'insensitive' }
       }),
       ...(!includeExpired && {
         end_date: { gte: now }
@@ -179,7 +176,6 @@ export const createVoucher = async (data) => {
     const voucher = await prisma.vouchers.create({
       data: {
         code: data.code.trim(),
-        description: data.description?.trim(),
         discount_type: data.discount_type,
         discount_value: Number(data.discount_value),
         min_order_value: data.min_order_value ? Number(data.min_order_value) : undefined,
@@ -240,7 +236,6 @@ export const updateVoucher = async (id, data) => {
 
     const updateData = {
       ...(data.code && { code: data.code.trim() }),
-      ...(data.description && { description: data.description.trim() }),
       ...(data.discount_type && { discount_type: data.discount_type }),
       ...(data.discount_value && { discount_value: Number(data.discount_value) }),
       ...(data.min_order_value && { min_order_value: Number(data.min_order_value) }),
@@ -389,7 +384,7 @@ export const applyVoucher = async (orderId, voucherCode) => {
 
     // Calculate discount
     let discount = 0;
-    if (voucher.discount_type === 'percent') {
+    if (voucher.discount_type === 'percentage') {
       discount = order.total_amount * (Number(voucher.discount_value) / 100);
     } else {
       discount = Number(voucher.discount_value);

@@ -732,3 +732,412 @@ export const getInventoryLogs = async ({
     throw error;
   }
 };
+
+// Get total stock of a product across all branches
+export const getProductTotalStock = async (productId) => {
+  try {
+    if (!productId) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Thiếu thông tin sản phẩm'
+      };
+    }
+
+    // Check if product exists
+    const product = await prisma.products.findUnique({
+      where: { id: Number(productId) },
+      include: {
+        unittype: true,
+        productunits: true
+      }
+    });
+
+    if (!product) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Sản phẩm không tồn tại'
+      };
+    }
+
+    // Get stock from all branches
+    const inventories = await prisma.branchinventory.findMany({
+      where: {
+        product_id: Number(productId)
+      },
+      include: {
+        branches: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            city_id: true
+          }
+        }
+      },
+      orderBy: {
+        stock: 'desc'
+      }
+    });
+
+    // Calculate total stock
+    const totalStock = inventories.reduce((sum, inv) => sum + (inv.stock || 0), 0);
+
+    // Group by branch with stock info
+    const branchStocks = inventories.map(inv => ({
+      branch_id: inv.branch_id,
+      branch_name: inv.branches.name,
+      branch_address: inv.branches.address,
+      city_id: inv.branches.city_id,
+      stock: inv.stock || 0,
+      min_stock: inv.min_stock,
+      max_stock: inv.max_stock,
+      last_updated: inv.last_updated,
+      in_stock: (inv.stock || 0) > 0 ? 1 : 0
+    }));
+
+    return {
+      success: true,
+      data: {
+        product_id: product.id,
+        product_name: product.name,
+        product_description: product.description,
+        unit_type: product.unittype?.name,
+        total_stock: totalStock,
+        in_stock: totalStock > 0 ? 1 : 0,
+        branch_count: inventories.length,
+        branches: branchStocks
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Get stock of a product by specific branch
+export const getProductStockByBranch = async (productId, branchId) => {
+  try {
+    if (!productId || !branchId) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Thiếu thông tin sản phẩm hoặc chi nhánh'
+      };
+    }
+
+    // Check if product exists
+    const product = await prisma.products.findUnique({
+      where: { id: Number(productId) },
+      include: {
+        unittype: true,
+        productunits: true
+      }
+    });
+
+    if (!product) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Sản phẩm không tồn tại'
+      };
+    }
+
+    // Check if branch exists
+    const branch = await prisma.branches.findUnique({
+      where: { id: Number(branchId) },
+      include: {
+        cities: true
+      }
+    });
+
+    if (!branch) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Chi nhánh không tồn tại'
+      };
+    }
+
+    // Get inventory
+    const inventory = await prisma.branchinventory.findFirst({
+      where: {
+        branch_id: Number(branchId),
+        product_id: Number(productId)
+      }
+    });
+
+    const stock = inventory ? inventory.stock : 0;
+
+    return {
+      success: true,
+      data: {
+        product_id: product.id,
+        product_name: product.name,
+        product_description: product.description,
+        unit_type: product.unittype?.name,
+        branch_id: branch.id,
+        branch_name: branch.name,
+        branch_address: branch.address,
+        city: branch.cities?.name,
+        stock: stock,
+        min_stock: inventory?.min_stock,
+        max_stock: inventory?.max_stock,
+        reorder_point: inventory?.reorder_point,
+        reorder_quantity: inventory?.reorder_quantity,
+        last_updated: inventory?.last_updated,
+        last_stock_take: inventory?.last_stock_take,
+        in_stock: stock > 0 ? 1 : 0
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Get all products with stock availability across all branches
+export const getAllProductsWithStock = async ({
+  page = 1,
+  limit = 10,
+  sortBy = 'name',
+  sortOrder = 'asc',
+  categoryId,
+  inStockOnly = false,
+  branchId
+}) => {
+  try {
+    const where = {};
+    
+    if (categoryId) {
+      where.category_id = Number(categoryId);
+    }
+
+    const branchInventoryWhere = {};
+    if (branchId) {
+      branchInventoryWhere.branch_id = Number(branchId);
+    }
+
+    // Get products
+    const [products, total] = await Promise.all([
+      prisma.products.findMany({
+        where,
+        include: {
+          unittype: true,
+          productunits: true,
+          branchinventory: {
+            where: branchInventoryWhere,
+            include: {
+              branches: {
+                select: {
+                  id: true,
+                  name: true,
+                  city_id: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          [sortBy]: sortOrder
+        },
+        skip: (page - 1) * limit,
+        take: limit
+      }),
+      prisma.products.count({ where })
+    ]);
+
+    // Calculate stock for each product
+    const productsWithStock = products.map(product => {
+      const totalStock = product.branchinventory.reduce((sum, inv) => sum + (inv.stock || 0), 0);
+      const inStock = totalStock > 0 ? 1 : 0;
+      
+      return {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        unit_type: product.unittype?.name,
+        total_stock: totalStock,
+        in_stock: inStock,
+        branch_count: product.branchinventory.length,
+        branches: product.branchinventory.map(inv => ({
+          branch_id: inv.branch_id,
+          branch_name: inv.branches.name,
+          city_id: inv.branches.city_id,
+          stock: inv.stock || 0
+        }))
+      };
+    });
+
+    // Filter by stock availability if requested
+    let filteredProducts = productsWithStock;
+    if (inStockOnly) {
+      filteredProducts = productsWithStock.filter(p => p.in_stock === 1);
+    }
+
+    return {
+      success: true,
+      data: {
+        products: filteredProducts,
+        pagination: {
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          totalRecords: total
+        }
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Get low stock products across all branches (below min_stock)
+export const getAllLowStockProducts = async (branchId = null) => {
+  try {
+    const where = {
+      min_stock: { not: null }
+    };
+    
+    // If branchId is provided (for staff), filter by branch
+    if (branchId) {
+      where.branch_id = Number(branchId);
+    }
+    
+    // Get all inventories where stock <= min_stock
+    const inventories = await prisma.branchinventory.findMany({
+      where,
+      include: {
+        branches: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            city_id: true
+          }
+        },
+        products: {
+          include: {
+            unittype: true
+          }
+        }
+      }
+    });
+
+    // Filter low stock items
+    const lowStockInventories = inventories.filter(inv => 
+      inv.stock <= inv.min_stock
+    );
+
+    // Group by product
+    const groupedByProduct = {};
+    
+    lowStockInventories.forEach(inv => {
+      const productId = inv.product_id;
+      
+      if (!groupedByProduct[productId]) {
+        groupedByProduct[productId] = {
+          product_id: productId,
+          product_name: inv.products.name,
+          unit_type: inv.products.unittype?.name,
+          branches: []
+        };
+      }
+      
+      groupedByProduct[productId].branches.push({
+        branch_id: inv.branch_id,
+        branch_name: inv.branches.name,
+        branch_address: inv.branches.address,
+        city_id: inv.branches.city_id,
+        current_stock: inv.stock,
+        min_stock: inv.min_stock,
+        shortage: inv.min_stock - inv.stock,
+        reorder_point: inv.reorder_point,
+        reorder_quantity: inv.reorder_quantity
+      });
+    });
+
+    const result = Object.values(groupedByProduct);
+
+    return {
+      success: true,
+      data: {
+        total_low_stock_items: result.length,
+        products: result
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Get stock statistics by branch
+export const getStockStatisticsByBranch = async (branchId) => {
+  try {
+    if (!branchId) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Thiếu thông tin chi nhánh'
+      };
+    }
+
+    // Check if branch exists
+    const branch = await prisma.branches.findUnique({
+      where: { id: Number(branchId) },
+      include: {
+        cities: true
+      }
+    });
+
+    if (!branch) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Chi nhánh không tồn tại'
+      };
+    }
+
+    // Get all inventory for the branch
+    const inventories = await prisma.branchinventory.findMany({
+      where: {
+        branch_id: Number(branchId)
+      },
+      include: {
+        products: true
+      }
+    });
+
+    // Calculate statistics
+    const totalProducts = inventories.length;
+    const inStockProducts = inventories.filter(inv => inv.stock > 0).length;
+    const outOfStockProducts = inventories.filter(inv => inv.stock === 0).length;
+    const lowStockProducts = inventories.filter(inv => 
+      inv.min_stock && inv.stock <= inv.min_stock
+    ).length;
+    const totalStockValue = inventories.reduce((sum, inv) => {
+      const price = inv.products.price || 0;
+      const stock = inv.stock || 0;
+      return sum + (Number(price) * stock);
+    }, 0);
+
+    return {
+      success: true,
+      data: {
+        branch_id: branch.id,
+        branch_name: branch.name,
+        branch_address: branch.address,
+        city: branch.cities?.name,
+        statistics: {
+          total_products: totalProducts,
+          in_stock_products: inStockProducts,
+          out_of_stock_products: outOfStockProducts,
+          low_stock_products: lowStockProducts,
+          total_stock_value: totalStockValue
+        }
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};

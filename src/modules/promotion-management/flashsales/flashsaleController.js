@@ -10,9 +10,10 @@ export const getAllFlashsales = async (req, res) => {
         });
         res.json(result);
     } catch (error) {
+        console.error('[FLASHSALE GET ALL ERROR]', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Lỗi khi lấy danh sách flashsale' 
+            error: error.message || 'Lỗi khi lấy danh sách flashsale' 
         });
     }
 };
@@ -23,9 +24,10 @@ export const getActiveFlashsale = async (req, res) => {
         const result = await flashsaleService.getActiveFlashsale();
         res.json(result);
     } catch (error) {
+        console.error('[FLASHSALE GET ACTIVE ERROR]', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Lỗi khi lấy flashsale đang hoạt động' 
+            error: error.message || 'Lỗi khi lấy flashsale đang hoạt động' 
         });
     }
 };
@@ -39,9 +41,10 @@ export const createFlashsale = async (req, res) => {
         }
         res.status(201).json(result);
     } catch (error) {
+        console.error('[FLASHSALE CREATE ERROR]', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Lỗi khi tạo flashsale' 
+            error: error.message || 'Lỗi khi tạo flashsale' 
         });
     }
 };
@@ -56,9 +59,10 @@ export const updateFlashsale = async (req, res) => {
         }
         res.json(result);
     } catch (error) {
+        console.error('[FLASHSALE UPDATE ERROR]', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Lỗi khi cập nhật flashsale' 
+            error: error.message || 'Lỗi khi cập nhật flashsale' 
         });
     }
 };
@@ -70,9 +74,10 @@ export const deleteFlashsale = async (req, res) => {
         const result = await flashsaleService.deleteFlashsale(Number(id));
         res.json(result);
     } catch (error) {
+        console.error('[FLASHSALE DELETE ERROR]', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Lỗi khi xóa flashsale' 
+            error: error.message || 'Lỗi khi xóa flashsale' 
         });
     }
 };

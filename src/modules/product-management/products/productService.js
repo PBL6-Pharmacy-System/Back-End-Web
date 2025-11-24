@@ -103,10 +103,27 @@ export const getAllProducts = async ({
       prisma.products.count({ where })
     ]);
 
+    // Add stock availability for each product
+    const productsWithStock = await Promise.all(
+      products.map(async (product) => {
+        const totalStock = await prisma.branchinventory.aggregate({
+          where: { product_id: product.id },
+          _sum: { stock: true }
+        });
+        
+        const availableStock = totalStock._sum.stock || 0;
+        
+        return {
+          ...product,
+          in_stock: availableStock > 0 ? 1 : 0
+        };
+      })
+    );
+
     return {
       success: true,
       data: {
-        products,
+        products: productsWithStock,
         pagination: {
           page,
           limit,
@@ -140,9 +157,20 @@ export const getProductById = async (id) => {
       };
     }
 
+    // Check stock availability
+    const totalStock = await prisma.branchinventory.aggregate({
+      where: { product_id: product.id },
+      _sum: { stock: true }
+    });
+    
+    const availableStock = totalStock._sum.stock || 0;
+
     return {
       success: true,
-      data: product
+      data: {
+        ...product,
+        in_stock: availableStock > 0 ? 1 : 0
+      }
     };
   } catch (error) {
     throw error;
@@ -412,10 +440,27 @@ export const searchProducts = async ({ keyword, page = 1, limit = 10 }) => {
       prisma.products.count({ where })
     ]);
 
+    // Add stock availability for each product
+    const productsWithStock = await Promise.all(
+      products.map(async (product) => {
+        const totalStock = await prisma.branchinventory.aggregate({
+          where: { product_id: product.id },
+          _sum: { stock: true }
+        });
+        
+        const availableStock = totalStock._sum.stock || 0;
+        
+        return {
+          ...product,
+          in_stock: availableStock > 0 ? 1 : 0
+        };
+      })
+    );
+
     return {
       success: true,
       data: {
-        products,
+        products: productsWithStock,
         pagination: {
           page,
           limit,
@@ -466,10 +511,27 @@ export const getProductsByCategory = async (categoryName, { page = 1, limit = 10
       prisma.products.count({ where })
     ]);
 
+    // Add stock availability for each product
+    const productsWithStock = await Promise.all(
+      products.map(async (product) => {
+        const totalStock = await prisma.branchinventory.aggregate({
+          where: { product_id: product.id },
+          _sum: { stock: true }
+        });
+        
+        const availableStock = totalStock._sum.stock || 0;
+        
+        return {
+          ...product,
+          in_stock: availableStock > 0 ? 1 : 0
+        };
+      })
+    );
+
     return {
       success: true,
       status: 200,
-      data: { category, products, total }
+      data: { category, products: productsWithStock, total }
     };
   } catch (error) {
     console.error("Lỗi trong getProductsByCategory:", error);

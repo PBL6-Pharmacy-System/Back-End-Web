@@ -53,7 +53,7 @@ export const getAllOrders = async (filters = {}) => {
         include: {
           customers: {
             include: {
-              user: {
+              users: {
                 select: {
                   full_name: true,
                   email: true,
