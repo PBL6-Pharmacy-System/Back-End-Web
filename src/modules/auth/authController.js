@@ -123,8 +123,16 @@ export const refreshToken = async (req, res) => {
  */
 export const customerLoginWithOTP = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
-    const result = await authService.customerLoginWithOTP(phone, otp);
+    const { phone, email, otp } = req.body;
+    
+    if ((!phone && !email) || !otp) {
+      return res.status(400).json({
+        success: false,
+        error: 'Số điện thoại/email và mã OTP là bắt buộc'
+      });
+    }
+
+    const result = await authService.customerLoginWithOTP(phone, email, otp);
     
     if (!result.success) {
       return res.status(result.status).json(result);
@@ -141,20 +149,20 @@ export const customerLoginWithOTP = async (req, res) => {
 };
 
 /**
- * Request OTP for login (via phone)
+ * Request OTP for login (via phone hoặc email)
  */
 export const requestLoginOTP = async (req, res) => {
   try {
-    const { phone } = req.body;
+    const { phone, email } = req.body;
 
-    if (!phone) {
+    if (!phone && !email) {
       return res.status(400).json({
         success: false,
-        error: 'Số điện thoại là bắt buộc'
+        error: 'Số điện thoại hoặc email là bắt buộc'
       });
     }
 
-    const result = await otpService.requestOTP(phone);
+    const result = await otpService.requestOTP(phone, email);
     
     if (!result.success) {
       return res.status(result.status || 400).json(result);
@@ -175,16 +183,16 @@ export const requestLoginOTP = async (req, res) => {
  */
 export const verifyOTPController = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
+    const { phone, email, otp } = req.body;
 
-    if (!phone || !otp) {
+    if ((!phone && !email) || !otp) {
       return res.status(400).json({
         success: false,
-        error: 'Số điện thoại và mã OTP là bắt buộc'
+        error: 'Số điện thoại/email và mã OTP là bắt buộc'
       });
     }
 
-    const result = await otpService.verifyOTP(phone, otp);
+    const result = await otpService.verifyOTP(phone, email, otp);
     
     if (!result.success) {
       return res.status(result.status || 400).json(result);

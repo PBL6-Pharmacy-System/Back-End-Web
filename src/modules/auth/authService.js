@@ -507,34 +507,50 @@ export const refreshAccessToken = async (refreshToken) => {
 };
 
 /**
- * Customer login with OTP (Phone verification)
+ * Customer login with OTP (Phone hoặc Email verification)
  */
-export const customerLoginWithOTP = async (phone, otpCode) => {
+export const customerLoginWithOTP = async (phone = null, email = null, otpCode) => {
   try {
     // Validate
-    if (!phone || !otpCode) {
+    if ((!phone && !email) || !otpCode) {
       return {
         success: false,
-        error: 'Số điện thoại và mã OTP là bắt buộc',
+        error: 'Số điện thoại/email và mã OTP là bắt buộc',
         status: 400
       };
     }
 
-    // Normalize phone
-    const normalizedPhone = phone.startsWith('+84') 
-      ? phone 
-      : phone.replace(/^0/, '+84');
+    let normalizedPhone = null;
+    let normalizedEmail = null;
+    let identifier = null;
+
+    // Normalize phone nếu có
+    if (phone) {
+      normalizedPhone = phone.startsWith('+84') ? phone : phone.replace(/^0/, '+84');
+      identifier = normalizedPhone;
+    }
+
+    // Normalize email nếu có
+    if (email) {
+      normalizedEmail = email.toLowerCase().trim();
+      identifier = normalizedEmail;
+    }
 
     // Verify OTP first
+    const whereClause = {
+      OR: [
+        ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : [])
+      ],
+      otp_code: otpCode,
+      verified: true,
+      expires_at: {
+        gte: new Date()
+      }
+    };
+
     const otpRecord = await prisma.otp_verifications.findFirst({
-      where: {
-        phone: normalizedPhone,
-        otp_code: otpCode,
-        verified: true,
-        expires_at: {
-          gte: new Date()
-        }
-      },
+      where: whereClause,
       orderBy: {
         created_at: 'desc'
       }
@@ -549,10 +565,15 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
     }
 
     // Find or create customer
+    const userWhereClause = {
+      OR: [
+        ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : [])
+      ]
+    };
+
     let user = await prisma.users.findFirst({
-      where: {
-        phone: normalizedPhone
-      },
+      where: userWhereClause,
       include: {
         roles: true,
         customers: true
@@ -565,9 +586,9 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
       user = await prisma.$transaction(async (tx) => {
         const newUser = await tx.users.create({
           data: {
-            username: normalizedPhone,
+            username: normalizedEmail || normalizedPhone,
             phone: normalizedPhone,
-            email: `${normalizedPhone.replace('+', '')}@temp.com`, // Temporary email
+            email: normalizedEmail || `${normalizedPhone?.replace('+', '')}@temp.com`,
             password_hash: await hashPassword(crypto.randomBytes(32).toString('hex')), // Random password
             role_id: 3, // Customer role
             full_name: null,
