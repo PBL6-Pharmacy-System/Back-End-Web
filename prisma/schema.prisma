@@ -797,3 +797,20 @@ model vouchers {
   orders          orders[]
   uservouchers    uservouchers[]
 }
+
+model otp_verifications {
+  id         Int      @id @default(autoincrement())
+  phone      String?  @db.VarChar(20)
+  email      String?  @db.VarChar(255)
+  otp_code   String   @db.VarChar(6)
+  type       String   @default("login") @db.VarChar(20)
+  verified   Boolean  @default(false)
+  attempts   Int      @default(0)
+  expires_at DateTime @db.Timestamp(6)
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  
+  @@index([phone], map: "idx_otp_phone")
+  @@index([email], map: "idx_otp_email")
+  @@index([otp_code], map: "idx_otp_code")
+  @@index([expires_at], map: "idx_otp_expires")
+}

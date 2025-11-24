@@ -1,4 +1,5 @@
 import * as authService from './authService.js';
+import * as otpService from './otpService.js';
 
 /**
  * Đăng ký user mới
@@ -135,6 +136,66 @@ export const customerLoginWithOTP = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Lỗi khi đăng nhập'
+    });
+  }
+};
+
+/**
+ * Request OTP for login (via phone)
+ */
+export const requestLoginOTP = async (req, res) => {
+  try {
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        error: 'Số điện thoại là bắt buộc'
+      });
+    }
+
+    const result = await otpService.requestOTP(phone);
+    
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Request OTP controller error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi gửi OTP'
+    });
+  }
+};
+
+/**
+ * Verify OTP
+ */
+export const verifyOTPController = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+
+    if (!phone || !otp) {
+      return res.status(400).json({
+        success: false,
+        error: 'Số điện thoại và mã OTP là bắt buộc'
+      });
+    }
+
+    const result = await otpService.verifyOTP(phone, otp);
+    
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Verify OTP controller error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi xác thực OTP'
     });
   }
 };

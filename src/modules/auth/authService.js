@@ -5,17 +5,45 @@ import { isValidEmail } from '../../utils/validation.js';
 
 /**
  * Đăng ký user mới
- * ✅ Refactored: Không cần validate permissions
+ * ✅ Chỉ cho Admin và Staff (role_id = 1 hoặc 2)
+ * ❌ Customer phải đăng ký qua OTP (customerLoginWithOTP)
  */
 export const register = async (data) => {
   try {
-    const { username, email, password, phone, full_name, role_id = 3 } = data;
+    const { username, email, password, phone, full_name, role_id } = data;
 
     // Validate input
     if (!username || !email || !password) {
       return {
         success: false,
         error: 'Username, email và password là bắt buộc',
+        status: 400
+      };
+    }
+
+    // Validate role_id
+    if (!role_id) {
+      return {
+        success: false,
+        error: 'Role ID là bắt buộc',
+        status: 400
+      };
+    }
+
+    // ❌ KHÔNG CHO PHÉP ĐĂNG KÝ CUSTOMER
+    if (Number(role_id) === 3) {
+      return {
+        success: false,
+        error: 'Không thể đăng ký tài khoản Customer. Vui lòng sử dụng chức năng đăng nhập OTP',
+        status: 403
+      };
+    }
+
+    // Validate role_id (chỉ cho phép 1=admin, 2=staff)
+    if (![1, 2].includes(Number(role_id))) {
+      return {
+        success: false,
+        error: 'Role ID phải là 1 (admin) hoặc 2 (staff)',
         status: 400
       };
     }
@@ -45,15 +73,6 @@ export const register = async (data) => {
       return {
         success: false,
         error: 'Role không hợp lệ',
-        status: 400
-      };
-    }
-
-    // Validate role_id (1=admin, 2=staff, 3=customer)
-    if (![1, 2, 3].includes(Number(role_id))) {
-      return {
-        success: false,
-        error: 'Role ID phải là 1 (admin), 2 (staff), hoặc 3 (customer)',
         status: 400
       };
     }
@@ -114,14 +133,7 @@ export const register = async (data) => {
       });
 
       // Create role-specific record based on role_id
-      if (role_id === 3) {
-        // Customer role
-        await tx.customers.create({
-          data: {
-            user_id: newUser.id
-          }
-        });
-      } else if (role_id === 2) {
+      if (role_id === 2) {
         // Staff role
         await tx.staff.create({
           data: {
@@ -136,6 +148,7 @@ export const register = async (data) => {
           }
         });
       }
+      // Customer không được tạo qua register
 
       // Return user with all relations
       return tx.users.findUnique({
@@ -162,10 +175,8 @@ export const register = async (data) => {
       role_name: user.roles.role_name
     };
 
-    // Add role-specific ID to token
-    if (user.customers) {
-      tokenData.customer_id = user.customers.id;
-    } else if (user.staff) {
+    // Add role-specific ID to token (chỉ staff hoặc admin cho register)
+    if (user.staff) {
       tokenData.staff_id = user.staff.id;
       tokenData.branch_id = user.staff.branch_id;
     } else if (user.admin) {
@@ -520,8 +531,8 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
         phone: normalizedPhone,
         otp_code: otpCode,
         verified: true,
-        created_at: {
-          gte: new Date(Date.now() - 10 * 60000) // Within last 10 minutes
+        expires_at: {
+          gte: new Date()
         }
       },
       orderBy: {
@@ -604,7 +615,7 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
       email: user.email,
       phone: user.phone,
       role_id: user.role_id,
-      role_name: user.role?.role_name,
+      role_name: user.roles?.role_name,
       customer_id: user.customers?.id
     });
 
@@ -614,13 +625,6 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
 
     // Remove password from response
     const { password_hash: _, ...userWithoutPassword } = user;
-
-    // Delete used OTP
-    await prisma.otp_verifications.delete({
-      where: {
-        id: otpRecord.id
-      }
-    });
 
     return {
       success: true,
