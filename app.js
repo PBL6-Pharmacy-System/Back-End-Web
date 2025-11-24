@@ -1,8 +1,8 @@
 import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
-import './src/jobs/flashsaleJob.js';
 import './src/jobs/cartExpirationJob.js';
+import './src/jobs/flashsaleJob.js';
 
 // Middlewares
 import { errorHandler, notFound } from './src/middlewares/errorHandler.middleware.js';
@@ -49,12 +49,15 @@ import notificationRoutes from './src/modules/notification-management/notificati
 import prescriptionRoutes from './src/modules/medical/prescriptions/prescriptionRoutes.js';
 
 // Statistics
-import inventoryStatisticsRoutes from './src/modules/statistics/inventory/inventoryStatisticsRoutes.js';
 import businessStatisticsRoutes from './src/modules/statistics/business/businessStatisticsRoutes.js';
+import inventoryStatisticsRoutes from './src/modules/statistics/inventory/inventoryStatisticsRoutes.js';
+
+// Admin Dashboard
+import dashboardRoutes from './src/modules/admin-dashboard/dashboardRoutes.js';
 
 // Staff & Admin Management (now under user-management)
-import staffRoutes from './src/modules/user-management/staff/staffRoutes.js';
 import adminRoutes from './src/modules/user-management/admin/adminRoutes.js';
+import staffRoutes from './src/modules/user-management/staff/staffRoutes.js';
 
 // Location Management
 import citiesRoutes from './src/modules/location/cities/citiesRoutes.js';
@@ -127,6 +130,9 @@ app.use('/api', prescriptionRoutes);
 // Statistics
 app.use('/api', inventoryStatisticsRoutes);
 app.use('/api', businessStatisticsRoutes);
+
+// Admin Dashboard
+app.use('/api/admin/dashboard', dashboardRoutes);
 
 // Staff & Admin management
 app.use('/api', staffRoutes);
