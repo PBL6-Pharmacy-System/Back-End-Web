@@ -543,7 +543,7 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
         ...(normalizedEmail ? [{ email: normalizedEmail }] : [])
       ],
       otp_code: otpCode,
-      verified: true,
+      verified: false,
       expires_at: {
         gte: new Date()
       }
@@ -563,6 +563,12 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
         status: 400
       };
     }
+
+    // Mark OTP as verified
+    await prisma.otp_verifications.update({
+      where: { id: otpRecord.id },
+      data: { verified: true }
+    });
 
     // Find or create customer
     const userWhereClause = {
@@ -649,11 +655,12 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
 
     return {
       success: true,
-      message: user.customers ? 'Đăng nhập thành công' : 'Tài khoản mới đã được tạo',
+      message: 'Đăng nhập thành công',
       data: {
         user: userWithoutPassword,
         token,
-        refreshToken
+        refreshToken,
+        isNewAccount: !user.customers
       }
     };
   } catch (error) {
