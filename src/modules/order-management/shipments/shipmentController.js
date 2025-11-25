@@ -126,7 +126,7 @@ export const updateShipmentStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const userId = req.user?.id;
+    const userId = req.user?.userId; // From auth middleware
 
     if (!status) {
       return res.status(400).json({

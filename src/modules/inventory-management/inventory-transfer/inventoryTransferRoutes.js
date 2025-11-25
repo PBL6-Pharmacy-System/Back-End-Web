@@ -1,6 +1,6 @@
 import express from 'express';
 import * as inventoryTransferController from './inventoryTransferController.js';
-import { authenticateToken, authorizeRoles } from '../../auth/auth.middleware.js';
+import { authenticateToken, authorizeAdminOrStaff, authorizeStaffBranch, authorizeAdmin } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
 
 const router = express.Router();
@@ -8,47 +8,55 @@ const router = express.Router();
 // Admin/Staff only routes - Quản lý chuyển kho giữa chi nhánh
 router.get('/inventory-transfers',
   authenticateToken,
-  authorizeRoles('admin', 'staff'),
+  authorizeAdminOrStaff,
   inventoryTransferController.getAllTransfers
 );
 
 router.get('/inventory-transfers/:id',
   authenticateToken,
-  authorizeRoles('admin', 'staff'),
+  authorizeAdminOrStaff,
   validateId(),
   inventoryTransferController.getTransferById
 );
 
+// Tạo phiếu chuyển kho - Staff chỉ có thể chuyển từ chi nhánh của mình
 router.post('/inventory-transfers',
   authenticateToken,
-  authorizeRoles('admin', 'staff'),
+  authorizeAdminOrStaff,
+  authorizeStaffBranch,
   inventoryTransferController.createTransferRequest
 );
 
+// Duyệt phiếu - Admin hoặc Manager
 router.post('/inventory-transfers/:id/approve',
   authenticateToken,
-  authorizeRoles('admin', 'staff'),
+  authorizeAdmin,
   validateId(),
   inventoryTransferController.approveTransfer
 );
 
+// Xuất kho - Staff chi nhánh nguồn
 router.post('/inventory-transfers/:id/ship',
   authenticateToken,
-  authorizeRoles('admin', 'staff'),
+  authorizeAdminOrStaff,
+  authorizeStaffBranch,
   validateId(),
   inventoryTransferController.shipTransfer
 );
 
+// Nhận kho - Staff chi nhánh đích
 router.post('/inventory-transfers/:id/receive',
   authenticateToken,
-  authorizeRoles('admin', 'staff'),
+  authorizeAdminOrStaff,
+  authorizeStaffBranch,
   validateId(),
   inventoryTransferController.receiveTransfer
 );
 
+// Hủy phiếu
 router.post('/inventory-transfers/:id/cancel',
   authenticateToken,
-  authorizeRoles('admin', 'staff'),
+  authorizeAdminOrStaff,
   validateId(),
   inventoryTransferController.cancelTransfer
 );

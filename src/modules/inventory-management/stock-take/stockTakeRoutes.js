@@ -1,14 +1,18 @@
 import express from 'express';
 import * as stockTakeController from './stockTakeController.js';
-import { authenticateToken } from '../../auth/auth.middleware.js';
+import { authenticateToken, authorizeAdminOrStaff, authorizeStaffBranch } from '../../auth/auth.middleware.js';
 
 const router = express.Router();
 
 // All routes require authentication
 router.use(authenticateToken);
+router.use(authorizeAdminOrStaff);
 
-// Create new stock take
-router.post('/stock-takes', stockTakeController.createStockTake);
+// Create new stock take - Staff chỉ có thể tạo kiểm kê cho chi nhánh của mình
+router.post('/stock-takes',
+    authorizeStaffBranch,
+    stockTakeController.createStockTake
+);
 
 // Get all stock takes with filters
 router.get('/stock-takes', stockTakeController.getAllStockTakes);

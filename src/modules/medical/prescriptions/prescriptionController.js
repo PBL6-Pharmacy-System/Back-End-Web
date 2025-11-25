@@ -109,7 +109,7 @@ export const verifyPrescription = async (req, res, next) => {
   try {
     const { id } = req.params;
     const verificationData = req.body;
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
 
     const result = await prescriptionService.verifyPrescription(id, verificationData, userId);
 

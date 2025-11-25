@@ -168,7 +168,7 @@ export const register = async (data) => {
 
     // Generate tokens with role and profile info
     const tokenData = {
-      userId: user.id,
+      userId: user.id,  // ✅ REVERTED: Use 'userId' to match middleware
       username: user.username,
       email: user.email,
       role_id: user.role_id,
@@ -187,7 +187,7 @@ export const register = async (data) => {
     const token = generateToken(tokenData);
 
     const refreshToken = generateRefreshToken({
-      userId: user.id
+      userId: user.id  // ✅ REVERTED: Use 'userId' to match middleware
     });
 
     // Remove password from response
@@ -275,7 +275,7 @@ export const login = async (data) => {
 
     // Generate tokens with role and profile info
     const tokenData = {
-      userId: user.id,
+      userId: user.id,  // ✅ REVERTED: Use 'userId' to match middleware
       username: user.username,
       email: user.email,
       role_id: user.role_id,
@@ -296,7 +296,7 @@ export const login = async (data) => {
     const token = generateToken(tokenData);
 
     const refreshToken = generateRefreshToken({
-      userId: user.id
+      userId: user.id  // ✅ REVERTED: Use 'userId' to match middleware
     });
 
     // Remove password from response
@@ -451,7 +451,7 @@ export const refreshAccessToken = async (refreshToken) => {
 
     // Get user with role info
     const user = await prisma.users.findUnique({
-      where: { id: decoded.userId },
+      where: { id: decoded.userId },  // ✅ REVERTED: Use 'userId' to match middleware
       include: {
         roles: true,
         customers: true,
@@ -470,7 +470,7 @@ export const refreshAccessToken = async (refreshToken) => {
 
     // Generate new access token with role and profile info
     const tokenData = {
-      userId: user.id,
+      userId: user.id,  // ✅ REVERTED: Use 'userId' to match middleware
       username: user.username,
       email: user.email,
       role_id: user.role_id,
@@ -637,7 +637,7 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
 
     // Generate tokens
     const token = generateToken({
-      userId: user.id,
+      userId: user.id,  // ✅ REVERTED: Use 'userId' to match middleware
       username: user.username,
       email: user.email,
       phone: user.phone,
@@ -647,7 +647,7 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
     });
 
     const refreshToken = generateRefreshToken({
-      userId: user.id
+      userId: user.id  // ✅ REVERTED: Use 'userId' to match middleware
     });
 
     // Remove password from response

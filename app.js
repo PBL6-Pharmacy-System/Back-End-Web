@@ -27,6 +27,7 @@ import branchRoutes from './src/modules/inventory-management/branches/branchRout
 import inventoryTransferRoutes from './src/modules/inventory-management/inventory-transfer/inventoryTransferRoutes.js';
 import productBatchRoutes from './src/modules/inventory-management/product-batch/productBatchRoutes.js';
 import stockTakeRoutes from './src/modules/inventory-management/stock-take/stockTakeRoutes.js';
+import stockOperationsRoutes from './src/modules/inventory-management/stock-operations/stockOperationsRoutes.js';
 
 // Order Management
 import cartRoutes from './src/modules/order-management/cart/cartRoutes.js';
@@ -77,8 +78,8 @@ app.use('/api', apiLimiter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'Server is running',
     timestamp: new Date().toISOString()
   });
@@ -111,6 +112,7 @@ app.use('/api', branchInventoryRoutes);
 app.use('/api', inventoryTransferRoutes);
 app.use('/api', productBatchRoutes);
 app.use('/api', stockTakeRoutes);
+app.use('/api', stockOperationsRoutes);
 
 // Order management
 app.use('/api', cartRoutes);
@@ -118,8 +120,6 @@ app.use('/api', orderRoutes);
 app.use('/api', shippingAddressRoutes);
 app.use('/api', paymentRoutes);
 app.use('/api', shipmentRoutes);
-
-
 
 // Notification management
 app.use('/api', notificationRoutes);

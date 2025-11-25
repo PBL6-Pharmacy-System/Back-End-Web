@@ -48,7 +48,7 @@ export const login = async (req, res) => {
  */
 export const getCurrentUser = async (req, res) => {
   try {
-    const result = await authService.getCurrentUser(req.user.id);
+    const result = await authService.getCurrentUser(req.user.userId);
     
     if (!result.success) {
       return res.status(result.status).json(result);
@@ -70,7 +70,7 @@ export const getCurrentUser = async (req, res) => {
 export const changePassword = async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
-    const result = await authService.changePassword(req.user.id, oldPassword, newPassword);
+    const result = await authService.changePassword(req.user.userId, oldPassword, newPassword);
     
     if (!result.success) {
       return res.status(result.status).json(result);

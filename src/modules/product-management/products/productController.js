@@ -1,15 +1,16 @@
 import * as productService from './productService.js';
+import { maskProductInventory, canViewDetailedInventory } from '../../../utils/dataMasking.js';
 
 export const getAllProducts = async (req, res) => {
   try {
-    const { 
-      search, 
-      categoryId, 
-      supplierId, 
-      minPrice, 
+    const {
+      search,
+      categoryId,
+      supplierId,
+      minPrice,
       maxPrice,
-      page = 1, 
-      limit = 10 
+      page = 1,
+      limit = 10
     } = req.query;
 
     const result = await productService.getAllProducts({
@@ -21,6 +22,14 @@ export const getAllProducts = async (req, res) => {
       page: parseInt(page),
       limit: parseInt(limit)
     });
+
+    // Data masking for public access
+    const isAuthenticated = req.user && canViewDetailedInventory(req.user);
+
+    if (!isAuthenticated) {
+      // Mask sensitive inventory data for public/customer
+      result.data = result.data.map(product => maskProductInventory(product));
+    }
 
     res.json({ success: true, data: result.data });
   } catch (err) {
@@ -35,6 +44,15 @@ export const getProductById = async (req, res) => {
     if (!result.success) {
       return res.status(result.status).json({ success: false, error: result.error });
     }
+
+    // Data masking for public access
+    const isAuthenticated = req.user && canViewDetailedInventory(req.user);
+
+    if (!isAuthenticated) {
+      // Mask sensitive inventory data for public/customer
+      result.data = maskProductInventory(result.data);
+    }
+
     res.json({ success: true, data: result.data });
   } catch (err) {
     console.error('Error in getProductById:', err);
@@ -74,9 +92,9 @@ export const deleteProduct = async (req, res) => {
     if (!result.success) {
       return res.status(result.status).json({ error: result.error });
     }
-    res.json({ 
+    res.json({
       message: 'Xóa sản phẩm thành công',
-      product: result.data 
+      product: result.data
     });
   } catch (err) {
     console.error('Error in deleteProduct:', err);
@@ -98,6 +116,15 @@ export const searchProducts = async (req, res) => {
     if (!result.success) {
       return res.status(result.status).json({ success: false, error: result.error });
     }
+
+    // Data masking for public access
+    const isAuthenticated = req.user && canViewDetailedInventory(req.user);
+
+    if (!isAuthenticated) {
+      // Mask sensitive inventory data for public/customer
+      result.data = result.data.map(product => maskProductInventory(product));
+    }
+
     res.json({ success: true, data: result.data });
   } catch (err) {
     console.error('Error in searchProducts:', err);
@@ -115,6 +142,14 @@ export const getProductsByCategory = async (req, res) => {
 
     if (!result.success) {
       return res.status(result.status || 500).json({ error: result.error });
+    }
+
+    // Data masking for public access
+    const isAuthenticated = req.user && canViewDetailedInventory(req.user);
+
+    if (!isAuthenticated && result.data.products) {
+      // Mask sensitive inventory data for public/customer
+      result.data.products = result.data.products.map(product => maskProductInventory(product));
     }
 
     return res.status(result.status).json(result.data);

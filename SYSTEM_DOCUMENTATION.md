@@ -1,8 +1,9 @@
 # 📚 HỆ THỐNG QUẢN LÝ NHÀ THUỐC PBL6 - TÀI LIỆU KỸ THUẬT CHI TIẾT
 
-> **Phiên bản:** 1.0.0  
-> **Ngày cập nhật:** 2025-11-19  
-> **Tech Stack:** Node.js + Express.js + Prisma ORM + PostgreSQL (Supabase)
+> **Phiên bản:** 4.0.1 (Data Masking & Enhanced Security)  
+> **Ngày cập nhật:** 2025-11-24  
+> **Tech Stack:** Node.js + Express.js + Prisma ORM + PostgreSQL (Supabase)  
+> **Security Status:** ✅ AUDITED & PRODUCTION READY
 
 ---
 
@@ -14,10 +15,14 @@
 4. [API Endpoints](#4-api-endpoints)
 5. [Authentication & Authorization](#5-authentication--authorization)
 6. [Business Logic](#6-business-logic)
-7. [Cron Jobs & Background Tasks](#7-cron-jobs--background-tasks)
-8. [Constants & Configurations](#8-constants--configurations)
-9. [Error Handling](#9-error-handling)
-10. [Deployment](#10-deployment)
+7. [Data Masking & Security (NEW v4.0)](#7-data-masking--security-v40)
+8. [Cron Jobs & Background Tasks](#8-cron-jobs--background-tasks)
+9. [Constants & Configurations](#9-constants--configurations)
+10. [Error Handling](#10-error-handling)
+11. [Deployment](#11-deployment)
+12. [Testing APIs](#12-testing-apis)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Future Improvements](#14-future-improvements)
 
 ---
 
@@ -28,11 +33,12 @@
 Hệ thống quản lý nhà thuốc trực tuyến với đầy đủ chức năng:
 
 - **E-commerce**: Mua bán thuốc online
-- **Inventory Management**: Quản lý kho chi nhánh
+- **Inventory Management**: Quản lý kho chi nhánh (với Data Masking v4.0)
 - **Order Processing**: Xử lý đơn hàng tự động
 - **Promotion System**: Flash sale, voucher
 - **Prescription Management**: Quản lý đơn thuốc
 - **Review System**: Đánh giá sản phẩm
+- **🔒 Security**: Multi-layer data protection với RBAC & data masking
 
 ### 1.2 Tech Stack
 
@@ -45,7 +51,8 @@ Hệ thống quản lý nhà thuốc trực tuyến với đầy đủ chức n�
   "authentication": "JWT (jsonwebtoken)",
   "password_hashing": "bcrypt",
   "cron_jobs": "node-cron",
-  "rate_limiting": "express-rate-limit"
+  "rate_limiting": "express-rate-limit",
+  "security": "Data Masking v4.0 + RBAC"
 }
 ```
 
@@ -153,7 +160,7 @@ model users {
   password_hash String
   email         String    @unique
   phone         String?   @unique
-  role_id       Int       // FK → rolepermissions
+  role_id       Int       // FK → roles
   full_name     String?
   avatar_url    String?
   created_at    DateTime  @default(now())
@@ -189,12 +196,16 @@ Thông tin chung    Thông tin riêng
 (email, phone)     (dob, gender)
 ```
 
-#### 🏢 **rolepermissions** (Roles)
+#### 🏢 **roles** (Roles)
 
 ```prisma
-model rolepermissions {
-  id        Int    @id @default(autoincrement())
-  role_name String @unique  // 'admin', 'staff', 'customer'
+model roles {
+  id          Int       @id @default(autoincrement())
+  role_name   String    @unique @db.VarChar(100)
+  description String?
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+  users       users[]
 }
 ```
 
@@ -203,6 +214,61 @@ model rolepermissions {
 - `id=1`: Admin
 - `id=2`: Staff
 - `id=3`: Customer
+
+### 3.3 Database Seeding
+
+Để khởi tạo dữ liệu mặc định cho hệ thống:
+
+```sql
+-- Insert default roles
+INSERT INTO roles (id, role_name, description) VALUES
+  (1, 'admin', 'Administrator - Full system access'),
+  (2, 'staff', 'Staff - Branch management'),
+  (3, 'customer', 'Customer - Shopping and orders')
+ON CONFLICT (id) DO NOTHING;
+
+-- Reset sequence nếu cần
+SELECT setval('roles_id_seq', (SELECT MAX(id) FROM roles));
+```
+
+**Hoặc sử dụng Prisma seed:**
+
+```javascript
+// prisma/seed.js
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  // Seed roles
+  await prisma.roles.upsert({
+    where: { id: 1 },
+    update: {},
+    create: { id: 1, role_name: 'admin', description: 'Administrator' }
+  });
+  
+  await prisma.roles.upsert({
+    where: { id: 2 },
+    update: {},
+    create: { id: 2, role_name: 'staff', description: 'Staff' }
+  });
+  
+  await prisma.roles.upsert({
+    where: { id: 3 },
+    update: {},
+    create: { id: 3, role_name: 'customer', description: 'Customer' }
+  });
+}
+
+main()
+  .catch((e) => console.error(e))
+  .finally(async () => await prisma.$disconnect());
+```
+
+```bash
+# Run seed
+npx prisma db seed
+```
 
 #### 💊 **products** (Sản phẩm)
 
@@ -557,20 +623,20 @@ orders (1) ──── (n) orderitems
 
 ```javascript
 // Headers
-Authorization: Bearer <
-  token >
-  // Body
-  {
-    name: "Paracetamol 500mg",
-    description: "Thuốc giảm đau hạ sốt",
-    price: 50000,
-    category_id: 1,
-    supplier_id: 1,
-    base_unit_id: 1,
-    images: ["url1", "url2"],
-    manufacturer: "Công ty ABC",
-    prescription_required: false,
-  };
+Authorization: Bearer <token>
+
+// Body
+{
+  "name": "Paracetamol 500mg",
+  "description": "Thuốc giảm đau hạ sốt",
+  "price": 50000,
+  "category_id": 1,
+  "supplier_id": 1,
+  "base_unit_id": 1,
+  "images": ["url1", "url2"],
+  "manufacturer": "Công ty ABC",
+  "prescription_required": false
+}
 ```
 
 #### **PUT /api/products/:id** (Admin only)
@@ -1228,213 +1294,731 @@ export const authorizeAdminOrStaff = (req, res, next) => {
    └── Order hoàn thành
 ```
 
-### 6.2 Voucher Application Logic
+---
 
-**File:** `src/modules/order-management/cart/checkoutService.js`
+## 7. DATA MASKING & SECURITY (v4.0)
 
-```javascript
-const applyVoucher = async (voucherCode, totalAmount, customerId) => {
-  // 1. Tìm voucher
-  const voucher = await prisma.vouchers.findUnique({
-    where: { code: voucherCode },
-  });
+### 7.1 Overview - Security Philosophy
 
-  if (!voucher) {
-    throw new Error("Voucher không tồn tại");
-  }
+**🔒 Core Principle:** Chỉ tiết lộ thông tin cần thiết cho từng user role, bảo vệ dữ liệu kinh doanh nhạy cảm.
 
-  // 2. Check ngày hiệu lực
-  const now = new Date();
-  if (now < voucher.start_date || now > voucher.end_date) {
-    throw new Error("Voucher đã hết hạn hoặc chưa có hiệu lực");
-  }
-
-  // 3. Check usage limit
-  if (voucher.usage_limit && voucher.used_count >= voucher.usage_limit) {
-    throw new Error("Voucher đã hết lượt sử dụng");
-  }
-
-  // 4. Check min order value
-  if (voucher.min_order_value && totalAmount < voucher.min_order_value) {
-    throw new Error(`Đơn hàng tối thiểu ${voucher.min_order_value}đ`);
-  }
-
-  // 5. Check customer đã dùng chưa
-  const used = await prisma.uservouchers.findFirst({
-    where: {
-      customer_id: customerId,
-      voucher_id: voucher.id,
-      is_used: true,
-    },
-  });
-
-  if (used) {
-    throw new Error("Bạn đã sử dụng voucher này rồi");
-  }
-
-  // 6. Calculate discount
-  let discount = 0;
-  if (voucher.discount_type === "percentage") {
-    discount = (totalAmount * voucher.discount_value) / 100;
-  } else {
-    discount = voucher.discount_value;
-  }
-
-  return {
-    voucher_id: voucher.id,
-    discount_amount: discount,
-  };
-};
+**Security Layers:**
+```
+┌─────────────────────────────────────────────────────────┐
+│ Layer 1: Route Level (Public/Auth/Staff/Admin)         │
+├─────────────────────────────────────────────────────────┤
+│ Layer 2: Middleware (authenticateToken, optionalAuth)  │
+├─────────────────────────────────────────────────────────┤
+│ Layer 3: Controller (Permission checks + Data Masking) │
+├─────────────────────────────────────────────────────────┤
+│ Layer 4: Service (Business logic validation)           │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### 6.3 Flashsale Logic
+---
 
-**Khi customer thêm sản phẩm flashsale vào giỏ:**
+### 7.2 Data Visibility Matrix
+
+#### 📊 Inventory Data Visibility
+
+| Data Field | Public | Customer | Staff | Admin |
+|-----------|--------|----------|-------|-------|
+| **Basic Info** |
+| Product ID | ✅ | ✅ | ✅ | ✅ |
+| Product Name | ✅ | ✅ | ✅ | ✅ |
+| Branch ID | ✅ | ✅ | ✅ | ✅ |
+| **Stock Information** |
+| `in_stock` (boolean) | ✅ | ✅ | ❌ | ❌ |
+| `stock_status` | ✅ | ✅ | ❌ | ❌ |
+| Exact Stock Quantity | ❌ | ❌ | ✅ | ✅ |
+| Min/Max Stock | ❌ | ❌ | ✅ | ✅ |
+| Reorder Point | ❌ | ❌ | ✅ | ✅ |
+| **Batch Information** |
+| Batch Number | ❌ | ❌ | ✅ | ✅ |
+| Expiry Date | ❌ | ❌ | ✅ | ✅ |
+| Manufacture Date | ❌ | ❌ | ✅ | ✅ |
+| Quantity per Batch | ❌ | ❌ | ✅ | ✅ |
+| **Financial Data** |
+| Selling Price | ✅ | ✅ | ✅ | ✅ |
+| Cost Price | ❌ | ❌ | ❌ | ✅ |
+| Supplier Info | ❌ | ❌ | ✅ | ✅ |
+
+**🔒 Security Rationale:**
+
+**WHY hide batch information from Public/Customer?**
+- ❌ Tiết lộ hệ thống quản lý kho nội bộ
+- ❌ Cho competitor biết chu kỳ nhập hàng
+- ❌ Không cần thiết cho việc mua sắm
+- ✅ Customer chỉ cần biết "có hàng" hay "hết hàng"
+
+**WHY hide cost_price from Staff?**
+- ❌ Ngăn staff leak giá nhập cho competitor
+- ❌ Bảo vệ lợi nhuận và chiến lược pricing
+- ✅ Staff không cần biết để làm việc
+
+---
+
+### 7.3 Implementation - Data Masking Helpers
+
+**File:** `src/utils/dataMasking.js`
+
+#### 7.3.1 Permission Check Functions
 
 ```javascript
-// File: src/modules/order-management/cart/orderService.js
-const getFlashsalePrice = async (productId) => {
-  const now = new Date();
-
-  // Tìm flashsale đang active
-  const flashsale = await prisma.flashsales.findFirst({
-    where: {
-      start_time: { lte: now },
-      end_time: { gte: now },
-      status: "active",
-    },
-    include: {
-      products: {
-        where: { product_id: productId },
-      },
-    },
-  });
-
-  if (!flashsale || !flashsale.products.length) {
-    return null;
-  }
-
-  const flashProduct = flashsale.products[0];
-
-  // Check còn hàng flashsale không
-  if (flashProduct.sold_count >= flashProduct.stock_limit) {
-    return null;
-  }
-
-  return flashProduct;
+/**
+ * Kiểm tra user có quyền xem detailed inventory không
+ */
+export const canViewDetailedInventory = (user) => {
+    if (!user) return false;
+    return ['admin', 'staff'].includes(user.role_name);
 };
 
-// Khi checkout
-const calculateOrderTotals = async (items) => {
-  let subtotal = 0;
-
-  for (const item of items) {
-    const flashProduct = await getFlashsalePrice(item.productId);
-
-    if (flashProduct) {
-      // Giá flashsale
-      subtotal += item.quantity * flashProduct.flash_price;
-
-      // Tăng sold_count
-      await prisma.flashsale_products.update({
-        where: { id: flashProduct.id },
-        data: {
-          sold_count: { increment: item.quantity },
-        },
-      });
-    } else {
-      // Giá thường
-      subtotal += item.quantity * item.unitPrice;
+/**
+ * Kiểm tra Staff có thể WRITE vào branch không
+ * @param {Object} user - User từ JWT token
+ * @param {number} targetBranchId - Branch ID muốn thao tác
+ * @returns {Promise<boolean>}
+ */
+export const canWriteToBranch = async (user, targetBranchId) => {
+    if (!user) return false;
+    if (user.role_name === 'admin') return true;
+    
+    if (user.role_name === 'staff') {
+        // Staff chỉ WRITE own branch (branch_id từ JWT)
+        return user.branch_id && user.branch_id === Number(targetBranchId);
     }
-  }
+    
+    return false;
+};
 
-  return subtotal;
+/**
+ * Kiểm tra Staff có thể READ từ branch không
+ * Staff có thể READ cross-branch (để hỗ trợ customer tìm hàng)
+ */
+export const canReadFromBranch = (user, targetBranchId) => {
+    if (!user) return false;
+    // Admin/Staff: Cross-branch READ permission
+    return ['admin', 'staff'].includes(user.role_name);
 };
 ```
 
-### 6.4 Best Sellers Logic
-
-**Không dùng cache, tính real-time từ orderitems:**
+#### 7.3.2 Data Masking Functions
 
 ```javascript
-// File: src/modules/product-management/products/bestSellersService.js
-export const getBestSellers = async (limit = 10) => {
-  // 1. Group by product_id và tính tổng quantity
-  const productSales = await prisma.orderitems.groupBy({
-    by: ["product_id"],
-    _sum: {
-      quantity: true,
-    },
-    orderBy: {
-      _sum: {
-        quantity: "desc",
-      },
-    },
-    take: limit,
-  });
-
-  // 2. Lấy thông tin products
-  const productIds = productSales.map((item) => item.product_id);
-
-  const products = await prisma.products.findMany({
-    where: { id: { in: productIds } },
-    include: {
-      categories: true,
-      reviews: true,
-    },
-  });
-
-  // 3. Map với rank và sold_count
-  const productsMap = new Map(products.map((p) => [p.id, p]));
-
-  const bestSellers = productSales.map((sale, index) => {
-    const product = productsMap.get(sale.product_id);
-
+/**
+ * Mask Branch Inventory cho Public/Customer
+ * Chỉ trả về in_stock (boolean) và stock_status
+ */
+export const maskBranchInventory = (inventory) => {
+    if (!inventory) return inventory;
+    
+    const stock = inventory.stock || 0;
+    
     return {
-      ...product,
-      rank: index + 1,
-      sold_count: sale._sum.quantity || 0,
-      average_rating: calculateAvgRating(product.reviews),
+        id: inventory.id,
+        branch_id: inventory.branch_id,
+        product_id: inventory.product_id,
+        
+        // ✅ Public/Customer chỉ thấy boolean
+        in_stock: stock > 0,
+        stock_status: stock > 20 ? 'available' :
+                     stock > 0 ? 'low_stock' : 'out_of_stock',
+        
+        // Keep product info (cần cho shopping)
+        products: inventory.products ? {
+            id: inventory.products.id,
+            name: inventory.products.name,
+            price: inventory.products.price,
+            images: inventory.products.images,
+        } : undefined,
+        
+        // ❌ Remove ALL sensitive fields
+        stock: undefined,
+        min_stock: undefined,
+        max_stock: undefined,
+        reorder_point: undefined,
+        reorder_quantity: undefined,
+        last_import_date: undefined,
+        last_export_date: undefined,
+        note: undefined,
     };
-  });
+};
 
-  return bestSellers;
+/**
+ * Mask Batch Information
+ * Public/Customer: KHÔNG XEM ĐƯỢC batch info
+ * Staff: Xem được nhưng không có cost_price
+ * Admin: Full access
+ */
+export const maskBatchInfo = (batch, user) => {
+    if (!batch) return batch;
+    
+    // ✅ Staff/Admin: Xem được batch details
+    if (canViewDetailedInventory(user)) {
+        // Staff: Remove cost_price
+        if (user.role_name === 'staff') {
+            return {
+                ...batch,
+                cost_price: undefined, // ❌ Staff không xem được giá nhập
+            };
+        }
+        
+        // Admin: Full access
+        return batch;
+    }
+    
+    // ❌ Public/Customer: KHÔNG XEM được batch information
+    return null;
+};
+
+/**
+ * Mask Product Inventory cho Public/Customer
+ */
+export const maskProductInventory = (product) => {
+    if (!product) return product;
+    
+    const stock = product.stock || 0;
+    let stockStatus = 'out_of_stock';
+    
+    if (stock > 20) {
+        stockStatus = 'available';
+    } else if (stock > 0) {
+        stockStatus = 'low_stock';
+    }
+    
+    return {
+        ...product,
+        // Replace stock với boolean
+        in_stock: stock > 0,
+        stock_status: stockStatus,
+        stock: undefined, // ❌ Remove exact quantity
+        
+        // Remove branch inventory details
+        branchinventory: product.branchinventory
+            ? product.branchinventory.map(inv => maskBranchInventory(inv))
+            : undefined,
+    };
 };
 ```
 
-### 6.5 Stock Management
+---
 
-**Khi checkout:**
+### 7.4 Controller Layer Implementation
+
+#### Example 1: Public Endpoint với Optional Auth + Masking
+
+**Endpoint:** `GET /api/branches/:branchId/inventory`
 
 ```javascript
-// Decrease stock
-await prisma.products.update({
-  where: { id: productId },
-  data: {
-    stock: { decrement: quantity },
-  },
-});
+/**
+ * Route: optionalAuth (cho phép cả Public và Authenticated)
+ * Data masking: Conditional based on user role
+ */
+export const getBranchInventoryByBranchId = async (req, res) => {
+    try {
+        const { branchId } = req.params;
+        const { page = 1, limit = 20 } = req.query;
+        
+        // ✅ Lấy dữ liệu từ service (không filter by role)
+        const result = await branchInventoryService.getAllBranchInventory({
+            branchId: Number(branchId),
+            page: Number(page),
+            limit: Number(limit),
+        });
+        
+        if (!result.success) {
+            return res.status(result.status).json(result);
+        }
+        
+        // 🔒 DATA MASKING: Check user role
+        const hasDetailedAccess = canViewDetailedInventory(req.user);
+        
+        if (!hasDetailedAccess && result.data.inventory) {
+            // ❌ Public/Customer → Mask sensitive data
+            result.data.inventory = result.data.inventory.map(inv =>
+                maskBranchInventory(inv)
+            );
+        }
+        // ✅ Staff/Admin → Full data (không mask)
+        
+        res.json(result);
+    } catch (err) {
+        console.error('Error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Lỗi khi lấy tồn kho chi nhánh'
+        });
+    }
+};
 ```
 
-**Khi cancel order:**
+#### Example 2: Staff-Only Endpoint (No Public Access)
+
+**Endpoint:** `GET /api/branches/:branchId/inventory/alerts/low-stock`
 
 ```javascript
-// Restore stock
-for (const item of orderItems) {
-  await prisma.products.update({
-    where: { id: item.product_id },
-    data: {
-      stock: { increment: item.quantity },
-    },
-  });
+/**
+ * Route: authenticateToken (CHỈ Staff/Admin)
+ * No masking needed vì chỉ internal users
+ */
+export const getBranchLowStockItems = async (req, res) => {
+    try {
+        const { branchId } = req.params;
+        const { threshold = 10 } = req.query;
+        
+        // ❌ Chặn luôn Public/Customer
+        if (!canViewDetailedInventory(req.user)) {
+            return res.status(403).json({
+                success: false,
+                error: 'Bạn không có quyền truy cập thông tin cảnh báo tồn kho'
+            });
+        }
+        
+        const result = await branchInventoryService.getBranchLowStockProducts(
+            branchId,
+            Number(threshold)
+        );
+        
+        if (!result.success) {
+            return res.status(result.status).json(result);
+        }
+        
+        // ✅ Staff/Admin: Không cần masking, trả về full data
+        res.json(result);
+    } catch (err) {
+        console.error('Error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Lỗi khi lấy danh sách tồn kho thấp'
+        });
+    }
+};
+```
+
+#### Example 3: Write Operation với Branch Authorization
+
+**Endpoint:** `PUT /api/branches/:branchId/inventory/:productId`
+
+```javascript
+/**
+ * Route: authenticateToken + authorizeAdminOrStaff
+ * Authorization: Staff chỉ update own branch
+ */
+export const updateBranchInventoryByBranchProduct = async (req, res) => {
+    try {
+        const { branchId, productId } = req.params;
+        const { stock, note } = req.body;
+        
+        // 🔒 Check WRITE permission (async function)
+        const canWrite = await canWriteToBranch(req.user, branchId);
+        if (!canWrite) {
+            return res.status(403).json({
+                success: false,
+                error: 'Bạn chỉ có thể cập nhật kho của chi nhánh mình'
+            });
+        }
+        
+        // Find inventory record
+        const inventory = await prisma.branchinventory.findFirst({
+            where: {
+                branch_id: Number(branchId),
+                product_id: Number(productId)
+            }
+        });
+        
+        if (!inventory) {
+            return res.status(404).json({
+                success: false,
+                error: 'Không tìm thấy sản phẩm trong kho'
+            });
+        }
+        
+        // Update inventory
+        const result = await branchInventoryService.updateBranchInventory(
+            inventory.id,
+            { stock, note }
+        );
+        
+        res.json(result);
+    } catch (err) {
+        console.error('Error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Lỗi khi cập nhật tồn kho'
+        });
+    }
+};
+```
+
+---
+
+### 7.5 Route Configuration Patterns
+
+**File:** `src/modules/inventory-management/branch/branchRoutes.js`
+
+```javascript
+import express from 'express';
+import { authenticateToken, optionalAuth } from '../../../middlewares/auth.middleware.js';
+import { authorizeAdmin, authorizeAdminOrStaff } from '../../../middlewares/auth.middleware.js';
+import * as controller from './branchInventoryController.js';
+
+const router = express.Router();
+
+// =====================================
+// PUBLIC ROUTES (với Data Masking)
+// =====================================
+
+// ✅ Public: Xem danh sách chi nhánh
+router.get('/', controller.getAllBranches);
+
+// ✅ Public: Xem chi tiết 1 chi nhánh
+router.get('/:id', controller.getBranchById);
+
+// =====================================
+// NESTED ROUTES: /branches/:branchId/inventory
+// =====================================
+
+// ✅ Optional Auth: Public có thể xem nhưng data bị mask
+router.get(
+    '/:branchId/inventory',
+    optionalAuth,  // ← Cho phép cả anonymous và authenticated
+    controller.getBranchInventoryByBranchId
+);
+
+// ✅ Optional Auth: Xem batch details của 1 product
+router.get(
+    '/:branchId/inventory/:productId',
+    optionalAuth,
+    controller.getProductBatchesByBranch
+);
+
+// =====================================
+// STAFF/ADMIN ONLY ROUTES
+// =====================================
+
+// 🔒 Staff/Admin: Xem low stock alerts
+router.get(
+    '/:branchId/inventory/alerts/low-stock',
+    authenticateToken,  // ← Bắt buộc auth
+    authorizeAdminOrStaff,
+    controller.getBranchLowStockItems
+);
+
+// 🔒 Staff/Admin: Xem expiring batches
+router.get(
+    '/:branchId/inventory/alerts/expiring-soon',
+    authenticateToken,
+    authorizeAdminOrStaff,
+    controller.getExpiringBatches
+);
+
+// 🔒 Staff (own branch) / Admin: Update inventory
+router.put(
+    '/:branchId/inventory/:productId',
+    authenticateToken,
+    authorizeAdminOrStaff,
+    controller.updateBranchInventoryByBranchProduct
+);
+
+// =====================================
+// ADMIN ONLY ROUTES
+// =====================================
+
+// 🔒 Admin: Create branch
+router.post('/', authenticateToken, authorizeAdmin, controller.createBranch);
+
+// 🔒 Admin: Delete branch
+router.delete('/:id', authenticateToken, authorizeAdmin, controller.deleteBranch);
+
+export default router;
+```
+
+---
+
+### 7.6 Middleware: Optional Authentication
+
+**File:** `src/middlewares/auth.middleware.js`
+
+```javascript
+/**
+ * Optional Authentication Middleware
+ * Cho phép request đi qua dù không có token
+ * Nếu có token → decode và attach vào req.user
+ * Nếu không có token → req.user = null
+ */
+export const optionalAuth = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    // Không có token → OK, req.user = null
+    if (!token) {
+        req.user = null;
+        return next();
+    }
+    
+    // Có token → Verify
+    try {
+        const decoded = verifyToken(token);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        // Token invalid → Vẫn cho qua nhưng req.user = null
+        req.user = null;
+        next();
+    }
+};
+```
+
+---
+
+### 7.7 JWT Token với Branch ID (for Staff)
+
+**Enhanced JWT Payload:**
+
+```javascript
+// generateToken in authService.js
+export const generateToken = (user) => {
+    const payload = {
+        userId: user.id,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
+        role_id: user.role_id,
+        role_name: user.roles.role_name,  // ✅ Fixed: roles thay vì rolepermissions
+    };
+    
+    // ✅ Add customer_id for customer role
+    if (user.roles.role_name === 'customer' && user.customers) {  // ✅ Fixed
+        payload.customer_id = user.customers.id;
+    }
+    
+    // ✅ Add branch_id for staff role
+    if (user.roles.role_name === 'staff' && user.staff) {  // ✅ Fixed
+        payload.branch_id = user.staff.branch_id;
+    }
+    
+    return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
+};
+```
+
+**Staff JWT Token Example:**
+
+```json
+{
+  "userId": 5,
+  "username": "staff01",
+  "email": "staff01@pharmacy.com",
+  "phone": "0901234567",
+  "role_id": 2,
+  "role_name": "staff",
+  "branch_id": 1,
+  "iat": 1732435200,
+  "exp": 1732436100
 }
 ```
 
 ---
 
-## 7. CRON JOBS & BACKGROUND TASKS
+### 7.8 Security Testing Scenarios
 
-### 7.1 Flashsale Status Update Job
+#### Scenario 1: Public User xem inventory
+
+```bash
+# Request: No Authorization header
+curl http://localhost:3000/api/branches/1/inventory
+
+# Expected Response: Masked data
+{
+  "success": true,
+  "data": {
+    "inventory": [
+      {
+        "id": 1,
+        "branch_id": 1,
+        "product_id": 5,
+        "in_stock": true,  // ✅ Boolean only
+        "stock_status": "available",
+        "products": {
+          "id": 5,
+          "name": "Paracetamol 500mg",
+          "price": "50000"
+        }
+        // ❌ NO: stock, min_stock, batches, etc.
+      }
+    ]
+  }
+}
+```
+
+#### Scenario 2: Staff xem cross-branch inventory (READ)
+
+```bash
+# Staff at Branch 1 viewing Branch 2
+curl -H "Authorization: Bearer <staff_token>" \
+  http://localhost:3000/api/branches/2/inventory
+
+# Expected: ✅ SUCCESS - Full data (Staff có READ cross-branch)
+{
+  "success": true,
+  "data": {
+    "inventory": [
+      {
+        "id": 10,
+        "branch_id": 2,
+        "product_id": 5,
+        "stock": 150,  // ✅ Full quantity
+        "min_stock": 20,
+        "max_stock": 500
+        // ✅ Full inventory details
+      }
+    ]
+  }
+}
+```
+
+#### Scenario 3: Staff cố update cross-branch (WRITE) → FAIL
+
+```bash
+# Staff at Branch 1 trying to update Branch 2
+curl -X PUT \
+  -H "Authorization: Bearer <staff_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"stock": 200}' \
+  http://localhost:3000/api/branches/2/inventory/5
+
+# Expected: ❌ 403 FORBIDDEN
+{
+  "success": false,
+  "error": "Bạn chỉ có thể cập nhật kho của chi nhánh mình"
+}
+```
+
+#### Scenario 4: Public User cố xem low-stock alerts → FAIL
+
+```bash
+# Request: No token
+curl http://localhost:3000/api/branches/1/inventory/alerts/low-stock
+
+# Expected: ❌ 401 Unauthorized (vì route dùng authenticateToken)
+{
+  "error": "Token không được cung cấp"
+}
+```
+
+#### Scenario 5: Customer cố xem low-stock alerts → FAIL
+
+```bash
+# Request: Customer token
+curl -H "Authorization: Bearer <customer_token>" \
+  http://localhost:3000/api/branches/1/inventory/alerts/low-stock
+
+# Expected: ❌ 403 Forbidden (fail at authorizeAdminOrStaff)
+{
+  "error": "Không có quyền truy cập"
+}
+```
+
+---
+
+### 7.9 Security Checklist
+
+**✅ Implementation Checklist:**
+
+- [x] **Route Level Protection**
+  - [x] Public routes: `optionalAuth` middleware
+  - [x] Staff routes: `authenticateToken` + `authorizeAdminOrStaff`
+  - [x] Admin routes: `authenticateToken` + `authorizeAdmin`
+  - [x] Alert endpoints: Staff/Admin ONLY (no public access)
+
+- [x] **Data Masking**
+  - [x] `maskBranchInventory()` - Remove stock quantities for Public/Customer
+  - [x] `maskBatchInfo()` - Hide batch details from Public/Customer
+  - [x] `maskProductInventory()` - Mask product stock data
+  - [x] Controller layer applies masking based on `req.user.role_name`
+
+- [x] **Permission Checks**
+  - [x] `canViewDetailedInventory()` - Check Admin/Staff
+  - [x] `canWriteToBranch()` - Async check for WRITE permissions
+  - [x] `canReadFromBranch()` - Cross-branch READ for Staff
+
+- [x] **JWT Token Enhancement**
+  - [x] `branch_id` included in Staff token payload
+  - [x] `customer_id` included in Customer token payload
+  - [x] Token refresh maintains all claims
+
+- [x] **Documentation**
+  - [x] INVENTORY_API_ENDPOINTS.md updated với v4.0.1
+  - [x] SYSTEM_DOCUMENTATION.md updated
+  - [x] Security rationale documented
+  - [x] Use cases với cURL examples
+
+---
+
+### 7.10 Breaking Changes (v3.x → v4.0)
+
+**⚠️ IMPORTANT - Breaking Changes:**
+
+1. **Endpoint `/branches/:branchId/inventory/alerts/low-stock`**
+   - **Before (v3.x):** Public access với data masking
+   - **After (v4.0):** Staff/Admin ONLY - Public gets 401/403
+   - **Reason:** Low stock là dữ liệu kinh doanh nội bộ
+
+2. **Batch Information Visibility**
+   - **Before (v3.x):** Public có thể xem batch_number, expiry_date
+   - **After (v4.0):** Public KHÔNG XEM được batch info
+   - **Reason:** Bảo vệ hệ thống quản lý kho nội bộ
+
+3. **Permission Function Signature**
+   - **Before:** `canWriteToBranch(user, branchId)` - sync
+   - **After:** `async canWriteToBranch(user, branchId)` - async
+   - **Reason:** Support future database queries
+
+---
+
+### 7.11 Migration Guide (v3.x → v4.0)
+
+**For Frontend Developers:**
+
+```javascript
+// ❌ OLD CODE (v3.x) - Expect batch info from public endpoint
+const response = await fetch('/api/branches/1/inventory/5');
+const data = await response.json();
+console.log(data.batches); // ❌ Will be null/undefined in v4.0
+
+// ✅ NEW CODE (v4.0) - Check user role first
+if (userRole === 'staff' || userRole === 'admin') {
+    // Staff/Admin: Can see batches
+    const response = await fetch('/api/branches/1/inventory/5', {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await response.json();
+    console.log(data.batches); // ✅ Full batch info
+} else {
+    // Public/Customer: Only see in_stock status
+    const response = await fetch('/api/branches/1/inventory/5');
+    const data = await response.json();
+    console.log(data.in_stock); // ✅ Boolean: true/false
+    console.log(data.stock_status); // ✅ "available" | "low_stock" | "out_of_stock"
+}
+```
+
+**For Backend Developers:**
+
+```javascript
+// ❌ OLD CODE (v3.x)
+const canWrite = canWriteToBranch(req.user, branchId); // sync
+if (!canWrite) { /* reject */ }
+
+// ✅ NEW CODE (v4.0)
+const canWrite = await canWriteToBranch(req.user, branchId); // async
+if (!canWrite) { /* reject */ }
+```
+
+---
+
+## 8. CRON JOBS & BACKGROUND TASKS
+
+### 8.1 Flashsale Status Update Job
 
 **File:** `src/jobs/flashsaleJob.js`
 
@@ -1477,15 +2061,15 @@ cron.schedule("* * * * *", async () => {
 });
 ```
 
-### 7.2 OTP Cleanup Job (Đã xóa)
+### 8.2 OTP Cleanup Job (Đã xóa)
 
 Trước đây có job cleanup OTP expired mỗi 5 phút, nhưng đã xóa do không cần cache.
 
 ---
 
-## 8. CONSTANTS & CONFIGURATIONS
+## 9. CONSTANTS & CONFIGURATIONS
 
-### 8.1 Order Status Constants
+### 9.1 Order Status Constants
 
 ```javascript
 export const ORDER_STATUS = {
@@ -1499,7 +2083,7 @@ export const ORDER_STATUS = {
 };
 ```
 
-### 8.2 Payment Methods
+### 9.2 Payment Methods
 
 ```javascript
 export const PAYMENT_METHODS = {
@@ -1510,7 +2094,7 @@ export const PAYMENT_METHODS = {
 };
 ```
 
-### 8.3 User Roles
+### 9.3 User Roles
 
 ```javascript
 export const USER_ROLES = {
@@ -1520,7 +2104,7 @@ export const USER_ROLES = {
 };
 ```
 
-### 8.4 Rate Limiting Configuration
+### 9.4 Rate Limiting Configuration
 
 **File:** `src/middlewares/rateLimit.middleware.js`
 
@@ -1551,9 +2135,9 @@ export const writeLimiter = rateLimit({
 
 ---
 
-## 9. ERROR HANDLING
+## 10. ERROR HANDLING
 
-### 9.1 Global Error Handler
+### 10.1 Global Error Handler
 
 **File:** `src/middlewares/errorHandler.middleware.js`
 
@@ -1608,7 +2192,7 @@ export const notFound = (req, res) => {
 };
 ```
 
-### 9.2 Error Response Format
+### 10.2 Error Response Format
 
 ```javascript
 // Success response
@@ -1640,9 +2224,9 @@ export const notFound = (req, res) => {
 
 ---
 
-## 10. DEPLOYMENT
+## 11. DEPLOYMENT
 
-### 10.1 Environment Setup
+### 11.1 Environment Setup
 
 ```bash
 # Production .env
@@ -1658,7 +2242,7 @@ JWT_REFRESH_SECRET="your-refresh-secret-key"
 CORS_ORIGIN="https://your-frontend-domain.com"
 ```
 
-### 10.2 Database Migration
+### 11.2 Database Migration
 
 ```bash
 # Generate Prisma Client
@@ -1671,7 +2255,7 @@ npx prisma migrate deploy
 npx prisma db seed
 ```
 
-### 10.3 Start Server
+### 11.3 Start Server
 
 ```bash
 # Development
@@ -1681,7 +2265,7 @@ npm run dev
 npm start
 ```
 
-### 10.4 Health Check
+### 11.4 Health Check
 
 ```bash
 # Check server health
@@ -1697,9 +2281,9 @@ curl http://localhost:3000/health
 
 ---
 
-## 11. TESTING APIs
+## 12. TESTING APIs
 
-### 11.1 Postman Collection
+### 12.1 Postman Collection
 
 Import file: `PBL6_Pharmacy_API.postman_collection.json`
 
@@ -1754,9 +2338,9 @@ curl -X POST http://localhost:3000/api/cart/checkout \
 
 ---
 
-## 12. TROUBLESHOOTING
+## 13. TROUBLESHOOTING
 
-### 12.1 Common Errors
+### 13.1 Common Errors
 
 #### Error: "Cannot read properties of undefined (reading 'count')"
 
@@ -1797,7 +2381,7 @@ npx prisma migrate dev
 npx prisma db push
 ```
 
-### 12.2 Debug Tips
+### 13.2 Debug Tips
 
 ```javascript
 // Enable Prisma query logging
@@ -1815,9 +2399,9 @@ app.use((req, res, next) => {
 
 ---
 
-## 13. FUTURE IMPROVEMENTS
+## 14. FUTURE IMPROVEMENTS
 
-### 13.1 Features cần thêm
+### 14.1 Features cần thêm
 
 - [ ] Email notifications (Nodemailer)
 - [ ] SMS OTP (Twilio/SMSAPI)
@@ -1828,7 +2412,7 @@ app.use((req, res, next) => {
 - [ ] AI chatbot (OpenAI API)
 - [ ] Analytics dashboard
 
-### 13.2 Performance Optimization
+### 14.2 Performance Optimization
 
 - [ ] Redis caching
 - [ ] Database indexing optimization
@@ -1836,7 +2420,7 @@ app.use((req, res, next) => {
 - [ ] CDN for static assets
 - [ ] Load balancing
 
-### 13.3 Security Enhancements
+### 14.3 Security Enhancements
 
 - [ ] Rate limiting per user
 - [ ] Input sanitization
@@ -1880,5 +2464,5 @@ https://github.com/PBL6-Pharmacy-System/Back-End-Web/issues
 
 ---
 
-**Last Updated:** November 19, 2025  
-**Document Version:** 1.0.0
+**Last Updated:** November 24, 2025  
+**Document Version:** 4.0.0

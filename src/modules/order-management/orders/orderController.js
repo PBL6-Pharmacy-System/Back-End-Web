@@ -87,7 +87,7 @@ export const updateOrderStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const userId = req.user?.id; // From auth middleware
+    const userId = req.user?.userId; // From auth middleware
 
     if (!status) {
       return res.status(400).json({
@@ -118,7 +118,7 @@ export const cancelOrder = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    const userId = req.user?.id; // From auth middleware
+    const userId = req.user?.userId; // From auth middleware
 
     const result = await orderService.cancelOrder(id, userId, reason);
 

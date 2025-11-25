@@ -3,13 +3,13 @@ import * as stockTakeService from './stockTakeService.js';
 // Create new stock take
 export const createStockTake = async (req, res) => {
   try {
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
     const result = await stockTakeService.createStockTake(req.body, userId);
-    
+
     if (!result.success) {
       return res.status(result.status || 400).json(result);
     }
-    
+
     res.status(201).json(result);
   } catch (error) {
     console.error('Error creating stock take:', error);
@@ -41,11 +41,11 @@ export const getStockTakeById = async (req, res) => {
   try {
     const { id } = req.params;
     const result = await stockTakeService.getStockTakeById(id);
-    
+
     if (!result.success) {
       return res.status(result.status || 404).json(result);
     }
-    
+
     res.json(result);
   } catch (error) {
     console.error('Error getting stock take:', error);
@@ -78,11 +78,11 @@ export const updateStockTakeItem = async (req, res) => {
   try {
     const { id, itemId } = req.params;
     const result = await stockTakeService.updateStockTakeItem(id, itemId, req.body);
-    
+
     if (!result.success) {
       return res.status(result.status || 400).json(result);
     }
-    
+
     res.json(result);
   } catch (error) {
     console.error('Error updating stock take item:', error);
@@ -98,13 +98,13 @@ export const updateStockTakeItem = async (req, res) => {
 export const completeStockTake = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
     const result = await stockTakeService.completeStockTake(id, userId);
-    
+
     if (!result.success) {
       return res.status(result.status || 400).json(result);
     }
-    
+
     res.json(result);
   } catch (error) {
     console.error('Error completing stock take:', error);
@@ -121,20 +121,20 @@ export const cancelStockTake = async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    
+
     if (!reason) {
       return res.status(400).json({
         success: false,
         error: 'Vui lòng cung cấp lý do hủy'
       });
     }
-    
+
     const result = await stockTakeService.cancelStockTake(id, reason);
-    
+
     if (!result.success) {
       return res.status(result.status || 400).json(result);
     }
-    
+
     res.json(result);
   } catch (error) {
     console.error('Error cancelling stock take:', error);
@@ -151,11 +151,11 @@ export const deleteStockTake = async (req, res) => {
   try {
     const { id } = req.params;
     const result = await stockTakeService.deleteStockTake(id);
-    
+
     if (!result.success) {
       return res.status(result.status || 400).json(result);
     }
-    
+
     res.json(result);
   } catch (error) {
     console.error('Error deleting stock take:', error);

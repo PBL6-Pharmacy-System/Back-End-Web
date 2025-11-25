@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import prisma from '../../config/db.js';
 
 /**
  * Middleware xác thực JWT token
@@ -18,17 +19,18 @@ export const authenticateToken = async (req, res, next) => {
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // ✅ Attach user info từ JWT (KHÔNG CẦN QUERY DATABASE!)
+
+    // ✅ Attach user info từ JWT - STANDARDIZED property names
     req.user = {
-      id: decoded.userId,
+      userId: decoded.userId,           // ✅ Changed from 'id' to 'userId'
       username: decoded.username,
       email: decoded.email,
       role_id: decoded.role_id,
       role_name: decoded.role_name,
-      customer_id: decoded.customer_id,  // ✅ Include customer_id for customer role
-      staff_id: decoded.staff_id,        // ✅ Include staff_id for staff role
-      admin_id: decoded.admin_id         // ✅ Include admin_id for admin role
+      customer_id: decoded.customer_id,  // For customer role
+      staff_id: decoded.staff_id,        // For staff role
+      admin_id: decoded.admin_id,        // For admin role
+      branch_id: decoded.branch_id       // ✅ For staff - from JWT directly
     };
 
     next();
@@ -113,14 +115,14 @@ export const authorizeOwnerOrAdmin = (resourceIdParam = 'id') => {
     }
 
     const resourceId = parseInt(req.params[resourceIdParam]);
-    
+
     // Admin có thể truy cập tất cả
     if (req.user.role_name === 'admin') {
       return next();
     }
 
     // User chỉ có thể truy cập tài nguyên của mình
-    if (req.user.id !== resourceId) {
+    if (req.user.userId !== resourceId) {
       return res.status(403).json({
         success: false,
         error: 'Bạn chỉ có thể truy cập tài nguyên của mình'
@@ -129,6 +131,116 @@ export const authorizeOwnerOrAdmin = (resourceIdParam = 'id') => {
 
     next();
   };
+};
+
+/**
+ * Middleware kiểm tra Staff có quyền WRITE vào chi nhánh
+ * ✅ NEW LOGIC:
+ * - Admin: Full quyền mọi branch
+ * - Staff: CHỈ WRITE own branch (không cho write cross-branch)
+ * - Customer: Không có quyền
+ * 
+ * ⚠️ NOTE: Middleware này chỉ dùng cho WRITE operations (POST/PUT/DELETE)
+ * ⚠️ Với READ operations, Staff có thể xem cross-branch (không cần middleware này)
+ * 
+ * @example 
+ * // WRITE operation - Chặn Staff write cross-branch
+ * router.post('/branch-inventory/import', authenticateToken, authorizeStaffBranch, controller)
+ * 
+ * // READ operation - Không dùng middleware này, Staff xem được cross-branch
+ * router.get('/branches/:branchId/inventory', authenticateToken, authorizeAdminOrStaff, controller)
+ */
+export const authorizeStaffBranch = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Chưa xác thực'
+      });
+    }
+
+    // Admin có quyền truy cập tất cả chi nhánh
+    if (req.user.role_name === 'admin') {
+      return next();
+    }
+
+    // Customer không có quyền truy cập inventory
+    if (req.user.role_name === 'customer') {
+      return res.status(403).json({
+        success: false,
+        error: 'Khách hàng không có quyền truy cập quản lý kho'
+      });
+    }
+
+    // Kiểm tra staff
+    if (req.user.role_name === 'staff') {
+      // ✅ Lấy branch_id từ JWT token (không cần query database)
+      const staffBranchId = req.user.branch_id;
+
+      if (!staffBranchId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Nhân viên chưa được gán chi nhánh'
+        });
+      }
+
+      // Lấy branch_id từ request (params, query, body)
+      const requestedBranchId =
+        req.params.branchId ||
+        req.params.branch_id ||
+        req.query.branch_id ||
+        req.body.branchId ||
+        req.body.branch_id ||
+        req.body.from_branch_id; // Cho transfer
+
+      // ✅ WRITE PERMISSION: Staff chỉ được write vào branch của mình
+      if (requestedBranchId && Number(requestedBranchId) !== staffBranchId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn chỉ có quyền thao tác trên chi nhánh của mình',
+          details: {
+            your_branch_id: staffBranchId,
+            requested_branch_id: Number(requestedBranchId)
+          }
+        });
+      }
+
+      // ✅ Nếu không có branchId trong request, tự động set về branch của staff
+      if (!requestedBranchId) {
+        req.body.branchId = staffBranchId;
+        req.body.branch_id = staffBranchId;
+      }
+    }
+
+    next();
+  } catch (error) {
+    console.error('Error in authorizeStaffBranch:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Lỗi kiểm tra quyền truy cập chi nhánh'
+    });
+  }
+};
+
+/**
+ * Middleware cho phép Admin và Staff truy cập
+ */
+export const authorizeAdminOrStaff = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Chưa xác thực'
+    });
+  }
+
+  if (!['admin', 'staff'].includes(req.user.role_name)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Không có quyền truy cập. Yêu cầu vai trò: admin hoặc staff.'
+    });
+  }
+
+  next();
 };
 
 /**
@@ -145,16 +257,17 @@ export const optionalAuth = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     req.user = {
-      id: decoded.userId,
+      userId: decoded.userId,           // ✅ Changed from 'id' to 'userId'
       username: decoded.username,
       email: decoded.email,
       role_id: decoded.role_id,
       role_name: decoded.role_name,
       customer_id: decoded.customer_id,
       staff_id: decoded.staff_id,
-      admin_id: decoded.admin_id
+      admin_id: decoded.admin_id,
+      branch_id: decoded.branch_id      // ✅ For staff
     };
 
     next();

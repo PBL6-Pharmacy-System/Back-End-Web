@@ -6,7 +6,7 @@ import prisma from '../config/db.js';
 export const validateCartOwnership = async (req, res, next) => {
   try {
     const { customerId } = req.params;
-    const authenticatedUserId = req.user?.id;
+    const authenticatedUserId = req.user?.userId;
     const authenticatedCustomerId = req.user?.customer_id;
 
     // Check if user is authenticated
@@ -67,7 +67,7 @@ export const validateOrderOwnership = async (req, res, next) => {
   try {
     const { id, orderId } = req.params;
     const orderIdToCheck = id || orderId;
-    const authenticatedUserId = req.user?.id;
+    const authenticatedUserId = req.user?.userId;
     const authenticatedCustomerId = req.user?.customer_id;
 
     // Check if user is authenticated

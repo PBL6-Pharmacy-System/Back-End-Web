@@ -1071,6 +1071,112 @@ export const getAllLowStockProducts = async (branchId = null) => {
   }
 };
 
+/**
+ * Get low stock products for a specific branch (nested route)
+ * Use Case: Chi nhánh xem sản phẩm tồn kho thấp của mình
+ */
+export const getBranchLowStockProducts = async (branchId, threshold = 10) => {
+  try {
+    // Kiểm tra chi nhánh có tồn tại không
+    const branch = await prisma.branches.findUnique({
+      where: { id: Number(branchId) }
+    });
+
+    if (!branch) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy chi nhánh'
+      };
+    }
+
+    // Get inventories with stock below threshold or below min_stock
+    const inventories = await prisma.branchinventory.findMany({
+      where: {
+        branch_id: Number(branchId),
+        OR: [
+          // Case 1: Stock below custom threshold
+          { stock: { lte: Number(threshold) } },
+          // Case 2: Stock below min_stock (if defined)
+          {
+            AND: [
+              { min_stock: { not: null } },
+              { stock: { lte: prisma.branchinventory.fields.min_stock } }
+            ]
+          }
+        ]
+      },
+      include: {
+        products: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            image_url: true
+          }
+        }
+      },
+      orderBy: {
+        stock: 'asc' // Thấp nhất lên đầu
+      }
+    });
+
+    // Classify by urgency
+    const productsWithUrgency = inventories.map(inv => {
+      const stock = inv.stock || 0;
+      const minStock = inv.min_stock || threshold;
+      const shortage = minStock - stock;
+      
+      let urgency = 'low';
+      if (stock === 0) {
+        urgency = 'critical'; // Out of stock
+      } else if (stock <= minStock * 0.3) {
+        urgency = 'high'; // < 30% of min_stock
+      } else if (stock <= minStock * 0.5) {
+        urgency = 'medium'; // < 50% of min_stock
+      }
+
+      return {
+        id: inv.id,
+        product_id: inv.product_id,
+        product: inv.products,
+        current_stock: stock,
+        min_stock: inv.min_stock || threshold,
+        shortage: shortage > 0 ? shortage : 0,
+        urgency,
+        reorder_point: inv.reorder_point,
+        reorder_quantity: inv.reorder_quantity,
+        last_updated: inv.last_updated
+      };
+    });
+
+    // Group by urgency
+    const summary = {
+      critical: productsWithUrgency.filter(p => p.urgency === 'critical').length,
+      high: productsWithUrgency.filter(p => p.urgency === 'high').length,
+      medium: productsWithUrgency.filter(p => p.urgency === 'medium').length,
+      low: productsWithUrgency.filter(p => p.urgency === 'low').length,
+      total: productsWithUrgency.length
+    };
+
+    return {
+      success: true,
+      data: {
+        branch: {
+          id: branch.id,
+          name: branch.name,
+          address: branch.address
+        },
+        threshold,
+        products: productsWithUrgency,
+        summary
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
 // Get stock statistics by branch
 export const getStockStatisticsByBranch = async (branchId) => {
   try {

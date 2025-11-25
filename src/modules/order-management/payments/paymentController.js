@@ -73,7 +73,7 @@ export const updatePaymentStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const userId = req.user?.id;
+    const userId = req.user?.userId; // From auth middleware
 
     if (!status) {
       return res.status(400).json({
@@ -103,7 +103,7 @@ export const updatePaymentStatus = async (req, res, next) => {
 export const processCODPayment = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.userId; // From auth middleware
 
     const result = await paymentService.processCODPayment(id, userId);
 
