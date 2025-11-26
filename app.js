@@ -3,6 +3,7 @@ import 'dotenv/config';
 import express from 'express';
 import './src/jobs/cartExpirationJob.js';
 import './src/jobs/flashsaleJob.js';
+import { startPaymentExpirationJob } from './src/jobs/paymentExpirationJob.js';
 
 // Middlewares
 import { errorHandler, notFound } from './src/middlewares/errorHandler.middleware.js';
@@ -31,6 +32,8 @@ import stockTakeRoutes from './src/modules/inventory-management/stock-take/stock
 // Order Management
 import cartRoutes from './src/modules/order-management/cart/cartRoutes.js';
 import orderRoutes from './src/modules/order-management/orders/orderRoutes.js';
+import momoRoutes from './src/modules/order-management/payments/gateways/momo/momoRoutes.js';
+import vnpayRoutes from './src/modules/order-management/payments/gateways/vnpay/vnpayRoutes.js';
 import paymentRoutes from './src/modules/order-management/payments/paymentRoutes.js';
 import shipmentRoutes from './src/modules/order-management/shipments/shipmentRoutes.js';
 import shippingAddressRoutes from './src/modules/order-management/shipping-addresses/shippingAddressRoutes.js';
@@ -117,6 +120,8 @@ app.use('/api', cartRoutes);
 app.use('/api', orderRoutes);
 app.use('/api', shippingAddressRoutes);
 app.use('/api', paymentRoutes);
+app.use('/api/payments/vnpay', vnpayRoutes);
+app.use('/api/payments/momo', momoRoutes);
 app.use('/api', shipmentRoutes);
 
 
@@ -165,4 +170,6 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📡 API URL: http://localhost:${PORT}/api`);
+  
+  startPaymentExpirationJob();
 });

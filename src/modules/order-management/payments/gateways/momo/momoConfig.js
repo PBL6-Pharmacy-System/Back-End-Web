@@ -1,0 +1,41 @@
+export const MOMO_CONFIG = {
+  partnerCode: process.env.MOMO_PARTNER_CODE || 'MOMOBKUN20180529',
+  accessKey: process.env.MOMO_ACCESS_KEY || 'klm05TvNBzhg7h7j',
+  secretKey: process.env.MOMO_SECRET_KEY || 'at67qH6mk8w5Y1nAyMoYKMWACiEi2bsa',
+  endpoint: process.env.MOMO_ENDPOINT || 'https://test-payment.momo.vn/v2/gateway/api/create',
+  returnUrl: process.env.MOMO_RETURN_URL || 'http://localhost:3000/api/payments/momo/callback',
+  ipnUrl: process.env.MOMO_IPN_URL || 'http://localhost:3000/api/payments/momo/ipn',
+  requestType: 'captureWallet',
+  redirectUrl: process.env.FRONTEND_URL || 'http://localhost:5173'
+};
+
+export const MOMO_RESULT_CODES = {
+  0: 'Giao dịch thành công',
+  9000: 'Giao dịch được cấp quyền (authorization) thành công',
+  8000: 'Giao dịch đang được xử lý',
+  7000: 'Giao dịch bị trừ tiền tạm thời (Tiền bị hold)',
+  1000: 'Giao dịch đã được khởi tạo, chờ người dùng xác nhận thanh toán',
+  11: 'Truy cập bị từ chối',
+  12: 'Phiên bản API không được hỗ trợ cho yêu cầu này',
+  13: 'Xác thực dữ liệu thất bại',
+  20: 'Yêu cầu sai định dạng',
+  21: 'Số tiền giao dịch không hợp lệ',
+  40: 'RequestId bị trùng',
+  41: 'OrderId bị trùng',
+  42: 'OrderId không hợp lệ hoặc không được tìm thấy',
+  43: 'Yêu cầu bị từ chối vì xung đột trong quá trình xử lý giao dịch',
+  1001: 'Giao dịch thanh toán thất bại do tài khoản người dùng không đủ tiền',
+  1002: 'Giao dịch bị từ chối bởi nhà phát hành tài khoản người dùng',
+  1003: 'Giao dịch bị hủy',
+  1004: 'Giao dịch thất bại do số tiền thanh toán vượt quá hạn mức thanh toán của người dùng',
+  1005: 'Giao dịch thất bai do url hoặc QR code đã hết hạn',
+  1006: 'Giao dịch thất bại do người dùng đã từ chối xác nhận thanh toán',
+  1007: 'Giao dịch bị từ chối vì tài khoản người dùng đang ở trạng thái tạm khóa',
+  2001: 'Giao dịch thất bại do sai thông tin liên kết',
+  3001: 'Liên kết thanh toán bị từ chối',
+  3002: 'Liên kết bị từ chối do nhà cung cấp dịch vụ (Merchant) bị khóa',
+  3003: 'Liên kết bị từ chối vì nhà cung cấp dịch vụ không được phép sử dụng phương thức thanh toán này',
+  4001: 'Giao dịch bị hạn chế theo thể lệ chương trình khuyến mại',
+  4100: 'Giao dịch thất bại do người dùng không đăng ký dịch vụ',
+  9999: 'Lỗi không xác định'
+};

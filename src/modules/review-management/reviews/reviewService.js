@@ -99,8 +99,24 @@ export const getAllReviews = async ({
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          customers: true,
-          products: true
+          customers: {
+            select: {
+              id: true,
+              users: {
+                select: {
+                  full_name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          products: {
+            select: {
+              id: true,
+              name: true,
+              image_url: true
+            }
+          }
         },
         orderBy: {
           [sortBy]: sortOrder
@@ -360,8 +376,24 @@ export const getProductReviews = async (productId, {
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
         include: {
-          customers: true,
-          products: true
+          customers: {
+            select: {
+              id: true,
+              users: {
+                select: {
+                  full_name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          products: {
+            select: {
+              id: true,
+              name: true,
+              image_url: true
+            }
+          }
         },
         orderBy: {
           [sortBy]: sortOrder

@@ -35,16 +35,17 @@ export const PAYMENT_STATUS = {
   PROCESSING: 'processing',
   COMPLETED: 'completed',
   FAILED: 'failed',
-  REFUNDED: 'refunded'
+  REFUNDED: 'refunded',
+  CANCELLED: 'cancelled'
 };
 
 // Payment Methods
 export const PAYMENT_METHODS = {
-  CASH: 'cash',
-  CREDIT_CARD: 'credit_card',
-  DEBIT_CARD: 'debit_card',
+  COD: 'COD',                    // Cash on Delivery
   BANK_TRANSFER: 'bank_transfer',
-  E_WALLET: 'e_wallet'
+  VNPAY: 'vnpay',
+  MOMO: 'momo',
+  CREDIT_CARD: 'credit_card'
 };
 
 // Shipment Status
