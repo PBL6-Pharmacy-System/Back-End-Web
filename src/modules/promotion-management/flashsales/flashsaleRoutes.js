@@ -1,12 +1,12 @@
 import express from 'express';
-import * as flashsaleController from './flashsaleController.js';
 import { authenticateToken, authorizeAdmin } from '../../auth/auth.middleware.js';
+import * as flashsaleController from './flashsaleController.js';
 
 
 const router = express.Router();
 
 // Public routes
-router.get('/flashsales', flashsaleController.getAllFlashsales);
+router.get('/flashsales', authenticateToken, authorizeAdmin, flashsaleController.getAllFlashsales);
 router.get('/flashsales/active', flashsaleController.getActiveFlashsale);
 
 // Admin routes - Yêu cầu authentication và authorization
