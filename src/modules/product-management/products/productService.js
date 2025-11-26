@@ -96,29 +96,27 @@ export const getAllProducts = async ({
         include: {
           categories: true,
           suppliers: true,
-          unittype: true
+          unittype: true,
+          branchinventory: {
+            select: {
+              stock: true
+            }
+          }
         },
         orderBy: { name: 'asc' }
       }),
       prisma.products.count({ where })
     ]);
 
-    // Add stock availability for each product
-    const productsWithStock = await Promise.all(
-      products.map(async (product) => {
-        const totalStock = await prisma.branchinventory.aggregate({
-          where: { product_id: product.id },
-          _sum: { stock: true }
-        });
-        
-        const availableStock = totalStock._sum.stock || 0;
-        
-        return {
-          ...product,
-          in_stock: availableStock > 0 ? 1 : 0
-        };
-      })
-    );
+    // Calculate stock in-memory (no extra queries)
+    const productsWithStock = products.map(product => {
+      const availableStock = product.branchinventory.reduce((sum, inv) => sum + (inv.stock || 0), 0);
+      const { branchinventory, ...productData } = product;
+      return {
+        ...productData,
+        in_stock: availableStock > 0 ? 1 : 0
+      };
+    });
 
     return {
       success: true,
@@ -433,29 +431,27 @@ export const searchProducts = async ({ keyword, page = 1, limit = 10 }) => {
         include: {
         categories: true,
         suppliers: true,
-        unittype: true
+        unittype: true,
+        branchinventory: {
+          select: {
+            stock: true
+          }
+        }
         },
         orderBy: { name: 'asc' }
       }),
       prisma.products.count({ where })
     ]);
 
-    // Add stock availability for each product
-    const productsWithStock = await Promise.all(
-      products.map(async (product) => {
-        const totalStock = await prisma.branchinventory.aggregate({
-          where: { product_id: product.id },
-          _sum: { stock: true }
-        });
-        
-        const availableStock = totalStock._sum.stock || 0;
-        
-        return {
-          ...product,
-          in_stock: availableStock > 0 ? 1 : 0
-        };
-      })
-    );
+    // Calculate stock in-memory (no extra queries)
+    const productsWithStock = products.map(product => {
+      const availableStock = product.branchinventory.reduce((sum, inv) => sum + (inv.stock || 0), 0);
+      const { branchinventory, ...productData } = product;
+      return {
+        ...productData,
+        in_stock: availableStock > 0 ? 1 : 0
+      };
+    });
 
     return {
       success: true,
@@ -504,29 +500,27 @@ export const getProductsByCategory = async (categoryName, { page = 1, limit = 10
         include: {
           categories: true,
           suppliers: true,
-          unittype: true
+          unittype: true,
+          branchinventory: {
+            select: {
+              stock: true
+            }
+          }
         },
         orderBy: { name: 'asc' }
       }),
       prisma.products.count({ where })
     ]);
 
-    // Add stock availability for each product
-    const productsWithStock = await Promise.all(
-      products.map(async (product) => {
-        const totalStock = await prisma.branchinventory.aggregate({
-          where: { product_id: product.id },
-          _sum: { stock: true }
-        });
-        
-        const availableStock = totalStock._sum.stock || 0;
-        
-        return {
-          ...product,
-          in_stock: availableStock > 0 ? 1 : 0
-        };
-      })
-    );
+    // Calculate stock in-memory (no extra queries)
+    const productsWithStock = products.map(product => {
+      const availableStock = product.branchinventory.reduce((sum, inv) => sum + (inv.stock || 0), 0);
+      const { branchinventory, ...productData } = product;
+      return {
+        ...productData,
+        in_stock: availableStock > 0 ? 1 : 0
+      };
+    });
 
     return {
       success: true,

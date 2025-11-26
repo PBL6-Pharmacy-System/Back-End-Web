@@ -1,6 +1,5 @@
 import prisma from '../../../config/db.js';
 import { findOptimalBranchesForOrder, getCustomerCityId } from '../../../utils/branchSelection.js';
-import { updateProductSoldCount } from '../../product-management/products/bestSellersService.js';
 
 /**
  * Apply voucher to order and calculate discount
@@ -105,27 +104,70 @@ export const checkout = async (data) => {
 
     // Map payment method aliases to database values
     const paymentMethodMap = {
-      'COD': 'cash',
-      'cod': 'cash',
-      'cash': 'cash',
+      'COD': 'COD',
+      'cod': 'COD',
+      'cash': 'COD',
       'card': 'credit_card',
       'credit_card': 'credit_card',
-      'momo': 'e_wallet',
-      'zalopay': 'e_wallet',
-      'e_wallet': 'e_wallet',
+      'momo': 'momo',
+      'vnpay': 'vnpay',
       'bank_transfer': 'bank_transfer',
       'banking': 'bank_transfer'
     };
 
-    const normalizedPaymentMethod = paymentMethodMap[paymentMethod] || 'cash';
-
-    // Validate customer
-    const customer = await prisma.customers.findUnique({
-      where: {
-        id: customerId
-      }
+    const normalizedPaymentMethod = paymentMethodMap[paymentMethod] || 'COD';
+    
+    console.log('[CHECKOUT] Payment method mapping:', {
+      original: paymentMethod,
+      normalized: normalizedPaymentMethod
     });
 
+    // ✅ OPTIMIZED: Run parallel queries instead of sequential
+    const [customer, cart, address] = await Promise.all([
+      // Validate customer - only select needed fields
+      prisma.customers.findUnique({
+        where: { id: customerId },
+        select: { id: true, user_id: true }
+      }),
+      
+      // Get cart with items
+      prisma.orders.findFirst({
+        where: {
+          customer_id: customerId,
+          status: 'cart'
+        },
+        include: {
+          orderitems: {
+            include: {
+              products: {
+                select: { id: true, name: true, price: true }
+              },
+              productunits: {
+                select: { id: true, unit_name: true, conversion_factor: true }
+              }
+            }
+          }
+        }
+      }),
+      
+      // Get shipping address in parallel
+      shippingAddressId
+        ? prisma.shippingaddresses.findFirst({
+            where: {
+              id: parseInt(shippingAddressId),
+              customer_id: customerId
+            }
+          })
+        : prisma.shippingaddresses.findFirst({
+            where: {
+              customer_id: customerId,
+              is_default: true
+            },
+            orderBy: { id: 'desc' }
+          })
+    ]);
+
+    // Validate results
     if (!customer) {
       return {
         success: false,
@@ -134,23 +176,7 @@ export const checkout = async (data) => {
       };
     }
 
-    // Get cart
-    const cart = await prisma.orders.findFirst({
-      where: {
-        customer_id: customerId,
-        status: 'cart'
-      },
-      include: {
-        orderitems: {
-          include: {
-            products: true,
-            productunits: true
-          }
-        }
-      }
-    });
-
-    if (!cart) {
+    if (!cart || !cart.orderitems || cart.orderitems.length === 0) {
       return {
         success: false,
         error: 'Giỏ hàng trống',
@@ -158,67 +184,24 @@ export const checkout = async (data) => {
       };
     }
 
-    if (!cart.orderitems || cart.orderitems.length === 0) {
-      return {
-        success: false,
-        error: 'Giỏ hàng trống',
-        status: 400
-      };
-    }
-
-    // Get shipping address - use provided or default
-    let address;
-    let finalShippingAddressId;
-    
-    if (shippingAddressId) {
-      // Use the specific address provided
-      const parsedAddressId = parseInt(shippingAddressId);
-      console.log(`[CHECKOUT] Looking for shipping address ID: ${parsedAddressId} for customer: ${customerId}`);
+    if (!address) {
+      // Try to get any address as fallback
+      const fallbackAddress = await prisma.shippingaddresses.findFirst({
+        where: { customer_id: customerId }
+      });
       
-      address = await prisma.shippingaddresses.findFirst({
-        where: {
-          id: parsedAddressId,
-          customer_id: customerId
-        }
-      });
-
-      console.log(`[CHECKOUT] Found address:`, address ? `ID ${address.id}` : 'NOT FOUND');
-
-      if (!address) {
-        return {
-          success: false,
-          error: 'Địa chỉ giao hàng không hợp lệ',
-          status: 400
-        };
-      }
-      finalShippingAddressId = parsedAddressId;
-    } else {
-      // Use default address if not provided
-      address = await prisma.shippingaddresses.findFirst({
-        where: {
-          customer_id: customerId,
-          is_default: true
-        }
-      });
-
-      if (!address) {
-        // If no default, get any address
-        address = await prisma.shippingaddresses.findFirst({
-          where: {
-            customer_id: customerId
-          }
-        });
-      }
-
-      if (!address) {
+      if (!fallbackAddress) {
         return {
           success: false,
           error: 'Vui lòng cung cấp địa chỉ giao hàng',
           status: 400
         };
       }
-      finalShippingAddressId = address.id;
+      
+      address = fallbackAddress;
     }
+
+    const finalShippingAddressId = address.id;
 
     console.log(`[CHECKOUT] Final shipping address ID to use: ${finalShippingAddressId}`);
 
@@ -313,7 +296,7 @@ export const checkout = async (data) => {
           order_id: order.id,
           payment_method: normalizedPaymentMethod,
           amount: finalAmount,
-          status: normalizedPaymentMethod === 'cash' ? 'pending' : 'pending',
+          status: 'pending',
           transaction_id: `TXN-${Date.now()}-${order.id}`
         }
       });
@@ -446,102 +429,6 @@ export const checkout = async (data) => {
 /**
  * Confirm payment (for online payment methods)
  */
-export const confirmPayment = async (orderId, transactionId) => {
-  try {
-    // Get order with items
-    const order = await prisma.orders.findUnique({
-      where: {
-        id: orderId
-      },
-      include: {
-        orderitems: {
-          include: {
-            products: true,
-            productunits: true
-          }
-        }
-      }
-    });
-
-    if (!order) {
-      return {
-        success: false,
-        error: 'Đơn hàng không tồn tại',
-        status: 404
-      };
-    }
-
-    if (order.status !== 'pending') {
-      return {
-        success: false,
-        error: 'Đơn hàng không ở trạng thái chờ xác nhận',
-        status: 400
-      };
-    }
-
-    await prisma.$transaction(async (tx) => {
-      // Update payment status
-      await tx.payments.updateMany({
-        where: {
-          order_id: orderId,
-          transaction_id: transactionId
-        },
-        data: {
-          status: 'completed',
-          payment_date: new Date()
-        }
-      });
-
-      // Update order status
-      await tx.orders.update({
-        where: {
-          id: orderId
-        },
-        data: {
-          status: 'confirmed',
-          updated_at: new Date()
-        }
-      });
-
-      // Create order status history
-      await tx.order_status_history.create({
-        data: {
-          order_id: orderId,
-          status: 'confirmed',
-          changed_at: new Date()
-        }
-      });
-
-      // Update sold count for products (real-time best sellers update)
-      for (const item of order.orderitems) {
-        await updateProductSoldCount(item.product_id, item.quantity);
-        
-        // Update product sold_count
-        await tx.products.update({
-          where: { id: item.product_id },
-          data: {
-            sold_count: {
-              increment: item.quantity
-            }
-          }
-        });
-      }
-    });
-
-    return {
-      success: true,
-      message: 'Thanh toán thành công'
-    };
-  } catch (error) {
-    console.error('Confirm payment error:', error);
-    return {
-      success: false,
-      error: 'Lỗi khi xác nhận thanh toán',
-      status: 500
-    };
-  }
-};
-
 /**
  * Cancel order
  */

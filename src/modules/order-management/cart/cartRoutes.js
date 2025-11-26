@@ -1,8 +1,8 @@
 import express from 'express';
 import { cartLimiter } from '../../../middlewares/rateLimit.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
-import { authenticateToken } from '../../auth/auth.middleware.js';
 import { validateCartOwnership, validateOrderOwnership } from '../../../middlewares/validateCartOwnership.middleware.js';
+import { authenticateToken } from '../../auth/auth.middleware.js';
 import * as cartController from './cartController.js';
 import * as checkoutController from './checkoutController.js';
 
@@ -74,13 +74,6 @@ router.post('/cart/merge',
 router.post('/cart/checkout',
   authenticateToken,
   checkoutController.checkout
-);
-
-router.post('/orders/:id/confirm-payment',
-  authenticateToken,
-  validateId('id'),
-  validateOrderOwnership,
-  checkoutController.confirmPayment
 );
 
 router.post('/orders/:id/cancel',

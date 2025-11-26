@@ -1,7 +1,7 @@
 import prisma from '../../../config/db.js';
-import { ORDER_STATUS, CART_LIMITS } from '../../../utils/constants.js';
-import { validateNumericFields } from '../../../utils/validation.js';
 import { findOptimalBranchesForOrder, getCustomerLocation } from '../../../utils/branchSelection.js';
+import { CART_LIMITS, ORDER_STATUS } from '../../../utils/constants.js';
+import { validateNumericFields } from '../../../utils/validation.js';
 
 const validateOrderItem = (item) => {
   // Required fields
@@ -215,9 +215,28 @@ export const getCart = async (customerId) => {
       },
       include: {
         orderitems: {
-          include: {
-            products: true,
-            productunits: true
+          select: {
+            id: true,
+            product_id: true,
+            unit_id: true,
+            quantity: true,
+            price: true,
+            subtotal: true,
+            products: {
+              select: {
+                id: true,
+                name: true,
+                image_url: true,
+                price: true
+              }
+            },
+            productunits: {
+              select: {
+                id: true,
+                unit_name: true,
+                conversion_factor: true
+              }
+            }
           }
         }
       }
@@ -234,9 +253,28 @@ export const getCart = async (customerId) => {
         },
         include: {
           orderitems: {
-            include: {
-              products: true,
-              productunits: true
+            select: {
+              id: true,
+              product_id: true,
+              unit_id: true,
+              quantity: true,
+              price: true,
+              subtotal: true,
+              products: {
+                select: {
+                  id: true,
+                  name: true,
+                  image_url: true,
+                  price: true
+                }
+              },
+              productunits: {
+                select: {
+                  id: true,
+                  unit_name: true,
+                  conversion_factor: true
+                }
+              }
             }
           }
         }

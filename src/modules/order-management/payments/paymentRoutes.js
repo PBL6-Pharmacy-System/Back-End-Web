@@ -1,26 +1,9 @@
 import express from 'express';
-import * as paymentController from './paymentController.js';
-import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
+import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
+import * as paymentController from './paymentController.js';
 
 const router = express.Router();
-
-/**
- * POST /api/payments
- * Create a new payment for an order
- * Access: Admin, Staff, or Customer who owns the order
- * Body: {
- *   orderId: number,
- *   paymentMethod: string,
- *   amount: number,
- *   transactionId: string (optional)
- * }
- */
-router.post(
-  '/payments',
-  authenticateToken,
-  paymentController.createPayment
-);
 
 /**
  * GET /api/payments/statistics
@@ -45,18 +28,6 @@ router.get(
   authenticateToken,
   validateId(),
   paymentController.getPaymentById
-);
-
-/**
- * GET /api/orders/:orderId/payments
- * Get all payments for a specific order
- * Access: Admin, Staff, or Customer who owns the order
- */
-router.get(
-  '/orders/:orderId/payments',
-  authenticateToken,
-  validateId('orderId'),
-  paymentController.getOrderPayments
 );
 
 /**

@@ -1,28 +1,6 @@
 import * as paymentService from './paymentService.js';
 
 /**
- * Create payment for an order
- */
-export const createPayment = async (req, res, next) => {
-  try {
-    const paymentData = req.body;
-
-    const result = await paymentService.createPayment(paymentData);
-
-    if (!result.success) {
-      return res.status(result.status || 400).json({
-        success: false,
-        error: result.error
-      });
-    }
-
-    res.status(201).json(result);
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
  * Get payment by ID
  */
 export const getPaymentById = async (req, res, next) => {
@@ -30,28 +8,6 @@ export const getPaymentById = async (req, res, next) => {
     const { id } = req.params;
 
     const result = await paymentService.getPaymentById(id);
-
-    if (!result.success) {
-      return res.status(result.status || 400).json({
-        success: false,
-        error: result.error
-      });
-    }
-
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Get payments for an order
- */
-export const getOrderPayments = async (req, res, next) => {
-  try {
-    const { orderId } = req.params;
-
-    const result = await paymentService.getOrderPayments(orderId);
 
     if (!result.success) {
       return res.status(result.status || 400).json({

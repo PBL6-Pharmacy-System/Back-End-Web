@@ -14,7 +14,17 @@ export const checkout = async (req, res) => {
       });
     }
 
-    const { voucherCode, shippingAddressId, paymentMethod } = req.body;
+    // Support both camelCase and snake_case
+    const voucherCode = req.body.voucherCode || req.body.voucher_code;
+    const shippingAddressId = req.body.shippingAddressId || req.body.shipping_address_id;
+    const paymentMethod = req.body.paymentMethod || req.body.payment_method;
+    
+    console.log('[CHECKOUT CONTROLLER] Request body:', {
+      voucherCode,
+      shippingAddressId,
+      paymentMethod,
+      fullBody: req.body
+    });
     
     const result = await checkoutService.checkout({
       customerId,
@@ -33,30 +43,6 @@ export const checkout = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Lỗi khi thanh toán'
-    });
-  }
-};
-
-/**
- * Confirm payment
- */
-export const confirmPayment = async (req, res) => {
-  try {
-    const orderId = parseInt(req.params.id);
-    const { transactionId } = req.body;
-    
-    const result = await checkoutService.confirmPayment(orderId, transactionId);
-
-    if (!result.success) {
-      return res.status(result.status).json(result);
-    }
-
-    res.json(result);
-  } catch (error) {
-    console.error('Confirm payment controller error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Lỗi khi xác nhận thanh toán'
     });
   }
 };
