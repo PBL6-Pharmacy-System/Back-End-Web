@@ -123,7 +123,7 @@ export const checkout = async (data) => {
     });
 
     // ✅ OPTIMIZED: Run parallel queries instead of sequential
-    const [customer, cart, address] = await Promise.all([
+    const [customer, cart, addressResult] = await Promise.all([
       // Validate customer - only select needed fields
       prisma.customers.findUnique({
         where: { id: customerId },
@@ -184,6 +184,7 @@ export const checkout = async (data) => {
       };
     }
 
+    let address = addressResult;
     if (!address) {
       // Try to get any address as fallback
       const fallbackAddress = await prisma.shippingaddresses.findFirst({

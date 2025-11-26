@@ -22,7 +22,7 @@ export const getCustomerAddresses = async (customerId) => {
     const addresses = await prisma.shippingaddresses.findMany({
       where: {
         customer_id: Number(customerId)
-      },
+      }, 
       orderBy: [
         { is_default: 'desc' }, // Default address first
         { created_at: 'desc' }

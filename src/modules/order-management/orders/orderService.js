@@ -87,7 +87,25 @@ export const getAllOrders = async (filters = {}) => {
               discount_value: true
             }
           },
-          shippingaddresses: true
+          shippingaddresses: true,
+          payments: {
+            select: {
+              id: true,
+              payment_method: true,
+              amount: true,
+              status: true,
+              transaction_id: true,
+              payment_date: true
+            }
+          },
+          shipments: {
+            select: {
+              id: true,
+              status: true,
+              tracking_number: true,
+              estimated_delivery: true
+            }
+          }
         }
       }),
       prisma.orders.count({ where })
@@ -246,7 +264,18 @@ export const getCustomerOrders = async (customerId, filters = {}) => {
           vouchers: {
             select: {
               code: true,
-              discount_value: true
+              discount_value: true,
+              discount_type: true
+            }
+          },
+          payments: {
+            select: {
+              id: true,
+              payment_method: true,
+              amount: true,
+              status: true,
+              transaction_id: true,
+              payment_date: true
             }
           },
           shipments: {
