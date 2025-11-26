@@ -6,6 +6,22 @@ import * as paymentController from './paymentController.js';
 const router = express.Router();
 
 /**
+ * ✅ Middleware to validate payment ownership
+ * Admin/Staff: Access all payments
+ * Customer: Access only their own payments (via order ownership)
+ * Note: Actual ownership check will be in controller
+ */
+const validatePaymentOwnership = (req, res, next) => {
+  // Admin và Staff có quyền truy cập tất cả
+  if (req.user.role_name === 'admin' || req.user.role_name === 'staff') {
+    return next();
+  }
+
+  // Customer: Controller sẽ kiểm tra payment.order.customer_id === req.user.customer_id
+  next();
+};
+
+/**
  * GET /api/payments/statistics
  * Get payment statistics
  * Access: Admin only
@@ -21,12 +37,13 @@ router.get(
 /**
  * GET /api/payments/:id
  * Get payment details by ID
- * Access: Admin, Staff, or Customer who owns the order
+ * ✅ FIXED: Access: Admin, Staff, or Customer who owns the order
  */
 router.get(
   '/payments/:id',
   authenticateToken,
   validateId(),
+  validatePaymentOwnership, // ✅ Added ownership validation
   paymentController.getPaymentById
 );
 

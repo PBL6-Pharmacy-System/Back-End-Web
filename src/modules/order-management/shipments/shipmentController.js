@@ -24,6 +24,7 @@ export const createShipment = async (req, res, next) => {
 
 /**
  * Get shipment by ID
+ * ✅ FIXED: Add ownership validation
  */
 export const getShipmentById = async (req, res, next) => {
   try {
@@ -36,6 +37,16 @@ export const getShipmentById = async (req, res, next) => {
         success: false,
         error: result.error
       });
+    }
+
+    // ✅ FIX: Kiểm tra ownership nếu là customer
+    if (req.user.role_name === 'customer') {
+      if (!result.data.order || result.data.order.customer_id !== req.user.customer_id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn không có quyền xem thông tin vận chuyển này'
+        });
+      }
     }
 
     res.json(result);
@@ -77,6 +88,7 @@ export const getAllShipments = async (req, res, next) => {
 
 /**
  * Get shipments for an order
+ * ✅ FIXED: Add ownership validation
  */
 export const getOrderShipments = async (req, res, next) => {
   try {
@@ -89,6 +101,20 @@ export const getOrderShipments = async (req, res, next) => {
         success: false,
         error: result.error
       });
+    }
+
+    // ✅ FIX: Kiểm tra ownership nếu là customer
+    if (req.user.role_name === 'customer') {
+      // Lấy order để kiểm tra ownership
+      if (result.data.length > 0) {
+        const firstShipment = result.data[0];
+        if (!firstShipment.order || firstShipment.order.customer_id !== req.user.customer_id) {
+          return res.status(403).json({
+            success: false,
+            error: 'Bạn không có quyền xem thông tin vận chuyển của đơn hàng này'
+          });
+        }
+      }
     }
 
     res.json(result);

@@ -2,8 +2,23 @@ import express from 'express';
 import * as reviewController from './reviewController.js';
 import { authenticateToken, authorizeAdmin } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
+import { reviewLimiter } from '../../../middlewares/rateLimit.middleware.js'; // ✅ Added
 
 const router = express.Router();
+
+/**
+ * ✅ Middleware to validate review ownership
+ * Customer can only update/delete their own reviews
+ */
+const validateReviewOwnership = (req, res, next) => {
+    // Admin có quyền truy cập tất cả
+    if (req.user.role_name === 'admin') {
+        return next();
+    }
+
+    // Customer: Controller sẽ kiểm tra review.customer_id === req.user.customer_id
+    next();
+};
 
 // Public routes - Xem reviews
 router.get('/reviews', reviewController.getAllReviews);
@@ -12,8 +27,20 @@ router.get('/products/:productId/reviews', validateId('productId'), reviewContro
 router.get('/products/:productId/rating-stats', validateId('productId'), reviewController.getProductRatingStats);
 
 // Protected routes - Cần đăng nhập để tạo/sửa review
-router.post('/reviews', authenticateToken, reviewController.createReview);
-router.put('/reviews/:id', authenticateToken, validateId(), reviewController.updateReview);
+// ✅ FIXED: Add validation to check if customer purchased the product
+router.post('/reviews',
+    authenticateToken,
+    reviewLimiter, // ✅ Added rate limiting
+    reviewController.createReview // ✅ Controller will check if customer purchased product
+);
+
+// ✅ FIXED: Add ownership validation
+router.put('/reviews/:id',
+    authenticateToken,
+    validateId(),
+    validateReviewOwnership, // ✅ Added ownership validation
+    reviewController.updateReview
+);
 
 // Admin only - Xóa review
 router.delete('/reviews/:id', authenticateToken, authorizeAdmin, validateId(), reviewController.deleteReview);

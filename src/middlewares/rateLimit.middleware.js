@@ -98,3 +98,48 @@ export const searchLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+
+/**
+ * Review rate limiter
+ * 10 reviews per hour to prevent spam
+ */
+export const reviewLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // Limit each IP to 10 review creations per hour
+  message: {
+    success: false,
+    error: 'Quá nhiều đánh giá, vui lòng thử lại sau 1 giờ'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
+ * Admin notification limiter
+ * 20 notifications per 15 minutes
+ */
+export const notificationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Limit each IP to 20 notification creations per 15 minutes
+  message: {
+    success: false,
+    error: 'Quá nhiều thông báo được tạo, vui lòng thử lại sau'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
+ * Order status update limiter
+ * 30 updates per 15 minutes
+ */
+export const orderStatusLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // Limit each IP to 30 status updates per 15 minutes
+  message: {
+    success: false,
+    error: 'Quá nhiều cập nhật trạng thái đơn hàng, vui lòng thử lại sau'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});

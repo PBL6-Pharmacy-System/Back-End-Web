@@ -2,18 +2,24 @@ import * as notificationService from './notificationService.js';
 
 export const getAllNotifications = async (req, res) => {
   try {
-    const { 
-      userId, 
-      isRead, 
-      type, 
-      page = 1, 
+    const {
+      isRead,
+      type,
+      page = 1,
       limit = 10,
       sortBy = 'created_at',
       sortOrder = 'desc'
     } = req.query;
 
+    let userId;
+    if (req.user.role_name === 'admin') {
+      userId = req.query.userId ? parseInt(req.query.userId) : undefined;
+    } else {
+      userId = req.user.userId;
+    }
+
     const result = await notificationService.getAllNotifications({
-      userId: userId ? parseInt(userId) : undefined,
+      userId,
       isRead: isRead === 'true',
       type,
       page: parseInt(page),
@@ -29,9 +35,9 @@ export const getAllNotifications = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Error in getAllNotifications:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Lỗi khi lấy danh sách thông báo' 
+      error: 'Lỗi khi lấy danh sách thông báo'
     });
   }
 };
@@ -42,13 +48,22 @@ export const getNotificationById = async (req, res) => {
     if (!result.success) {
       return res.status(result.status).json(result);
     }
-    
+
+    if (req.user.role_name !== 'admin') {
+      if (result.data.user_id !== req.user.userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn không có quyền xem thông báo này'
+        });
+      }
+    }
+
     res.json(result);
   } catch (err) {
     console.error('Error in getNotificationById:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Lỗi khi lấy thông tin thông báo' 
+      error: 'Lỗi khi lấy thông tin thông báo'
     });
   }
 };
@@ -63,15 +78,30 @@ export const createNotification = async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.error('Error in createNotification:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Lỗi khi tạo thông báo mới' 
+      error: 'Lỗi khi tạo thông báo mới'
     });
   }
 };
 
 export const updateNotification = async (req, res) => {
   try {
+    const notificationResult = await notificationService.getNotificationById(req.params.id);
+
+    if (!notificationResult.success) {
+      return res.status(notificationResult.status).json(notificationResult);
+    }
+
+    if (req.user.role_name !== 'admin') {
+      if (notificationResult.data.user_id !== req.user.userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn chỉ có thể cập nhật thông báo của chính mình'
+        });
+      }
+    }
+
     const result = await notificationService.updateNotification(
       req.params.id,
       req.body
@@ -84,9 +114,9 @@ export const updateNotification = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Error in updateNotification:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Lỗi khi cập nhật thông báo' 
+      error: 'Lỗi khi cập nhật thông báo'
     });
   }
 };
@@ -101,9 +131,9 @@ export const deleteNotification = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Error in deleteNotification:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Lỗi khi xóa thông báo' 
+      error: 'Lỗi khi xóa thông báo'
     });
   }
 };
@@ -118,9 +148,9 @@ export const markAsRead = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Error in markAsRead:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Lỗi khi cập nhật trạng thái thông báo' 
+      error: 'Lỗi khi cập nhật trạng thái thông báo'
     });
   }
 };
@@ -135,9 +165,9 @@ export const getUserUnreadCount = async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Error in getUserUnreadCount:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Lỗi khi lấy số lượng thông báo chưa đọc' 
+      error: 'Lỗi khi lấy số lượng thông báo chưa đọc'
     });
   }
 };

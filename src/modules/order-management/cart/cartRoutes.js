@@ -76,11 +76,4 @@ router.post('/cart/checkout',
   checkoutController.checkout
 );
 
-router.post('/orders/:id/cancel',
-  authenticateToken,
-  validateId('id'),
-  validateOrderOwnership,
-  checkoutController.cancelOrder
-);
-
 export default router;

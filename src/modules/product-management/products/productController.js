@@ -26,9 +26,9 @@ export const getAllProducts = async (req, res) => {
     // Data masking for public access
     const isAuthenticated = req.user && canViewDetailedInventory(req.user);
 
-    if (!isAuthenticated) {
+    if (!isAuthenticated && result.data.products) {
       // Mask sensitive inventory data for public/customer
-      result.data = result.data.map(product => maskProductInventory(product));
+      result.data.products = result.data.products.map(product => maskProductInventory(product));
     }
 
     res.json({ success: true, data: result.data });
@@ -120,9 +120,9 @@ export const searchProducts = async (req, res) => {
     // Data masking for public access
     const isAuthenticated = req.user && canViewDetailedInventory(req.user);
 
-    if (!isAuthenticated) {
+    if (!isAuthenticated && result.data.products) {
       // Mask sensitive inventory data for public/customer
-      result.data = result.data.map(product => maskProductInventory(product));
+      result.data.products = result.data.products.map(product => maskProductInventory(product));
     }
 
     res.json({ success: true, data: result.data });

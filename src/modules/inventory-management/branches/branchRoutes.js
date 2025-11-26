@@ -36,16 +36,7 @@ router.get('/branches/:branchId/inventory',
 router.get('/branches/:branchId/inventory/:productId',
     optionalAuth, // ✅ Changed: Optional auth để mask data cho Public
     validateId('branchId'),
-    (req, res, next) => {
-        const productId = parseInt(req.params.productId);
-        if (isNaN(productId) || productId <= 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'productId phải là số nguyên dương'
-            });
-        }
-        next();
-    },
+    validateId('productId'), // ✅ Reusable validator thay vì inline validation
     branchController.getBranchInventoryDetails
 );
 
@@ -74,17 +65,7 @@ router.put('/branches/:branchId/inventory/:productId',
     authorizeAdminOrStaff,
     authorizeStaffBranch, // ✅ Added: Staff chỉ được WRITE own branch
     validateId('branchId'),
-    (req, res, next) => {
-        const productId = parseInt(req.params.productId);
-        if (isNaN(productId) || productId <= 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'productId phải là số nguyên dương'
-            });
-        }
-        req.params.productId = productId;
-        next();
-    },
+    validateId('productId'), // ✅ Reusable validator thay vì inline validation
     branchInventoryController.updateBranchInventoryByBranchProduct
 );
 

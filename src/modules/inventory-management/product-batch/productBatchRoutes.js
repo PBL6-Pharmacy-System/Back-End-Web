@@ -1,6 +1,7 @@
 import express from 'express';
 import * as productBatchController from './productBatchController.js';
-import { authenticateToken, authorizeAdminOrStaff, authorizeStaffBranch } from '../../auth/auth.middleware.js';
+import { authenticateToken, authorizeAdminOrStaff, authorizeAdmin } from '../../auth/auth.middleware.js';
+import { validateId } from '../../../middlewares/validate.middleware.js';
 
 const router = express.Router();
 
@@ -8,9 +9,9 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Create new product batch (IMPORT from supplier)
+// ⚠️ Staff branch authorization được check trong controller (cần query DB)
 router.post('/product-batches',
     authorizeAdminOrStaff,
-    authorizeStaffBranch,
     productBatchController.createProductBatch
 );
 
@@ -29,24 +30,30 @@ router.get('/product-batches/expiring-soon',
 // Get product batch by ID
 router.get('/product-batches/:id',
     authorizeAdminOrStaff,
+    validateId(), // ✅ Added validation
     productBatchController.getProductBatchById
 );
 
 // Update product batch
+// ⚠️ Staff branch authorization được check trong controller
 router.put('/product-batches/:id',
     authorizeAdminOrStaff,
+    validateId(), // ✅ Added validation
     productBatchController.updateProductBatch
 );
 
 // Mark batch as expired
+// ⚠️ Staff branch authorization được check trong controller
 router.post('/product-batches/:id/expire',
     authorizeAdminOrStaff,
+    validateId(), // ✅ Added validation
     productBatchController.markBatchAsExpired
 );
 
 // Delete product batch
 router.delete('/product-batches/:id',
-    authorizeAdminOrStaff,
+    authorizeAdmin,
+    validateId(), // ✅ Added validation
     productBatchController.deleteProductBatch
 );
 

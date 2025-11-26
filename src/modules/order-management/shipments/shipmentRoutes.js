@@ -6,6 +6,34 @@ import { validateId } from '../../../middlewares/validate.middleware.js';
 const router = express.Router();
 
 /**
+ * ✅ Middleware to validate shipment ownership
+ * Admin/Staff: Access all shipments
+ * Customer: Access only their own shipments (via order ownership)
+ */
+const validateShipmentOwnership = (req, res, next) => {
+  // Admin và Staff có quyền truy cập tất cả
+  if (req.user.role_name === 'admin' || req.user.role_name === 'staff') {
+    return next();
+  }
+
+  // Customer: Controller sẽ kiểm tra shipment.order.customer_id === req.user.customer_id
+  next();
+};
+
+/**
+ * ✅ Middleware to validate order ownership for customer
+ */
+const validateOrderOwnership = (req, res, next) => {
+  // Admin và Staff có quyền truy cập tất cả
+  if (req.user.role_name === 'admin' || req.user.role_name === 'staff') {
+    return next();
+  }
+
+  // Customer: Controller sẽ kiểm tra order.customer_id === req.user.customer_id
+  next();
+};
+
+/**
  * POST /api/shipments
  * Create a new shipment for an order
  * Access: Admin, Staff only
@@ -63,24 +91,26 @@ router.get(
 /**
  * GET /api/shipments/:id
  * Get shipment details by ID
- * Access: Admin, Staff, or Customer who owns the order
+ * ✅ FIXED: Access: Admin, Staff, or Customer who owns the order
  */
 router.get(
   '/shipments/:id',
   authenticateToken,
   validateId(),
+  validateShipmentOwnership, // ✅ Added ownership validation
   shipmentController.getShipmentById
 );
 
 /**
  * GET /api/orders/:orderId/shipments
  * Get all shipments for a specific order
- * Access: Admin, Staff, or Customer who owns the order
+ * ✅ FIXED: Access: Admin, Staff, or Customer who owns the order
  */
 router.get(
   '/orders/:orderId/shipments',
   authenticateToken,
   validateId('orderId'),
+  validateOrderOwnership, // ✅ Added ownership validation
   shipmentController.getOrderShipments
 );
 

@@ -2,6 +2,7 @@ import * as paymentService from './paymentService.js';
 
 /**
  * Get payment by ID
+ * ✅ FIXED: Add ownership validation
  */
 export const getPaymentById = async (req, res, next) => {
   try {
@@ -14,6 +15,17 @@ export const getPaymentById = async (req, res, next) => {
         success: false,
         error: result.error
       });
+    }
+
+    // ✅ FIX: Kiểm tra ownership nếu là customer
+    if (req.user.role_name === 'customer') {
+      // Payment phải có order, và order phải thuộc về customer
+      if (!result.data.order || result.data.order.customer_id !== req.user.customer_id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn không có quyền xem thông tin thanh toán này'
+        });
+      }
     }
 
     res.json(result);

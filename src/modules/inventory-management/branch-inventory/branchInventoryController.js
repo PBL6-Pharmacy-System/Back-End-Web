@@ -2,6 +2,7 @@ import * as branchInventoryService from './branchInventoryService.js';
 import prisma from '../../../config/db.js';
 import {
 	maskBranchInventory,
+	maskBranchInventoryForPublic,
 	canViewDetailedInventory,
 	canWriteToBranch,
 	canReadFromBranch
@@ -373,6 +374,7 @@ export const getStockStatisticsByBranch = async (req, res) => {
 /**
  * GET /api/branches/:branchId/inventory
  * PUBLIC hoặc STAFF/ADMIN với data masking
+ * 🔒 SECURITY v4.1: Public chỉ xem product list + in_stock, KHÔNG xem batch/supplier info
  */
 export const getBranchInventoryByBranchId = async (req, res) => {
 	try {
@@ -392,13 +394,14 @@ export const getBranchInventoryByBranchId = async (req, res) => {
 			return res.status(result.status).json(result);
 		}
 
-		// DATA MASKING: Nếu không phải Staff/Admin → mask data
+		// DATA MASKING: Phân biệt Staff/Admin vs Public/Customer
 		const hasDetailedAccess = canViewDetailedInventory(req.user);
 
 		if (!hasDetailedAccess && result.data.inventory) {
-			// Mask sensitive inventory data for public/customer
+			// ✅ Public/Customer: Sử dụng maskBranchInventoryForPublic (siêu nghiêm ngặt)
+			// Chỉ trả về: product info + in_stock boolean
 			result.data.inventory = result.data.inventory.map(inv =>
-				maskBranchInventory(inv)
+				maskBranchInventoryForPublic(inv)
 			);
 		}
 

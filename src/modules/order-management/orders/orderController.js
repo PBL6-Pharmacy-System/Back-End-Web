@@ -33,6 +33,7 @@ export const getAllOrders = async (req, res, next) => {
 
 /**
  * Get order by ID
+ * ✅ FIXED: Add ownership validation
  */
 export const getOrderById = async (req, res, next) => {
   try {
@@ -45,6 +46,16 @@ export const getOrderById = async (req, res, next) => {
         success: false,
         error: result.error
       });
+    }
+
+    // ✅ FIX: Kiểm tra ownership nếu là customer
+    if (req.user.role_name === 'customer') {
+      if (result.data.customer_id !== req.user.customer_id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn không có quyền xem đơn hàng này'
+        });
+      }
     }
 
     res.json(result);

@@ -160,6 +160,47 @@ export const maskBranchInventory = (inventory) => {
 };
 
 /**
+ * 🔒 NEW: Mask SIÊU NGHIÊM NGẶT cho Public/Customer
+ * Public chỉ cần biết: Branch có thuốc gì + Còn hàng không
+ * ❌ KHÔNG trả về: stock số lượng, batch info, supplier, dates
+ * 
+ * @param {Object} inventory - Branch inventory record
+ * @returns {Object} - Inventory đã được mask hoàn toàn
+ */
+export const maskBranchInventoryForPublic = (inventory) => {
+    if (!inventory) return inventory;
+
+    const stock = inventory.stock || 0;
+
+    return {
+        // ✅ Public chỉ xem được những thông tin này
+        product_id: inventory.product_id,
+        in_stock: stock > 0, // ✅ Boolean: có hàng hay không
+
+        // ✅ Thông tin sản phẩm (để hiển thị)
+        products: inventory.products ? {
+            id: inventory.products.id,
+            name: inventory.products.name,
+            price: inventory.products.price, // Giá bán public
+            images: inventory.products.images,
+            description: inventory.products.description,
+            category: inventory.products.category,
+            unit: inventory.products.unit,
+        } : undefined,
+
+        // ❌ KHÔNG trả về:
+        // - id, branch_id (không cần thiết)
+        // - stock, min_stock, max_stock, reorder_point (số lượng chính xác)
+        // - last_import_date, last_export_date (lịch sử nhập xuất)
+        // - note (ghi chú nội bộ)
+        // - batches (thông tin lô hàng)
+        // - supplier (nhà cung cấp)
+        // - cost_price (giá nhập)
+        // - expiry_date (hạn sử dụng từng lô)
+    };
+};
+
+/**
  * Mask thông tin Batch/Lô hàng cho Public/Customer
  * 🔒 SECURITY v4.0: Public/Customer KHÔNG ĐƯỢC xem batch information
  * @param {Object} batch - Batch info
@@ -355,4 +396,5 @@ export default {
     maskInventoryResponse,
     maskProductListResponse,
     validateBranchPermission,
+    maskBranchInventoryForPublic,
 };

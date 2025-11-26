@@ -6,6 +6,27 @@ import { validateId } from '../../../middlewares/validate.middleware.js';
 const router = express.Router();
 
 /**
+ * Middleware to validate ownership for customer addresses
+ */
+const validateCustomerOwnership = (req, res, next) => {
+  // Admin and Staff have access to all
+  if (req.user.role_name === 'admin' || req.user.role_name === 'staff') {
+    return next();
+  }
+
+  // Customers can only access their own addresses
+  const customerId = parseInt(req.params.customerId);
+  if (req.user.customer_id !== customerId) {
+    return res.status(403).json({
+      success: false,
+      error: 'You can only access your own addresses'
+    });
+  }
+
+  next();
+};
+
+/**
  * GET /api/customers/:customerId/shipping-addresses
  * Get all shipping addresses of a customer
  * Access: Admin, Staff, or the customer themselves
@@ -14,6 +35,7 @@ router.get(
   '/customers/:customerId/shipping-addresses',
   authenticateToken,
   validateId('customerId'),
+  validateCustomerOwnership,
   shippingAddressController.getCustomerAddresses
 );
 
@@ -26,6 +48,7 @@ router.get(
   '/customers/:customerId/shipping-addresses/default',
   authenticateToken,
   validateId('customerId'),
+  validateCustomerOwnership,
   shippingAddressController.getDefaultAddress
 );
 
@@ -58,6 +81,7 @@ router.post(
   '/customers/:customerId/shipping-addresses',
   authenticateToken,
   validateId('customerId'),
+  validateCustomerOwnership,
   shippingAddressController.createAddress
 );
 

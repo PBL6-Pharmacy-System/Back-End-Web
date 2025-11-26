@@ -1,9 +1,32 @@
 import * as inventoryTransferService from './inventoryTransferService.js';
 
 // Create transfer request
+// ✅ SECURITY: Staff chỉ được tạo transfer từ chi nhánh của mình
 export const createTransferRequest = async (req, res) => {
   try {
     const userId = req.user.userId;
+
+    // ✅ CHECK: Staff chỉ được chuyển từ chi nhánh của mình
+    if (req.user.role_name === 'staff') {
+      if (!req.body.from_branch_id) {
+        return res.status(400).json({
+          success: false,
+          error: 'Thiếu thông tin from_branch_id'
+        });
+      }
+
+      if (Number(req.body.from_branch_id) !== req.user.branch_id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn chỉ có quyền tạo phiếu chuyển từ chi nhánh của mình',
+          details: {
+            your_branch_id: req.user.branch_id,
+            requested_from_branch_id: req.body.from_branch_id
+          }
+        });
+      }
+    }
+
     const result = await inventoryTransferService.createTransferRequest(req.body, userId);
 
     if (!result.success) {
@@ -81,10 +104,33 @@ export const approveTransfer = async (req, res) => {
 };
 
 // Ship transfer
+// ✅ SECURITY: Staff chỉ được xuất kho từ chi nhánh của mình
 export const shipTransfer = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { tracking_number } = req.body;
+
+    // ✅ Get transfer first to check from_branch ownership
+    const transferResult = await inventoryTransferService.getTransferById(req.params.id);
+
+    if (!transferResult.success) {
+      return res.status(transferResult.status).json(transferResult);
+    }
+
+    // ✅ CHECK: Staff chỉ được ship từ chi nhánh của mình
+    if (req.user.role_name === 'staff') {
+      if (transferResult.data.from_branch_id !== req.user.branch_id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn chỉ có quyền xuất kho từ chi nhánh của mình',
+          details: {
+            your_branch_id: req.user.branch_id,
+            transfer_from_branch_id: transferResult.data.from_branch_id
+          }
+        });
+      }
+    }
+
     const result = await inventoryTransferService.shipTransfer(req.params.id, userId, tracking_number);
 
     if (!result.success) {
@@ -102,9 +148,33 @@ export const shipTransfer = async (req, res) => {
 };
 
 // Receive transfer
+// ✅ FIXED: Add branch ownership check - Staff chỉ nhận được hàng của chi nhánh mình
 export const receiveTransfer = async (req, res) => {
   try {
     const userId = req.user.userId;
+
+    // ✅ Get transfer first to check to_branch ownership
+    const transferResult = await inventoryTransferService.getTransferById(req.params.id);
+
+    if (!transferResult.success) {
+      return res.status(transferResult.status).json(transferResult);
+    }
+
+    // ✅ Check branch ownership if user is staff
+    // Staff chỉ có thể receive transfer tới chi nhánh của mình
+    if (req.user.role_name === 'staff') {
+      if (transferResult.data.to_branch_id !== req.user.branch_id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn chỉ có quyền nhận hàng chuyển đến chi nhánh của mình',
+          details: {
+            your_branch_id: req.user.branch_id,
+            transfer_to_branch_id: transferResult.data.to_branch_id
+          }
+        });
+      }
+    }
+
     const result = await inventoryTransferService.receiveTransfer(req.params.id, userId);
 
     if (!result.success) {

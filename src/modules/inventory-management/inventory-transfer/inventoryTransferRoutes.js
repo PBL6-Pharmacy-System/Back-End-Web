@@ -1,6 +1,6 @@
 import express from 'express';
 import * as inventoryTransferController from './inventoryTransferController.js';
-import { authenticateToken, authorizeAdminOrStaff, authorizeStaffBranch, authorizeAdmin } from '../../auth/auth.middleware.js';
+import { authenticateToken, authorizeAdminOrStaff, authorizeAdmin } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
 
 const router = express.Router();
@@ -19,15 +19,15 @@ router.get('/inventory-transfers/:id',
   inventoryTransferController.getTransferById
 );
 
-// Tạo phiếu chuyển kho - Staff chỉ có thể chuyển từ chi nhánh của mình
+// Tạo phiếu chuyển kho
+// ⚠️ Staff branch authorization được check trong controller (validate from_branch_id)
 router.post('/inventory-transfers',
   authenticateToken,
   authorizeAdminOrStaff,
-  authorizeStaffBranch,
   inventoryTransferController.createTransferRequest
 );
 
-// Duyệt phiếu - Admin hoặc Manager
+// Duyệt phiếu - Admin only
 router.post('/inventory-transfers/:id/approve',
   authenticateToken,
   authorizeAdmin,
@@ -36,19 +36,19 @@ router.post('/inventory-transfers/:id/approve',
 );
 
 // Xuất kho - Staff chi nhánh nguồn
+// ⚠️ Staff branch authorization được check trong controller (validate from_branch_id)
 router.post('/inventory-transfers/:id/ship',
   authenticateToken,
   authorizeAdminOrStaff,
-  authorizeStaffBranch,
   validateId(),
   inventoryTransferController.shipTransfer
 );
 
 // Nhận kho - Staff chi nhánh đích
+// ⚠️ Staff branch authorization được check trong controller (validate to_branch_id)
 router.post('/inventory-transfers/:id/receive',
   authenticateToken,
   authorizeAdminOrStaff,
-  authorizeStaffBranch,
   validateId(),
   inventoryTransferController.receiveTransfer
 );
