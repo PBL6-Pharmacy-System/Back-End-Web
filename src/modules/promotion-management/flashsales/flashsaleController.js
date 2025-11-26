@@ -72,6 +72,11 @@ export const deleteFlashsale = async (req, res) => {
     try {
         const { id } = req.params;
         const result = await flashsaleService.deleteFlashsale(Number(id));
+        
+        if (!result.success) {
+            return res.status(404).json(result);
+        }
+        
         res.json(result);
     } catch (error) {
         console.error('[FLASHSALE DELETE ERROR]', error);
