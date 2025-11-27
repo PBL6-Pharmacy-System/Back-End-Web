@@ -108,8 +108,9 @@ const validateStockAvailability = async (items) => {
   return { isValid: true };
 };
 
-// Kiểm tra và lấy giá flashsale nếu có
-const getFlashsalePrice = async (productId) => {
+// Kiểm tra và lấy giá flashsale nếu có (KHÔNG update sold_count ở đây)
+// ✅ FIX #4: Chỉ kiểm tra, không update sold_count - việc update sẽ làm trong transaction
+const getFlashsalePrice = async (productId, quantity = null) => {
   try {
     const now = new Date();
     
@@ -129,7 +130,8 @@ const getFlashsalePrice = async (productId) => {
             id: true,
             flash_price: true,
             stock_limit: true,
-            sold_count: true
+            sold_count: true,
+            flashsale_id: true
           }
         }
       }
@@ -146,23 +148,36 @@ const getFlashsalePrice = async (productId) => {
       return null;
     }
 
-    return flashsaleProduct;
+    // Nếu có quantity, kiểm tra xem có đủ hàng cho số lượng yêu cầu không
+    if (quantity !== null) {
+      const remainingStock = flashsaleProduct.stock_limit - flashsaleProduct.sold_count;
+      if (remainingStock < quantity) {
+        return null; // Không đủ hàng flashsale
+      }
+    }
+
+    return {
+      ...flashsaleProduct,
+      flashsale_id: flashsale.id
+    };
   } catch (error) {
     console.error('Error checking flashsale:', error);
     return null;
   }
 };
 
+// ✅ FIX #4: Tính toán totals KHÔNG update sold_count - chỉ để preview
 const calculateOrderTotals = async (items) => {
   let subtotal = 0;
   let totalQuantity = 0;
   let totalDiscount = 0;
+  const flashsaleItems = []; // Track items có flashsale để update sau trong transaction
 
   for (const item of items) {
     const { quantity, unitPrice, productId } = item;
     
-    // Kiểm tra giá flashsale
-    const flashsaleProduct = await getFlashsalePrice(productId);
+    // Kiểm tra giá flashsale (không update sold_count)
+    const flashsaleProduct = await getFlashsalePrice(productId, quantity);
     
     if (flashsaleProduct) {
       // Tính giá với flashsale
@@ -173,14 +188,10 @@ const calculateOrderTotals = async (items) => {
       subtotal += flashsalePrice;
       totalDiscount += (regularPrice - flashsalePrice);
       
-      // Cập nhật số lượng đã bán trong flashsale
-      await prisma.flashsale_products.update({
-        where: { id: flashsaleProduct.id },
-        data: {
-          sold_count: {
-            increment: quantity
-          }
-        }
+      // Lưu lại để update trong transaction sau
+      flashsaleItems.push({
+        flashsaleProductId: flashsaleProduct.id,
+        quantity: quantity
       });
     } else {
       // Tính giá bình thường
@@ -194,8 +205,38 @@ const calculateOrderTotals = async (items) => {
     subtotal,
     totalQuantity,
     totalDiscount,
-    totalAmount: subtotal // Will be updated with other discounts/vouchers later
+    totalAmount: subtotal,
+    flashsaleItems // Trả về để update trong transaction
   };
+};
+
+// ✅ FIX #4: Helper function để update flashsale sold_count trong transaction
+const updateFlashsaleSoldCountInTransaction = async (tx, flashsaleItems) => {
+  for (const item of flashsaleItems) {
+    // Kiểm tra lại trong transaction để tránh race condition
+    const flashsaleProduct = await tx.flashsale_products.findUnique({
+      where: { id: item.flashsaleProductId }
+    });
+
+    if (!flashsaleProduct) {
+      throw new Error('Sản phẩm flashsale không tồn tại');
+    }
+
+    // Check stock limit với lock
+    if (flashsaleProduct.sold_count + item.quantity > flashsaleProduct.stock_limit) {
+      throw new Error(`Sản phẩm flashsale đã hết hàng (còn ${flashsaleProduct.stock_limit - flashsaleProduct.sold_count})`);
+    }
+
+    // Update sold_count
+    await tx.flashsale_products.update({
+      where: { id: item.flashsaleProductId },
+      data: {
+        sold_count: {
+          increment: item.quantity
+        }
+      }
+    });
+  }
 };
 
 export const getCart = async (customerId) => {
@@ -743,7 +784,7 @@ export const removeCartItem = async (customerId, itemId) => {
   }
 };
 
-export const checkout = async (orderId) => {
+export const checkout = async (orderId, shippingAddressId = null) => {
   try {
     // Get current order
     const order = await prisma.orders.findUnique({
@@ -753,6 +794,14 @@ export const checkout = async (orderId) => {
           include: {
             products: true,
             productunits: true
+          }
+        },
+        customers: {
+          include: {
+            shippingaddresses: {
+              where: { is_default: true },
+              take: 1
+            }
           }
         }
       }
@@ -782,6 +831,56 @@ export const checkout = async (orderId) => {
       };
     }
 
+    // ✅ FIX: Xác định shipping_address_id
+    let finalShippingAddressId = shippingAddressId;
+    
+    // Nếu không truyền vào, lấy địa chỉ mặc định của customer
+    if (!finalShippingAddressId) {
+      if (order.customers?.shippingaddresses?.length > 0) {
+        finalShippingAddressId = order.customers.shippingaddresses[0].id;
+      } else {
+        // Tìm địa chỉ bất kỳ của customer
+        const anyAddress = await prisma.shippingaddresses.findFirst({
+          where: { customer_id: order.customer_id },
+          orderBy: { created_at: 'desc' }
+        });
+        
+        if (anyAddress) {
+          finalShippingAddressId = anyAddress.id;
+        }
+      }
+    }
+
+    // Validate shipping address
+    if (!finalShippingAddressId) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Vui lòng thêm địa chỉ giao hàng trước khi đặt hàng'
+      };
+    }
+
+    // Verify shipping address exists and belongs to customer
+    const shippingAddress = await prisma.shippingaddresses.findUnique({
+      where: { id: Number(finalShippingAddressId) }
+    });
+
+    if (!shippingAddress) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Địa chỉ giao hàng không tồn tại'
+      };
+    }
+
+    if (shippingAddress.customer_id !== order.customer_id) {
+      return {
+        success: false,
+        status: 403,
+        error: 'Địa chỉ giao hàng không thuộc về khách hàng này'
+      };
+    }
+
     // Get customer location for branch selection
     const customerLocation = await getCustomerLocation(order.customer_id);
 
@@ -804,13 +903,32 @@ export const checkout = async (orderId) => {
       };
     }
 
+    // ✅ FIX: Kiểm tra và chuẩn bị flashsale items để update sold_count
+    const flashsaleItems = [];
+    for (const item of order.orderitems) {
+      const flashsaleProduct = await getFlashsalePrice(item.product_id, item.quantity);
+      if (flashsaleProduct) {
+        flashsaleItems.push({
+          flashsaleProductId: flashsaleProduct.id,
+          quantity: item.quantity
+        });
+      }
+    }
+
     // Process checkout in transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Update order status
+      // ✅ FIX: Update flashsale sold_count TRƯỚC KHI update order
+      // Để đảm bảo race condition được handle đúng
+      if (flashsaleItems.length > 0) {
+        await updateFlashsaleSoldCountInTransaction(tx, flashsaleItems);
+      }
+
+      // Update order status and shipping address
       const updatedOrder = await tx.orders.update({
         where: { id: Number(orderId) },
         data: {
           status: ORDER_STATUS.PENDING,
+          shipping_address_id: Number(finalShippingAddressId),
           updated_at: new Date()
         },
         include: {
@@ -820,7 +938,8 @@ export const checkout = async (orderId) => {
               productunits: true
             }
           },
-          customers: true
+          customers: true,
+          shippingaddresses: true
         }
       });
 
@@ -866,11 +985,12 @@ export const checkout = async (orderId) => {
           });
         }
 
-        // Create shipment record for this branch
+        // Create shipment record with shipping_address_id
         await tx.shipments.create({
           data: {
             order_id: updatedOrder.id,
             branch_id: branchAlloc.branch.id,
+            shipping_address_id: Number(finalShippingAddressId),
             tracking_number: `SHIP-${Date.now()}-${branchAlloc.branch.id}`,
             status: 'pending',
             shipped_date: null,
@@ -878,6 +998,15 @@ export const checkout = async (orderId) => {
           }
         });
       }
+
+      // Create order status history
+      await tx.order_status_history.create({
+        data: {
+          order_id: orderId,
+          status: ORDER_STATUS.PENDING,
+          changed_at: new Date()
+        }
+      });
 
       return {
         order: updatedOrder,
@@ -987,6 +1116,9 @@ export const createOrder = async (customerId, orderData) => {
           }
         });
       }
+
+      // Update flashsale sold_count
+      await updateFlashsaleSoldCountInTransaction(tx, totals.flashsaleItems);
 
       return newOrder;
     });

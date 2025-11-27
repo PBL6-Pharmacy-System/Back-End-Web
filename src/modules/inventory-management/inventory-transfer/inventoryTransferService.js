@@ -1,4 +1,5 @@
 import prisma from '../../../config/db.js';
+import { exportStockFEFO } from '../product-batch/productBatchService.js';
 
 // Create inventory transfer request
 export const createTransferRequest = async (data, userId) => {
@@ -56,7 +57,7 @@ export const createTransferRequest = async (data, userId) => {
             image_url: true
           }
         },
-        requestedByUser: {
+        users_inventoryTransfer_requested_byTousers: {
           select: {
             id: true,
             username: true,
@@ -103,14 +104,14 @@ export const getAllTransfers = async ({ branchId, status, page = 1, limit = 20 }
               price: true
             }
           },
-          requestedByUser: {
+          users_inventoryTransfer_requested_byTousers: {
             select: {
               id: true,
               username: true,
               full_name: true
             }
           },
-          approvedByUser: {
+          users_inventoryTransfer_approved_byTousers: {
             select: {
               id: true,
               username: true,
@@ -173,7 +174,7 @@ export const getTransferById = async (id) => {
       where: { id: Number(id) },
       include: {
         products: true,
-        requestedByUser: {
+        users_inventoryTransfer_requested_byTousers: {
           select: {
             id: true,
             username: true,
@@ -181,21 +182,21 @@ export const getTransferById = async (id) => {
             email: true
           }
         },
-        approvedByUser: {
+        users_inventoryTransfer_approved_byTousers: {
           select: {
             id: true,
             username: true,
             full_name: true
           }
         },
-        shippedByUser: {
+        users_inventoryTransfer_shipped_byTousers: {
           select: {
             id: true,
             username: true,
             full_name: true
           }
         },
-        receivedByUser: {
+        users_inventoryTransfer_received_byTousers: {
           select: {
             id: true,
             username: true,
@@ -286,7 +287,7 @@ export const approveTransfer = async (id, userId) => {
       },
       include: {
         products: true,
-        approvedByUser: {
+        users_inventoryTransfer_approved_byTousers: {
           select: {
             id: true,
             username: true,
@@ -305,7 +306,7 @@ export const approveTransfer = async (id, userId) => {
   }
 };
 
-// Ship transfer (deduct from source)
+// Ship transfer (deduct from source) - UPDATED with FEFO support
 export const shipTransfer = async (id, userId, trackingNumber) => {
   try {
     const transfer = await prisma.inventoryTransfer.findUnique({
@@ -328,9 +329,68 @@ export const shipTransfer = async (id, userId, trackingNumber) => {
       };
     }
 
+    // Check if batches exist for this product
+    const batches = await prisma.productBatch.findMany({
+      where: {
+        branch_id: transfer.from_branch_id,
+        product_id: transfer.product_id,
+        status: 'active',
+        quantity: { gt: 0 }
+      }
+    });
+
+    const hasBatches = batches.length > 0;
+
     // Process in transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Deduct from source branch
+      let allocations = [];
+
+      if (hasBatches) {
+        // ✅ USE FEFO: Deduct from batches with earliest expiry first
+        const availableBatches = batches
+          .filter(b => !b.expiry_date || new Date(b.expiry_date) > new Date())
+          .sort((a, b) => {
+            // FEFO: earliest expiry first, null expiry last
+            if (!a.expiry_date && !b.expiry_date) return 0;
+            if (!a.expiry_date) return 1;
+            if (!b.expiry_date) return -1;
+            return new Date(a.expiry_date) - new Date(b.expiry_date);
+          });
+
+        const totalAvailable = availableBatches.reduce((sum, b) => sum + b.quantity, 0);
+
+        if (totalAvailable < transfer.quantity) {
+          throw new Error(`Không đủ hàng trong các lô. Yêu cầu: ${transfer.quantity}, Có sẵn: ${totalAvailable}`);
+        }
+
+        // Allocate from batches
+        let remainingQty = transfer.quantity;
+        for (const batch of availableBatches) {
+          if (remainingQty <= 0) break;
+
+          const takeQty = Math.min(batch.quantity, remainingQty);
+
+          // Update batch quantity
+          await tx.productBatch.update({
+            where: { id: batch.id },
+            data: {
+              quantity: { decrement: takeQty },
+              updated_at: new Date()
+            }
+          });
+
+          allocations.push({
+            batch_id: batch.id,
+            batch_number: batch.batch_number,
+            expiry_date: batch.expiry_date,
+            allocated_qty: takeQty
+          });
+
+          remainingQty -= takeQty;
+        }
+      }
+
+      // Deduct from source branch inventory
       await tx.branchinventory.update({
         where: {
           branch_id_product_id: {
@@ -339,14 +399,16 @@ export const shipTransfer = async (id, userId, trackingNumber) => {
           }
         },
         data: {
-          stock: {
-            decrement: transfer.quantity
-          },
+          stock: { decrement: transfer.quantity },
           last_updated: new Date()
         }
       });
 
       // Create inventory log for export
+      const batchInfo = allocations.length > 0
+        ? ` [FEFO: ${allocations.map(a => `${a.batch_number}(${a.allocated_qty})`).join(', ')}]`
+        : '';
+
       const inventoryLogOut = await tx.inventoryLog.create({
         data: {
           branch_id: transfer.from_branch_id,
@@ -355,7 +417,8 @@ export const shipTransfer = async (id, userId, trackingNumber) => {
           type: 'TRANSFER_OUT',
           reference_type: 'transfer',
           reference_id: transfer.id,
-          note: `Chuyển kho đến chi nhánh ID: ${transfer.to_branch_id}`,
+          batch_id: allocations.length === 1 ? allocations[0].batch_id : null,
+          note: `Chuyển kho đến chi nhánh ID: ${transfer.to_branch_id}${batchInfo}`,
           created_by: userId,
           date: new Date()
         }
@@ -369,40 +432,47 @@ export const shipTransfer = async (id, userId, trackingNumber) => {
         }
       });
 
-      // Update transfer status
+      // Update transfer status with batch allocation info
       const updated = await tx.inventoryTransfer.update({
         where: { id: Number(id) },
         data: {
           status: 'shipped',
           shipped_by: userId,
           shipped_date: new Date(),
-          tracking_number: trackingNumber
+          tracking_number: trackingNumber,
+          note: transfer.note
+            ? `${transfer.note}\n[Shipped] Batches: ${JSON.stringify(allocations)}`
+            : `[Shipped] Batches: ${JSON.stringify(allocations)}`
         },
         include: {
-          products: true,
-          shippedByUser: {
-            select: {
-              id: true,
-              username: true,
-              full_name: true
-            }
-          }
+          products: true
         }
       });
 
-      return updated;
+      return { transfer: updated, allocations };
     });
 
     return {
       success: true,
-      data: result
+      data: result.transfer,
+      fefo_allocations: result.allocations,
+      message: hasBatches
+        ? `Đã xuất ${transfer.quantity} sản phẩm từ ${result.allocations.length} lô theo FEFO`
+        : 'Đã xuất kho (không có thông tin lô)'
     };
   } catch (error) {
+    if (error.message.includes('Không đủ hàng')) {
+      return {
+        success: false,
+        status: 400,
+        error: error.message
+      };
+    }
     throw error;
   }
 };
 
-// Receive transfer (add to destination)
+// Receive transfer (add to destination) - UPDATED to create batch at destination
 export const receiveTransfer = async (id, userId) => {
   try {
     const transfer = await prisma.inventoryTransfer.findUnique({
@@ -425,6 +495,19 @@ export const receiveTransfer = async (id, userId) => {
       };
     }
 
+    // Parse batch allocations from note (if exists)
+    let sourceAllocations = [];
+    if (transfer.note && transfer.note.includes('[Shipped] Batches:')) {
+      try {
+        const match = transfer.note.match(/\[Shipped\] Batches: (\[.*?\])/);
+        if (match) {
+          sourceAllocations = JSON.parse(match[1]);
+        }
+      } catch (e) {
+        console.warn('Could not parse batch allocations from transfer note');
+      }
+    }
+
     // Process in transaction
     const result = await prisma.$transaction(async (tx) => {
       // Check if destination inventory exists
@@ -440,9 +523,7 @@ export const receiveTransfer = async (id, userId) => {
         await tx.branchinventory.update({
           where: { id: destInventory.id },
           data: {
-            stock: {
-              increment: transfer.quantity
-            },
+            stock: { increment: transfer.quantity },
             last_updated: new Date()
           }
         });
@@ -458,6 +539,49 @@ export const receiveTransfer = async (id, userId) => {
         });
       }
 
+      // Create batch(es) at destination branch (for traceability)
+      const createdBatches = [];
+      if (sourceAllocations.length > 0) {
+        for (const allocation of sourceAllocations) {
+          // Get source batch info
+          const sourceBatch = await tx.productBatch.findUnique({
+            where: { id: allocation.batch_id }
+          });
+
+          if (sourceBatch) {
+            // Create new batch at destination with same expiry info
+            const newBatch = await tx.productBatch.create({
+              data: {
+                product_id: transfer.product_id,
+                branch_id: transfer.to_branch_id,
+                batch_number: `TRF-${transfer.id}-${allocation.batch_number}`,
+                manufacture_date: sourceBatch.manufacture_date,
+                expiry_date: sourceBatch.expiry_date,
+                quantity: allocation.allocated_qty,
+                cost_price: sourceBatch.cost_price,
+                supplier_id: sourceBatch.supplier_id,
+                status: 'active',
+                note: `Nhận từ chuyển kho #${transfer.id} (Lô gốc: ${allocation.batch_number})`
+              }
+            });
+            createdBatches.push(newBatch);
+          }
+        }
+      } else {
+        // No batch info, create a generic batch for traceability
+        const newBatch = await tx.productBatch.create({
+          data: {
+            product_id: transfer.product_id,
+            branch_id: transfer.to_branch_id,
+            batch_number: `TRF-${transfer.id}-${Date.now()}`,
+            quantity: transfer.quantity,
+            status: 'active',
+            note: `Nhận từ chuyển kho #${transfer.id} từ chi nhánh ${transfer.from_branch_id}`
+          }
+        });
+        createdBatches.push(newBatch);
+      }
+
       // Create inventory log for import
       const inventoryLogIn = await tx.inventoryLog.create({
         data: {
@@ -467,6 +591,7 @@ export const receiveTransfer = async (id, userId) => {
           type: 'TRANSFER_IN',
           reference_type: 'transfer',
           reference_id: transfer.id,
+          batch_id: createdBatches.length === 1 ? createdBatches[0].id : null,
           note: `Nhận chuyển kho từ chi nhánh ID: ${transfer.from_branch_id}`,
           created_by: userId,
           date: new Date()
@@ -490,23 +615,18 @@ export const receiveTransfer = async (id, userId) => {
           received_date: new Date()
         },
         include: {
-          products: true,
-          receivedByUser: {
-            select: {
-              id: true,
-              username: true,
-              full_name: true
-            }
-          }
+          products: true
         }
       });
 
-      return updated;
+      return { transfer: updated, createdBatches };
     });
 
     return {
       success: true,
-      data: result
+      data: result.transfer,
+      created_batches: result.createdBatches,
+      message: `Đã nhận ${transfer.quantity} sản phẩm và tạo ${result.createdBatches.length} lô hàng mới`
     };
   } catch (error) {
     throw error;

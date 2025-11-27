@@ -356,27 +356,10 @@ export const getCategoryStats = async (categoryId) => {
         products: {
           select: {
             id: true,
-            is_active: true,
-            branch_inventory: {
+            price: true,
+            branchinventory: {
               select: {
-                quantity: true,
-                import_price: true
-              }
-            }
-          }
-        },
-        children: {
-          include: {
-            products: {
-              select: {
-                id: true,
-                is_active: true,
-                branch_inventory: {
-                  select: {
-                    quantity: true,
-                    import_price: true
-                  }
-                }
+                stock: true
               }
             }
           }
@@ -392,18 +375,36 @@ export const getCategoryStats = async (categoryId) => {
       };
     }
 
+    // Lấy danh mục con
+    const childCategories = await prisma.categories.findMany({
+      where: { parent_id: Number(categoryId) },
+      include: {
+        products: {
+          select: {
+            id: true,
+            price: true,
+            branchinventory: {
+              select: {
+                stock: true
+              }
+            }
+          }
+        }
+      }
+    });
+
     const allProducts = [...category.products];
-    category.children.forEach(child => {
+    childCategories.forEach(child => {
       allProducts.push(...child.products);
     });
 
     const stats = {
       totalProducts: allProducts.length,
-      activeProducts: allProducts.filter(p => p.is_active).length,
+      childCategoriesCount: childCategories.length,
       totalInventory: allProducts.reduce((sum, p) => 
-        sum + p.branch_inventory.reduce((total, bi) => total + bi.quantity, 0), 0),
+        sum + p.branchinventory.reduce((total, bi) => total + (bi.stock || 0), 0), 0),
       totalInventoryValue: allProducts.reduce((sum, p) => 
-        sum + p.branch_inventory.reduce((total, bi) => total + (bi.quantity * bi.import_price), 0), 0)
+        sum + p.branchinventory.reduce((total, bi) => total + ((bi.stock || 0) * Number(p.price)), 0), 0)
     };
 
     return {

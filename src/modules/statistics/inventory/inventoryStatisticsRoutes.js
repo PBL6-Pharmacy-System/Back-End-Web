@@ -15,7 +15,7 @@ router.get('/statistics/inventory/overview',
 router.get('/statistics/inventory/branch/:branchId',
   authenticateToken,
   authorizeRoles('admin', 'staff'),
-  validateId(),
+  validateId('branchId'),
   inventoryStatisticsController.getInventoryByBranch
 );
 

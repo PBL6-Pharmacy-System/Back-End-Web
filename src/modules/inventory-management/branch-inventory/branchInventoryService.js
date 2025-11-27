@@ -333,9 +333,25 @@ export const deleteBranchInventory = async (id) => {
 };
 
 // Import stock to branch inventory
-export const importToBranchInventory = async (data) => {
+// ⚠️ UPDATED: Tự động tạo batch để đảm bảo đồng bộ inventory và batch tracking
+export const importToBranchInventory = async (data, userId = null) => {
   try {
-    const { branch_id, product_id, quantity, unit_id, note } = data;
+    const {
+      branch_id,
+      product_id,
+      quantity,
+      unit_id,
+      note,
+      // Batch information (optional - if not provided, auto-generate)
+      batch_number,
+      manufacture_date,
+      expiry_date,
+      cost_price,
+      selling_price,
+      supplier_id,
+      // Flag to skip batch creation (for legacy compatibility)
+      skip_batch = false
+    } = data;
 
     // Validate required fields
     const requiredFields = ['branch_id', 'product_id', 'quantity'];
@@ -406,80 +422,145 @@ export const importToBranchInventory = async (data) => {
         return {
           success: false,
           status: 400,
-          error: 'Số lượng nhập vượt quá giới hạn tối đa của kho'
+          error: `Số lượng nhập vượt quá giới hạn tối đa của kho. Tối đa: ${inventory.max_stock}, Hiện tại: ${inventory.stock}, Nhập: ${quantity}`
         };
       }
     }
 
+    // Auto-generate batch number if not provided
+    const finalBatchNumber = batch_number || await generateAutoBatchNumber(product_id, branch_id);
+
     // Use transaction to ensure atomicity
-    const updatedInventory = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
+      let createdBatch = null;
+
+      // ⚠️ IMPORTANT: Create batch for tracking (unless explicitly skipped)
+      if (!skip_batch) {
+        // Check if batch number already exists
+        const existingBatch = await tx.productBatch.findFirst({
+          where: {
+            batch_number: finalBatchNumber,
+            product_id: Number(product_id),
+            branch_id: Number(branch_id)
+          }
+        });
+
+        if (existingBatch) {
+          // Add to existing batch
+          createdBatch = await tx.productBatch.update({
+            where: { id: existingBatch.id },
+            data: {
+              quantity: { increment: Number(quantity) },
+              updated_at: new Date()
+            }
+          });
+        } else {
+          // Create new batch
+          createdBatch = await tx.productBatch.create({
+            data: {
+              product_id: Number(product_id),
+              branch_id: Number(branch_id),
+              batch_number: finalBatchNumber,
+              manufacture_date: manufacture_date ? new Date(manufacture_date) : null,
+              expiry_date: expiry_date ? new Date(expiry_date) : null,
+              quantity: Number(quantity),
+              cost_price: cost_price ? Number(cost_price) : null,
+              selling_price: selling_price ? Number(selling_price) : null,
+              supplier_id: supplier_id ? Number(supplier_id) : null,
+              status: 'active',
+              note: note || 'Nhập kho tự động tạo batch'
+            }
+          });
+        }
+      }
+
       // Create inventory log
       await tx.inventoryLog.create({
         data: {
           branch_id: Number(branch_id),
           product_id: Number(product_id),
+          batch_id: createdBatch?.id || null,
           quantity: Number(quantity),
           type: 'IMPORT',
           unit_id: unit_id ? Number(unit_id) : undefined,
           date: new Date(),
-          note: note || 'Nhập kho'
+          note: note || `Nhập kho${createdBatch ? ` - Lô ${finalBatchNumber}` : ''}`,
+          created_by: userId
         }
       });
 
       // Update or create inventory
-      const result = inventory
+      const updatedInventory = inventory
         ? await tx.branchinventory.update({
-            where: { id: inventory.id },
-            data: {
-              stock: {
-                increment: Number(quantity)
-              },
-              last_updated: new Date()
-            },
-            include: {
-              branches: true,
-              products: {
-                include: {
-                  unittype: true,
-                  productunits: true
-                }
+          where: { id: inventory.id },
+          data: {
+            stock: { increment: Number(quantity) },
+            last_updated: new Date()
+          },
+          include: {
+            branches: true,
+            products: {
+              include: {
+                unittype: true,
+                productunits: true
               }
             }
-          })
+          }
+        })
         : await tx.branchinventory.create({
-            data: {
-              branch_id: Number(branch_id),
-              product_id: Number(product_id),
-              stock: Number(quantity),
-              last_updated: new Date()
-            },
-            include: {
-              branches: true,
-              products: {
-                include: {
-                  unittype: true,
-                  productunits: true
-                }
+          data: {
+            branch_id: Number(branch_id),
+            product_id: Number(product_id),
+            stock: Number(quantity),
+            last_updated: new Date()
+          },
+          include: {
+            branches: true,
+            products: {
+              include: {
+                unittype: true,
+                productunits: true
               }
             }
-          });
-      
-      return result;
+          }
+        });
+
+      return {
+        inventory: updatedInventory,
+        batch: createdBatch
+      };
     });
 
     return {
       success: true,
-      data: updatedInventory
+      data: result.inventory,
+      batch: result.batch,
+      message: result.batch
+        ? `Đã nhập ${quantity} sản phẩm vào lô ${finalBatchNumber}`
+        : `Đã nhập ${quantity} sản phẩm (không tạo lô)`
     };
   } catch (error) {
     throw error;
   }
 };
 
-// Export stock from branch inventory
-export const exportFromBranchInventory = async (data) => {
+/**
+ * Auto-generate batch number
+ */
+const generateAutoBatchNumber = async (productId, branchId) => {
+  const date = new Date();
+  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+  const timeStr = date.toISOString().slice(11, 19).replace(/:/g, '');
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+
+  return `AUTO-${productId}-${branchId}-${dateStr}${timeStr}-${random}`;
+};
+
+// Export stock from branch inventory - UPDATED with FEFO support
+// ✅ FIX #10: Sử dụng số dương cho quantity, thêm field 'direction' để phân biệt
+export const exportFromBranchInventory = async (data, userId = null) => {
   try {
-    const { branch_id, product_id, quantity, unit_id, note } = data;
+    const { branch_id, product_id, quantity, unit_id, note, use_fefo = true } = data;
 
     // Validate required fields
     const requiredFields = ['branch_id', 'product_id', 'quantity'];
@@ -517,30 +598,41 @@ export const exportFromBranchInventory = async (data) => {
       };
     }
 
-    // Check min stock limit
+    // Check min stock limit (warning only, not blocking)
+    let minStockWarning = null;
     if (inventory.min_stock) {
       const newStock = inventory.stock - Number(quantity);
       if (newStock < inventory.min_stock) {
-        return {
-          success: false,
-          status: 400,
-          error: 'Số lượng xuất khiến tồn kho xuống dưới mức tối thiểu'
-        };
+        minStockWarning = `Cảnh báo: Tồn kho sẽ xuống dưới mức tối thiểu (${inventory.min_stock})`;
       }
     }
 
-    // Use transaction to ensure atomicity
+    // If FEFO is enabled, use batch-based export
+    if (use_fefo) {
+      return await exportWithFEFO({
+        branch_id,
+        product_id,
+        quantity,
+        unit_id,
+        note,
+        userId,
+        minStockWarning
+      });
+    }
+
+    // Legacy: Simple stock deduction (no batch tracking)
     const updatedInventory = await prisma.$transaction(async (tx) => {
-      // Create inventory log
+      // ✅ FIX #10: Sử dụng số dương với type = 'EXPORT' thay vì số âm
       await tx.inventoryLog.create({
         data: {
           branch_id: Number(branch_id),
           product_id: Number(product_id),
-          quantity: Number(quantity),
-          type: 'EXPORT',
+          quantity: Number(quantity), // ✅ Số dương
+          type: 'EXPORT', // Type cho biết đây là xuất kho
           unit_id: unit_id ? Number(unit_id) : undefined,
           date: new Date(),
-          note: note || 'Xuất kho'
+          note: note || 'Xuất kho (không theo lô)',
+          created_by: userId
         }
       });
 
@@ -563,13 +655,364 @@ export const exportFromBranchInventory = async (data) => {
           }
         }
       });
-      
+
       return result;
     });
 
     return {
       success: true,
-      data: updatedInventory
+      data: updatedInventory,
+      warning: minStockWarning
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Export stock using FEFO (First Expired First Out) strategy
+ * This function deducts from batches with earliest expiry date first
+ * ✅ FIX #10: Sử dụng số dương cho quantity trong inventoryLog
+ */
+const exportWithFEFO = async ({ branch_id, product_id, quantity, unit_id, note, userId, minStockWarning }) => {
+  try {
+    // Get available batches sorted by FEFO
+    const batches = await prisma.productBatch.findMany({
+      where: {
+        branch_id: Number(branch_id),
+        product_id: Number(product_id),
+        status: 'active',
+        quantity: { gt: 0 },
+        OR: [
+          { expiry_date: null },
+          { expiry_date: { gt: new Date() } }
+        ]
+      },
+      orderBy: [
+        { expiry_date: 'asc' },
+        { created_at: 'asc' }
+      ]
+    });
+
+    // Calculate total available from batches
+    const totalAvailable = batches.reduce((sum, b) => sum + b.quantity, 0);
+
+    // If no batches found but inventory has stock, use legacy method
+    if (batches.length === 0) {
+      console.warn(`No batches found for product ${product_id} at branch ${branch_id}, using legacy export`);
+
+      const inventory = await prisma.branchinventory.findFirst({
+        where: {
+          branch_id: Number(branch_id),
+          product_id: Number(product_id)
+        }
+      });
+
+      if (!inventory || inventory.stock < quantity) {
+        return {
+          success: false,
+          status: 400,
+          error: 'Không đủ hàng trong kho'
+        };
+      }
+
+      // Legacy export without batch tracking
+      const result = await prisma.$transaction(async (tx) => {
+        // ✅ FIX #10: Sử dụng số dương
+        await tx.inventoryLog.create({
+          data: {
+            branch_id: Number(branch_id),
+            product_id: Number(product_id),
+            quantity: Number(quantity), // ✅ Số dương
+            type: 'EXPORT',
+            unit_id: unit_id ? Number(unit_id) : undefined,
+            date: new Date(),
+            note: `${note || 'Xuất kho'} (không có lô)`,
+            created_by: userId
+          }
+        });
+
+        return await tx.branchinventory.update({
+          where: { id: inventory.id },
+          data: {
+            stock: { decrement: Number(quantity) },
+            last_updated: new Date()
+          },
+          include: {
+            branches: true,
+            products: true
+          }
+        });
+      });
+
+      return {
+        success: true,
+        data: result,
+        warning: minStockWarning,
+        fefo_used: false
+      };
+    }
+
+    // Check if enough stock in batches
+    if (totalAvailable < quantity) {
+      return {
+        success: false,
+        status: 400,
+        error: `Không đủ hàng trong các lô. Yêu cầu: ${quantity}, Có sẵn: ${totalAvailable}`,
+        data: {
+          required: quantity,
+          available: totalAvailable,
+          shortage: quantity - totalAvailable
+        }
+      };
+    }
+
+    // Allocate from batches (FEFO order)
+    const allocations = [];
+    let remainingQty = Number(quantity);
+
+    for (const batch of batches) {
+      if (remainingQty <= 0) break;
+
+      const takeQty = Math.min(batch.quantity, remainingQty);
+
+      allocations.push({
+        batch_id: batch.id,
+        batch_number: batch.batch_number,
+        expiry_date: batch.expiry_date,
+        available_qty: batch.quantity,
+        allocated_qty: takeQty,
+        remaining_after: batch.quantity - takeQty
+      });
+
+      remainingQty -= takeQty;
+    }
+
+    // Execute in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const logs = [];
+
+      // Deduct from each batch
+      for (const allocation of allocations) {
+        // Update batch quantity
+        await tx.productBatch.update({
+          where: { id: allocation.batch_id },
+          data: {
+            quantity: { decrement: allocation.allocated_qty },
+            updated_at: new Date()
+          }
+        });
+
+        // ✅ FIX #10: Sử dụng số dương cho quantity
+        const log = await tx.inventoryLog.create({
+          data: {
+            branch_id: Number(branch_id),
+            product_id: Number(product_id),
+            batch_id: allocation.batch_id,
+            quantity: allocation.allocated_qty, // ✅ Số dương
+            type: 'EXPORT',
+            unit_id: unit_id ? Number(unit_id) : undefined,
+            date: new Date(),
+            note: `${note || 'Xuất kho FEFO'} - Lô ${allocation.batch_number} (HSD: ${allocation.expiry_date ? new Date(allocation.expiry_date).toLocaleDateString('vi-VN') : 'N/A'})`,
+            created_by: userId
+          }
+        });
+        logs.push(log);
+      }
+
+      // Update total inventory
+      const updatedInventory = await tx.branchinventory.update({
+        where: {
+          branch_id_product_id: {
+            branch_id: Number(branch_id),
+            product_id: Number(product_id)
+          }
+        },
+        data: {
+          stock: { decrement: Number(quantity) },
+          last_updated: new Date()
+        },
+        include: {
+          branches: true,
+          products: {
+            include: {
+              unittype: true,
+              productunits: true
+            }
+          }
+        }
+      });
+
+      return {
+        inventory: updatedInventory,
+        allocations,
+        logs
+      };
+    });
+
+    return {
+      success: true,
+      data: result.inventory,
+      fefo_details: {
+        allocations: result.allocations,
+        total_exported: quantity,
+        batches_used: result.allocations.length
+      },
+      warning: minStockWarning,
+      fefo_used: true,
+      message: `Đã xuất ${quantity} sản phẩm từ ${result.allocations.length} lô theo FEFO`
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * ✅ FIX #13: Reconcile inventory với batch
+ * Đồng bộ branchinventory.stock với SUM(productBatch.quantity)
+ */
+export const reconcileInventoryWithBatches = async (branchId = null, productId = null) => {
+  try {
+    const where = {};
+    if (branchId) where.branch_id = Number(branchId);
+    if (productId) where.product_id = Number(productId);
+
+    // Get all branch inventory records
+    const inventories = await prisma.branchinventory.findMany({
+      where,
+      include: {
+        branches: { select: { id: true, name: true } },
+        products: { select: { id: true, name: true } }
+      }
+    });
+
+    const results = [];
+    const discrepancies = [];
+
+    for (const inventory of inventories) {
+      // Calculate total from batches
+      const batchTotal = await prisma.productBatch.aggregate({
+        where: {
+          branch_id: inventory.branch_id,
+          product_id: inventory.product_id,
+          status: 'active'
+        },
+        _sum: { quantity: true }
+      });
+
+      const batchQuantity = batchTotal._sum.quantity || 0;
+      const inventoryQuantity = inventory.stock || 0;
+      const difference = inventoryQuantity - batchQuantity;
+
+      if (difference !== 0) {
+        discrepancies.push({
+          branch_id: inventory.branch_id,
+          branch_name: inventory.branches.name,
+          product_id: inventory.product_id,
+          product_name: inventory.products.name,
+          inventory_stock: inventoryQuantity,
+          batch_total: batchQuantity,
+          difference: difference
+        });
+      }
+
+      results.push({
+        branch_id: inventory.branch_id,
+        product_id: inventory.product_id,
+        inventory_stock: inventoryQuantity,
+        batch_total: batchQuantity,
+        in_sync: difference === 0
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        total_checked: results.length,
+        in_sync: results.filter(r => r.in_sync).length,
+        out_of_sync: discrepancies.length,
+        discrepancies: discrepancies
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * ✅ FIX #13: Auto-fix inventory discrepancies
+ * Cập nhật branchinventory.stock = SUM(productBatch.quantity)
+ */
+export const autoFixInventoryDiscrepancies = async (branchId = null, productId = null, userId = null) => {
+  try {
+    // First, get discrepancies
+    const reconcileResult = await reconcileInventoryWithBatches(branchId, productId);
+
+    if (!reconcileResult.success) {
+      return reconcileResult;
+    }
+
+    const discrepancies = reconcileResult.data.discrepancies;
+
+    if (discrepancies.length === 0) {
+      return {
+        success: true,
+        message: 'Không có sự khác biệt cần sửa',
+        data: { fixed: 0 }
+      };
+    }
+
+    // Fix each discrepancy in transaction
+    const fixed = await prisma.$transaction(async (tx) => {
+      const fixedItems = [];
+
+      for (const disc of discrepancies) {
+        // Update inventory to match batch total
+        await tx.branchinventory.update({
+          where: {
+            branch_id_product_id: {
+              branch_id: disc.branch_id,
+              product_id: disc.product_id
+            }
+          },
+          data: {
+            stock: disc.batch_total,
+            last_updated: new Date()
+          }
+        });
+
+        // Log the adjustment
+        await tx.inventoryLog.create({
+          data: {
+            branch_id: disc.branch_id,
+            product_id: disc.product_id,
+            quantity: Math.abs(disc.difference),
+            type: 'ADJUSTMENT',
+            note: `Auto-fix: Đồng bộ inventory với batch (${disc.inventory_stock} -> ${disc.batch_total})`,
+            created_by: userId,
+            date: new Date()
+          }
+        });
+
+        fixedItems.push({
+          branch_id: disc.branch_id,
+          product_id: disc.product_id,
+          old_stock: disc.inventory_stock,
+          new_stock: disc.batch_total,
+          adjustment: disc.difference
+        });
+      }
+
+      return fixedItems;
+    });
+
+    return {
+      success: true,
+      message: `Đã sửa ${fixed.length} sản phẩm không đồng bộ`,
+      data: {
+        fixed: fixed.length,
+        details: fixed
+      }
     };
   } catch (error) {
     throw error;
@@ -625,17 +1068,11 @@ export const getLowStockProducts = async (branchId) => {
       };
     }
 
-    const products = await prisma.branchinventory.findMany({
+    // Fetch all inventory with min_stock defined
+    const inventories = await prisma.branchinventory.findMany({
       where: {
         branch_id: Number(branchId),
-        AND: [
-          { min_stock: { not: null } },
-          {
-            OR: [
-              { stock: { lte: prisma.sql`min_stock` } },
-            ]
-          }
-        ]
+        min_stock: { not: null }
       },
       include: {
         branches: true,
@@ -651,9 +1088,14 @@ export const getLowStockProducts = async (branchId) => {
       }
     });
 
+    // Filter in JavaScript: stock <= min_stock
+    const lowStockProducts = inventories.filter(inv =>
+      (inv.stock || 0) <= (inv.min_stock || 0)
+    );
+
     return {
       success: true,
-      data: products
+      data: lowStockProducts
     };
   } catch (error) {
     throw error;
@@ -907,7 +1349,7 @@ export const getAllProductsWithStock = async ({
 }) => {
   try {
     const where = {};
-    
+
     if (categoryId) {
       where.category_id = Number(categoryId);
     }
@@ -950,7 +1392,7 @@ export const getAllProductsWithStock = async ({
     const productsWithStock = products.map(product => {
       const totalStock = product.branchinventory.reduce((sum, inv) => sum + (inv.stock || 0), 0);
       const inStock = totalStock > 0 ? 1 : 0;
-      
+
       return {
         id: product.id,
         name: product.name,
@@ -998,12 +1440,12 @@ export const getAllLowStockProducts = async (branchId = null) => {
     const where = {
       min_stock: { not: null }
     };
-    
+
     // If branchId is provided (for staff), filter by branch
     if (branchId) {
       where.branch_id = Number(branchId);
     }
-    
+
     // Get all inventories where stock <= min_stock
     const inventories = await prisma.branchinventory.findMany({
       where,
@@ -1025,16 +1467,16 @@ export const getAllLowStockProducts = async (branchId = null) => {
     });
 
     // Filter low stock items
-    const lowStockInventories = inventories.filter(inv => 
+    const lowStockInventories = inventories.filter(inv =>
       inv.stock <= inv.min_stock
     );
 
     // Group by product
     const groupedByProduct = {};
-    
+
     lowStockInventories.forEach(inv => {
       const productId = inv.product_id;
-      
+
       if (!groupedByProduct[productId]) {
         groupedByProduct[productId] = {
           product_id: productId,
@@ -1043,7 +1485,7 @@ export const getAllLowStockProducts = async (branchId = null) => {
           branches: []
         };
       }
-      
+
       groupedByProduct[productId].branches.push({
         branch_id: inv.branch_id,
         branch_name: inv.branches.name,
@@ -1090,21 +1532,10 @@ export const getBranchLowStockProducts = async (branchId, threshold = 10) => {
       };
     }
 
-    // Get inventories with stock below threshold or below min_stock
-    const inventories = await prisma.branchinventory.findMany({
+    // Get all inventories for the branch
+    const allInventories = await prisma.branchinventory.findMany({
       where: {
-        branch_id: Number(branchId),
-        OR: [
-          // Case 1: Stock below custom threshold
-          { stock: { lte: Number(threshold) } },
-          // Case 2: Stock below min_stock (if defined)
-          {
-            AND: [
-              { min_stock: { not: null } },
-              { stock: { lte: prisma.branchinventory.fields.min_stock } }
-            ]
-          }
-        ]
+        branch_id: Number(branchId)
       },
       include: {
         products: {
@@ -1121,12 +1552,26 @@ export const getBranchLowStockProducts = async (branchId, threshold = 10) => {
       }
     });
 
+    // Filter in JavaScript: stock <= threshold OR stock <= min_stock
+    const inventories = allInventories.filter(inv => {
+      const stock = inv.stock || 0;
+      const minStock = inv.min_stock;
+
+      // Below custom threshold
+      if (stock <= Number(threshold)) return true;
+
+      // Below min_stock (if defined)
+      if (minStock !== null && stock <= minStock) return true;
+
+      return false;
+    });
+
     // Classify by urgency
     const productsWithUrgency = inventories.map(inv => {
       const stock = inv.stock || 0;
       const minStock = inv.min_stock || threshold;
       const shortage = minStock - stock;
-      
+
       let urgency = 'low';
       if (stock === 0) {
         urgency = 'critical'; // Out of stock
@@ -1218,7 +1663,7 @@ export const getStockStatisticsByBranch = async (branchId) => {
     const totalProducts = inventories.length;
     const inStockProducts = inventories.filter(inv => inv.stock > 0).length;
     const outOfStockProducts = inventories.filter(inv => inv.stock === 0).length;
-    const lowStockProducts = inventories.filter(inv => 
+    const lowStockProducts = inventories.filter(inv =>
       inv.min_stock && inv.stock <= inv.min_stock
     ).length;
     const totalStockValue = inventories.reduce((sum, inv) => {

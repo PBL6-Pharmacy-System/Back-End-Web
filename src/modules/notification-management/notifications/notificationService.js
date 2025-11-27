@@ -5,11 +5,11 @@ const NOTIFICATION_TYPES = ['info', 'warning', 'success', 'error', 'system'];
 // Validate notification data
 const validateNotificationData = async (data, checkRequired = true) => {
   // Validate required fields
-  if (checkRequired && (!data.userId || !data.type || !data.title || !data.content)) {
+  if (checkRequired && (!data.userId || !data.type || !data.message)) {
     return {
       success: false,
       status: 400,
-      error: 'Vui lòng điền đầy đủ thông tin bắt buộc (người nhận, loại, tiêu đề, nội dung)'
+      error: 'Vui lòng điền đầy đủ thông tin bắt buộc (người nhận, loại, nội dung)'
     };
   }
 
@@ -23,7 +23,7 @@ const validateNotificationData = async (data, checkRequired = true) => {
   }
 
   // Validate content length
-  if (data.content && data.content.length > 1000) {
+  if (data.message && data.message.length > 1000) {
     return {
       success: false,
       status: 400,
@@ -107,7 +107,8 @@ export const getNotificationById = async (id) => {
     const notification = await prisma.notifications.findUnique({
       where: { id: Number(id) },
       include: {
-        user: true
+        users: true,
+        customers: true
       }
     });
 
@@ -143,15 +144,16 @@ export const createNotification = async (data) => {
 
     const notification = await prisma.notifications.create({
       data: {
-        title: data.title.trim(),
-        content: data.content.trim(),
+        message: data.content?.trim() || data.message?.trim(),
         type: data.type,
-        user_id: Number(data.userId),
+        user_id: data.userId ? Number(data.userId) : null,
+        customer_id: data.customerId ? Number(data.customerId) : null,
         is_read: false,
         created_at: new Date()
       },
       include: {
-        user: true
+        users: true,
+        customers: true
       }
     });
 
@@ -188,14 +190,13 @@ export const updateNotification = async (id, data) => {
     const updatedNotification = await prisma.notifications.update({
       where: { id: Number(id) },
       data: {
-        title: data.title?.trim(),
-        content: data.content?.trim(),
+        message: data.content?.trim() || data.message?.trim(),
         type: data.type,
-        is_read: data.isRead,
-        read_at: data.isRead ? new Date() : null
+        is_read: data.isRead
       },
       include: {
-        user: true
+        users: true,
+        customers: true
       }
     });
 
@@ -225,7 +226,8 @@ export const deleteNotification = async (id) => {
     const deletedNotification = await prisma.notifications.delete({
       where: { id: Number(id) },
       include: {
-        user: true
+        users: true,
+        customers: true
       }
     });
 

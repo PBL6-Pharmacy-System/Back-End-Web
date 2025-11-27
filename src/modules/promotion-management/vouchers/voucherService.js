@@ -118,8 +118,9 @@ export const getAvailableVouchers = async ({
 /**
  * Validate voucher code trước khi checkout
  * Trả về thông tin voucher và discount estimate
+ * ✅ FIX #8: Thêm customerId parameter để check customer đã dùng voucher chưa
  */
-export const validateVoucherForUse = async (code, orderAmount = 0) => {
+export const validateVoucherForUse = async (code, orderAmount = 0, customerId = null) => {
   try {
     const voucher = await prisma.vouchers.findUnique({
       where: { code: code.trim().toUpperCase() }
@@ -162,6 +163,25 @@ export const validateVoucherForUse = async (code, orderAmount = 0) => {
         error: 'Mã voucher đã hết lượt sử dụng',
         status: 400
       };
+    }
+
+    // ✅ FIX #8: Check if customer has already used this voucher
+    if (customerId) {
+      const existingUse = await prisma.uservouchers.findFirst({
+        where: {
+          customer_id: Number(customerId),
+          voucher_id: voucher.id,
+          is_used: true
+        }
+      });
+
+      if (existingUse) {
+        return {
+          success: false,
+          error: 'Bạn đã sử dụng mã voucher này rồi',
+          status: 400
+        };
+      }
     }
 
     // Check minimum order value

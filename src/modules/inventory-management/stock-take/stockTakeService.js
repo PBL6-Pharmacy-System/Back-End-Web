@@ -5,11 +5,11 @@ const generateStockTakeNumber = async () => {
   const today = new Date();
   const year = today.getFullYear();
   const month = String(today.getMonth() + 1).padStart(2, '0');
-  
+
   // Count stock takes this month
   const startOfMonth = new Date(year, today.getMonth(), 1);
   const endOfMonth = new Date(year, today.getMonth() + 1, 0, 23, 59, 59);
-  
+
   const count = await prisma.stockTake.count({
     where: {
       start_date: {
@@ -18,7 +18,7 @@ const generateStockTakeNumber = async () => {
       }
     }
   });
-  
+
   const sequence = String(count + 1).padStart(4, '0');
   return `ST${year}${month}${sequence}`;
 };
@@ -417,6 +417,7 @@ export const updateStockTakeItem = async (stockTakeId, itemId, data) => {
 };
 
 // Complete stock take
+// ⚠️ IMPORTANT: Khi hoàn thành kiểm kê, cần điều chỉnh CẢ inventory VÀ batch quantities
 export const completeStockTake = async (id, userId) => {
   try {
     // Get stock take with items
@@ -486,6 +487,7 @@ export const completeStockTake = async (id, userId) => {
 
       // Process items with variance
       const itemsWithVariance = stockTake.stockTakeItem.filter(item => item.variance !== 0);
+      const batchAdjustments = [];
 
       for (const item of itemsWithVariance) {
         // Update branch inventory
@@ -503,7 +505,84 @@ export const completeStockTake = async (id, userId) => {
           }
         });
 
+        // ⚠️ CRITICAL: Also adjust batch quantities to maintain consistency
+        // Get all active batches for this product at this branch
+        const batches = await tx.productBatch.findMany({
+          where: {
+            branch_id: item.branch_id,
+            product_id: item.product_id,
+            status: { in: ['active', 'expired'] }, // Include expired but not disposed
+            quantity: { gt: 0 }
+          },
+          orderBy: [
+            { expiry_date: 'asc' }, // FEFO order
+            { created_at: 'asc' }
+          ]
+        });
+
+        // Calculate current batch total
+        const currentBatchTotal = batches.reduce((sum, b) => sum + b.quantity, 0);
+        const targetTotal = item.actual_qty;
+        let adjustmentNeeded = targetTotal - currentBatchTotal;
+
+        // Adjust batch quantities
+        if (adjustmentNeeded !== 0 && batches.length > 0) {
+          if (adjustmentNeeded > 0) {
+            // Stock INCREASE after stocktake: Add to the first (oldest) batch
+            // This is a simplification - in real scenario, might need to create adjustment batch
+            const firstBatch = batches[0];
+            await tx.productBatch.update({
+              where: { id: firstBatch.id },
+              data: {
+                quantity: { increment: adjustmentNeeded },
+                note: `${firstBatch.note || ''}\n[Kiểm kê ${stockTake.stock_take_no}] Điều chỉnh +${adjustmentNeeded}`,
+                updated_at: new Date()
+              }
+            });
+            batchAdjustments.push({
+              batch_id: firstBatch.id,
+              batch_number: firstBatch.batch_number,
+              adjustment: adjustmentNeeded
+            });
+          } else {
+            // Stock DECREASE after stocktake: Deduct from batches in FEFO order
+            let remainingDeduction = Math.abs(adjustmentNeeded);
+
+            for (const batch of batches) {
+              if (remainingDeduction <= 0) break;
+
+              const deductFromThis = Math.min(batch.quantity, remainingDeduction);
+
+              await tx.productBatch.update({
+                where: { id: batch.id },
+                data: {
+                  quantity: { decrement: deductFromThis },
+                  note: `${batch.note || ''}\n[Kiểm kê ${stockTake.stock_take_no}] Điều chỉnh -${deductFromThis}`,
+                  updated_at: new Date()
+                }
+              });
+
+              batchAdjustments.push({
+                batch_id: batch.id,
+                batch_number: batch.batch_number,
+                adjustment: -deductFromThis
+              });
+
+              remainingDeduction -= deductFromThis;
+            }
+
+            // If still has remaining deduction, log warning (should not happen normally)
+            if (remainingDeduction > 0) {
+              console.warn(`[StockTake ${stockTake.stock_take_no}] Could not fully adjust batches. Remaining: ${remainingDeduction}`);
+            }
+          }
+        }
+
         // Create inventory log for adjustment
+        const batchAdjustmentNote = batchAdjustments.length > 0
+          ? ` | Batch adjustments: ${batchAdjustments.map(a => `${a.batch_number}(${a.adjustment > 0 ? '+' : ''}${a.adjustment})`).join(', ')}`
+          : '';
+
         const inventoryLog = await tx.inventoryLog.create({
           data: {
             branch_id: item.branch_id,
@@ -512,7 +591,7 @@ export const completeStockTake = async (id, userId) => {
             type: 'ADJUSTMENT',
             reference_type: 'stocktake',
             reference_id: stockTake.id,
-            note: `Điều chỉnh sau kiểm kê ${stockTake.stock_take_no}. ${item.reason || ''}`,
+            note: `Điều chỉnh sau kiểm kê ${stockTake.stock_take_no}. ${item.reason || ''}${batchAdjustmentNote}`,
             created_by: userId,
             date: new Date()
           }
@@ -527,13 +606,14 @@ export const completeStockTake = async (id, userId) => {
         });
       }
 
-      return completedStockTake;
+      return { stockTake: completedStockTake, batchAdjustments };
     });
 
     return {
       success: true,
-      data: result,
-      message: 'Đã hoàn thành kiểm kê và điều chỉnh tồn kho'
+      data: result.stockTake,
+      batchAdjustments: result.batchAdjustments,
+      message: 'Đã hoàn thành kiểm kê và điều chỉnh tồn kho (bao gồm cả batch quantities)'
     };
   } catch (error) {
     throw error;

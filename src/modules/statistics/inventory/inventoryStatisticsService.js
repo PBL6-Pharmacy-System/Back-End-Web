@@ -128,18 +128,12 @@ export const getInventoryByBranch = async (branchId) => {
 // Sản phẩm sắp hết hàng (dưới min_stock)
 export const getLowStockProducts = async ({ branchId, page = 1, limit = 20 }) => {
   try {
-    const where = {
-      AND: [
-        { min_stock: { not: null } }
-      ]
-    };
-
+    let branchFilter = '';
     if (branchId) {
-      where.branch_id = Number(branchId);
+      branchFilter = `AND bi.branch_id = ${Number(branchId)}`;
     }
 
-    // Sử dụng raw query để so sánh stock với min_stock
-    const lowStockProducts = await prisma.$queryRaw`
+    const lowStockProducts = await prisma.$queryRawUnsafe(`
       SELECT
         bi.id,
         bi.branch_id,
@@ -158,33 +152,34 @@ export const getLowStockProducts = async ({ branchId, page = 1, limit = 20 }) =>
       JOIN branches b ON bi.branch_id = b.id
       WHERE bi.min_stock IS NOT NULL
       AND bi.stock <= bi.min_stock
-      ${branchId ? prisma.Prisma.sql`AND bi.branch_id = ${Number(branchId)}` : prisma.Prisma.empty}
+      ${branchFilter}
       ORDER BY (bi.min_stock - bi.stock) DESC
-      LIMIT ${limit}
-      OFFSET ${(page - 1) * limit}
-    `;
+      LIMIT ${parseInt(limit)}
+      OFFSET ${(parseInt(page) - 1) * parseInt(limit)}
+    `);
 
-    const totalCount = await prisma.$queryRaw`
+    const totalCount = await prisma.$queryRawUnsafe(`
       SELECT COUNT(*)::int as count
       FROM branchinventory
       WHERE min_stock IS NOT NULL
       AND stock <= min_stock
-      ${branchId ? prisma.Prisma.sql`AND branch_id = ${Number(branchId)}` : prisma.Prisma.empty}
-    `;
+      ${branchId ? `AND branch_id = ${Number(branchId)}` : ''}
+    `);
 
     return {
       success: true,
       data: {
         products: lowStockProducts,
         pagination: {
-          page,
-          limit,
-          totalPages: Math.ceil((totalCount[0]?.count || 0) / limit),
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil((totalCount[0]?.count || 0) / parseInt(limit)),
           totalRecords: totalCount[0]?.count || 0
         }
       }
     };
   } catch (error) {
+    console.error('getLowStockProducts error:', error);
     throw error;
   }
 };
@@ -192,7 +187,12 @@ export const getLowStockProducts = async ({ branchId, page = 1, limit = 20 }) =>
 // Sản phẩm tồn kho cao (trên max_stock)
 export const getOverstockProducts = async ({ branchId, page = 1, limit = 20 }) => {
   try {
-    const overstockProducts = await prisma.$queryRaw`
+    let branchFilter = '';
+    if (branchId) {
+      branchFilter = `AND bi.branch_id = ${Number(branchId)}`;
+    }
+
+    const overstockProducts = await prisma.$queryRawUnsafe(`
       SELECT
         bi.id,
         bi.branch_id,
@@ -211,33 +211,34 @@ export const getOverstockProducts = async ({ branchId, page = 1, limit = 20 }) =
       JOIN branches b ON bi.branch_id = b.id
       WHERE bi.max_stock IS NOT NULL
       AND bi.stock >= bi.max_stock
-      ${branchId ? prisma.Prisma.sql`AND bi.branch_id = ${Number(branchId)}` : prisma.Prisma.empty}
+      ${branchFilter}
       ORDER BY (bi.stock - bi.max_stock) DESC
-      LIMIT ${limit}
-      OFFSET ${(page - 1) * limit}
-    `;
+      LIMIT ${parseInt(limit)}
+      OFFSET ${(parseInt(page) - 1) * parseInt(limit)}
+    `);
 
-    const totalCount = await prisma.$queryRaw`
+    const totalCount = await prisma.$queryRawUnsafe(`
       SELECT COUNT(*)::int as count
       FROM branchinventory
       WHERE max_stock IS NOT NULL
       AND stock >= max_stock
-      ${branchId ? prisma.Prisma.sql`AND branch_id = ${Number(branchId)}` : prisma.Prisma.empty}
-    `;
+      ${branchId ? `AND branch_id = ${Number(branchId)}` : ''}
+    `);
 
     return {
       success: true,
       data: {
         products: overstockProducts,
         pagination: {
-          page,
-          limit,
-          totalPages: Math.ceil((totalCount[0]?.count || 0) / limit),
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil((totalCount[0]?.count || 0) / parseInt(limit)),
           totalRecords: totalCount[0]?.count || 0
         }
       }
     };
   } catch (error) {
+    console.error('getOverstockProducts error:', error);
     throw error;
   }
 };
@@ -319,7 +320,15 @@ export const getInventoryMovementReport = async ({ branchId, productId, startDat
 // Top sản phẩm nhập nhiều nhất
 export const getTopImportedProducts = async ({ branchId, startDate, endDate, limit = 10 }) => {
   try {
-    const products = await prisma.$queryRaw`
+    let whereConditions = `WHERE il.type = 'IMPORT'`;
+    if (branchId) {
+      whereConditions += ` AND il.branch_id = ${Number(branchId)}`;
+    }
+    if (startDate && endDate) {
+      whereConditions += ` AND il.date BETWEEN '${new Date(startDate).toISOString()}' AND '${new Date(endDate).toISOString()}'`;
+    }
+
+    const products = await prisma.$queryRawUnsafe(`
       SELECT
         p.id,
         p.name,
@@ -331,19 +340,18 @@ export const getTopImportedProducts = async ({ branchId, startDate, endDate, lim
       FROM "inventoryLog" il
       JOIN products p ON il.product_id = p.id
       JOIN branches b ON il.branch_id = b.id
-      WHERE il.type = 'IMPORT'
-      ${branchId ? prisma.Prisma.sql`AND il.branch_id = ${Number(branchId)}` : prisma.Prisma.empty}
-      ${startDate && endDate ? prisma.Prisma.sql`AND il.date BETWEEN ${new Date(startDate)} AND ${new Date(endDate)}` : prisma.Prisma.empty}
+      ${whereConditions}
       GROUP BY p.id, p.name, p.image_url, p.price, b.name
       ORDER BY total_imported DESC
-      LIMIT ${limit}
-    `;
+      LIMIT ${parseInt(limit)}
+    `);
 
     return {
       success: true,
       data: products
     };
   } catch (error) {
+    console.error('getTopImportedProducts error:', error);
     throw error;
   }
 };
@@ -351,7 +359,15 @@ export const getTopImportedProducts = async ({ branchId, startDate, endDate, lim
 // Top sản phẩm xuất nhiều nhất
 export const getTopExportedProducts = async ({ branchId, startDate, endDate, limit = 10 }) => {
   try {
-    const products = await prisma.$queryRaw`
+    let whereConditions = `WHERE il.type = 'EXPORT'`;
+    if (branchId) {
+      whereConditions += ` AND il.branch_id = ${Number(branchId)}`;
+    }
+    if (startDate && endDate) {
+      whereConditions += ` AND il.date BETWEEN '${new Date(startDate).toISOString()}' AND '${new Date(endDate).toISOString()}'`;
+    }
+
+    const products = await prisma.$queryRawUnsafe(`
       SELECT
         p.id,
         p.name,
@@ -363,19 +379,18 @@ export const getTopExportedProducts = async ({ branchId, startDate, endDate, lim
       FROM "inventoryLog" il
       JOIN products p ON il.product_id = p.id
       JOIN branches b ON il.branch_id = b.id
-      WHERE il.type = 'EXPORT'
-      ${branchId ? prisma.Prisma.sql`AND il.branch_id = ${Number(branchId)}` : prisma.Prisma.empty}
-      ${startDate && endDate ? prisma.Prisma.sql`AND il.date BETWEEN ${new Date(startDate)} AND ${new Date(endDate)}` : prisma.Prisma.empty}
+      ${whereConditions}
       GROUP BY p.id, p.name, p.image_url, p.price, b.name
       ORDER BY total_exported DESC
-      LIMIT ${limit}
-    `;
+      LIMIT ${parseInt(limit)}
+    `);
 
     return {
       success: true,
       data: products
     };
   } catch (error) {
+    console.error('getTopExportedProducts error:', error);
     throw error;
   }
 };
@@ -383,21 +398,26 @@ export const getTopExportedProducts = async ({ branchId, startDate, endDate, lim
 // Tồn kho theo danh mục
 export const getInventoryByCategory = async (branchId) => {
   try {
-    const stats = await prisma.$queryRaw`
+    let branchFilter = '';
+    if (branchId) {
+      branchFilter = `WHERE bi.branch_id = ${Number(branchId)}`;
+    }
+
+    const stats = await prisma.$queryRawUnsafe(`
       SELECT
         c.id as category_id,
         c.name as category_name,
         COUNT(DISTINCT p.id)::int as product_count,
-        SUM(bi.stock)::int as total_stock,
-        SUM(bi.stock * p.price)::decimal as total_value
+        COALESCE(SUM(bi.stock), 0)::int as total_stock,
+        COALESCE(SUM(bi.stock * p.price), 0)::decimal as total_value
       FROM categories c
       LEFT JOIN products p ON c.id = p.category_id
       LEFT JOIN branchinventory bi ON p.id = bi.product_id
-      ${branchId ? prisma.Prisma.sql`WHERE bi.branch_id = ${Number(branchId)}` : prisma.Prisma.empty}
+      ${branchFilter}
       GROUP BY c.id, c.name
       HAVING COUNT(DISTINCT p.id) > 0
       ORDER BY total_value DESC
-    `;
+    `);
 
     return {
       success: true,
@@ -410,6 +430,7 @@ export const getInventoryByCategory = async (branchId) => {
       }))
     };
   } catch (error) {
+    console.error('getInventoryByCategory error:', error);
     throw error;
   }
 };

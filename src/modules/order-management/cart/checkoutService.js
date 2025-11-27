@@ -1,5 +1,6 @@
 import prisma from '../../../config/db.js';
 import { findOptimalBranchesForOrder, getCustomerCityId } from '../../../utils/branchSelection.js';
+import { allocateBatchesFEFO } from '../../inventory-management/product-batch/productBatchService.js';
 
 /**
  * Apply voucher to order and calculate discount
@@ -117,7 +118,7 @@ export const checkout = async (data) => {
     };
 
     const normalizedPaymentMethod = paymentMethodMap[paymentMethod] || 'COD';
-    
+
     console.log('[CHECKOUT] Payment method mapping:', {
       original: paymentMethod,
       normalized: normalizedPaymentMethod
@@ -130,7 +131,7 @@ export const checkout = async (data) => {
         where: { id: customerId },
         select: { id: true, user_id: true }
       }),
-      
+
       // Get cart with items
       prisma.orders.findFirst({
         where: {
@@ -150,22 +151,22 @@ export const checkout = async (data) => {
           }
         }
       }),
-      
+
       // Get shipping address in parallel
       shippingAddressId
         ? prisma.shippingaddresses.findFirst({
-            where: {
-              id: parseInt(shippingAddressId),
-              customer_id: customerId
-            }
-          })
+          where: {
+            id: parseInt(shippingAddressId),
+            customer_id: customerId
+          }
+        })
         : prisma.shippingaddresses.findFirst({
-            where: {
-              customer_id: customerId,
-              is_default: true
-            },
-            orderBy: { id: 'desc' }
-          })
+          where: {
+            customer_id: customerId,
+            is_default: true
+          },
+          orderBy: { id: 'desc' }
+        })
     ]);
 
     // Validate results
@@ -191,7 +192,7 @@ export const checkout = async (data) => {
       const fallbackAddress = await prisma.shippingaddresses.findFirst({
         where: { customer_id: customerId }
       });
-      
+
       if (!fallbackAddress) {
         return {
           success: false,
@@ -199,7 +200,7 @@ export const checkout = async (data) => {
           status: 400
         };
       }
-      
+
       address = fallbackAddress;
     }
 
@@ -265,7 +266,7 @@ export const checkout = async (data) => {
     const result = await prisma.$transaction(async (tx) => {
       // Update cart to pending order
       console.log(`[CHECKOUT] Updating order ${cart.id} with shipping_address_id: ${finalShippingAddressId}`);
-      
+
       const order = await tx.orders.update({
         where: {
           id: cart.id
@@ -328,12 +329,23 @@ export const checkout = async (data) => {
         });
       }
 
-      // Update branch inventory stock (decrement)
+      // Update branch inventory stock (decrement) with FEFO batch tracking
       for (const item of cart.orderitems) {
         // Calculate base quantity needed
         const conversionFactor = Number(item.productunits.conversion_factor);
         const baseQuantityNeeded = item.quantity * conversionFactor;
-        
+
+        // ✅ FIX #4: Try to allocate from batches using FEFO
+        let batchAllocations = null;
+        try {
+          const allocationResult = await allocateBatchesFEFO(branchId, item.product_id, baseQuantityNeeded);
+          if (allocationResult.success) {
+            batchAllocations = allocationResult.data.allocations;
+          }
+        } catch (err) {
+          console.log(`[CHECKOUT] FEFO allocation failed for product ${item.product_id}, falling back to simple deduction:`, err.message);
+        }
+
         // Update branch inventory
         const updatedInventory = await tx.branchinventory.updateMany({
           where: {
@@ -356,28 +368,67 @@ export const checkout = async (data) => {
           throw new Error(`Sản phẩm "${item.products.name}" không đủ số lượng trong kho chi nhánh`);
         }
 
-        // Create inventory log
-        const inventoryLog = await tx.inventoryLog.create({
-          data: {
-            branch_id: branchId,
-            product_id: item.product_id,
-            unit_id: item.unit_id,
-            quantity: -baseQuantityNeeded,
-            type: 'OUT',
-            reference_type: 'order',
-            reference_id: cart.id,
-            note: `Xuất kho cho đơn hàng #${cart.id}`,
-            date: new Date()
-          }
-        });
+        // ✅ FIX #4: If FEFO allocation successful, deduct from batches and create logs with batch_id
+        if (batchAllocations && batchAllocations.length > 0) {
+          for (const allocation of batchAllocations) {
+            // Deduct from batch
+            await tx.productBatch.update({
+              where: { id: allocation.batch_id },
+              data: {
+                quantity: { decrement: allocation.allocated_qty },
+                updated_at: new Date()
+              }
+            });
 
-        // Create junction table entry
-        await tx.inventoryLog_Order.create({
-          data: {
-            inventory_log_id: inventoryLog.id,
-            order_id: cart.id
+            // Create inventory log with batch_id
+            const inventoryLog = await tx.inventoryLog.create({
+              data: {
+                branch_id: branchId,
+                product_id: item.product_id,
+                unit_id: item.unit_id,
+                batch_id: allocation.batch_id,  // ✅ Include batch_id
+                quantity: -allocation.allocated_qty,
+                type: 'OUT',
+                reference_type: 'order',
+                reference_id: cart.id,
+                note: `Xuất kho cho đơn hàng #${cart.id} - Lô ${allocation.batch_number}`,
+                date: new Date()
+              }
+            });
+
+            // Create junction table entry
+            await tx.inventoryLog_Order.create({
+              data: {
+                inventory_log_id: inventoryLog.id,
+                order_id: cart.id
+              }
+            });
           }
-        });
+          console.log(`[CHECKOUT] FEFO: Deducted from ${batchAllocations.length} batches for product ${item.product_id}`);
+        } else {
+          // Fallback: Create inventory log without batch_id (backward compatible)
+          const inventoryLog = await tx.inventoryLog.create({
+            data: {
+              branch_id: branchId,
+              product_id: item.product_id,
+              unit_id: item.unit_id,
+              quantity: -baseQuantityNeeded,
+              type: 'OUT',
+              reference_type: 'order',
+              reference_id: cart.id,
+              note: `Xuất kho cho đơn hàng #${cart.id}`,
+              date: new Date()
+            }
+          });
+
+          // Create junction table entry
+          await tx.inventoryLog_Order.create({
+            data: {
+              inventory_log_id: inventoryLog.id,
+              order_id: cart.id
+            }
+          });
+        }
 
         // Don't increment sold_count yet - only after payment confirmation
       }
@@ -433,139 +484,22 @@ export const checkout = async (data) => {
  * Confirm payment (for online payment methods)
  */
 /**
- * Cancel order
+ * ❌ DEPRECATED: Hàm này không còn được sử dụng
+ * 
+ * BUSINESS RULE: Khách hàng KHÔNG được tự hủy đơn hàng
+ * Quy trình hủy đơn phải thông qua Staff/Admin:
+ * - API: POST /api/orders/:id/cancel (chỉ Admin/Staff)
+ * - Service: orderService.cancelOrder()
+ * 
+ * Hàm này được giữ lại để backward compatibility nhưng không nên gọi trực tiếp.
+ * @deprecated Use orderService.cancelOrder() instead (Admin/Staff only)
  */
 export const cancelOrder = async (orderId, customerId) => {
-  try {
-    const order = await prisma.orders.findFirst({
-      where: {
-        id: orderId,
-        customer_id: customerId
-      },
-      include: {
-        orderitems: {
-          include: {
-            products: true,
-            productunits: true
-          }
-        }
-      }
-    });
-
-    if (!order) {
-      return {
-        success: false,
-        error: 'Đơn hàng không tồn tại',
-        status: 404
-      };
-    }
-
-    if (order.status === 'delivered' || order.status === 'shipping' || order.status === 'cancelled') {
-      return {
-        success: false,
-        error: 'Không thể hủy đơn hàng ở trạng thái này',
-        status: 400
-      };
-    }
-
-    await prisma.$transaction(async (tx) => {
-      // Restore branch inventory stock
-      for (const item of order.orderitems) {
-        // Calculate base quantity to restore
-        const conversionFactor = Number(item.productunits.conversion_factor);
-        const baseQuantityToRestore = item.quantity * conversionFactor;
-        
-        // Find branch inventory to restore (from inventory logs)
-        const inventoryLog = await tx.inventoryLog.findFirst({
-          where: {
-            reference_type: 'order',
-            reference_id: orderId,
-            product_id: item.product_id,
-            type: 'EXPORT'
-          }
-        });
-
-        if (inventoryLog) {
-          // Restore to the same branch
-          await tx.branchinventory.updateMany({
-            where: {
-              branch_id: inventoryLog.branch_id,
-              product_id: item.product_id
-            },
-            data: {
-              stock: {
-                increment: baseQuantityToRestore
-              },
-              last_updated: new Date()
-            }
-          });
-
-          // Create inventory log for restoration
-          const returnLog = await tx.inventoryLog.create({
-            data: {
-              branch_id: inventoryLog.branch_id,
-              product_id: item.product_id,
-              unit_id: item.unit_id,
-              quantity: baseQuantityToRestore,
-              type: 'IN',
-              reference_type: 'order_cancel',
-              reference_id: orderId,
-              note: `Hoàn kho do hủy đơn hàng #${orderId}`,
-              date: new Date()
-            }
-          });
-
-          // Create junction table entry
-          await tx.inventoryLog_Order.create({
-            data: {
-              inventory_log_id: returnLog.id,
-              order_id: orderId
-            }
-          });
-        }
-        
-        // Decrease sold_count if order was confirmed
-        if (order.status === 'confirmed' || order.status === 'delivered') {
-          await tx.products.update({
-            where: { id: item.product_id },
-            data: {
-              sold_count: { decrement: item.quantity }
-            }
-          });
-        }
-      }
-
-      // Update order status
-      await tx.orders.update({
-        where: {
-          id: orderId
-        },
-        data: {
-          status: 'cancelled',
-          updated_at: new Date()
-        }
-      });
-
-      // Create order status history
-      await tx.order_status_history.create({
-        data: {
-          order_id: orderId,
-          status: 'cancelled',
-          changed_at: new Date()
-        }
-      });
-    });
-
-    return {
-      success: true,
-      message: 'Đã hủy đơn hàng thành công'
-    };
-  } catch (error) {
-    console.error('Cancel order error:', error);
-    return {
-      success: false,
-      error: 'Lỗi khi hủy đơn hàng',
-      status: 500
-    };
-  }
+  // ❌ KHÔNG CHO PHÉP - Trả về lỗi ngay lập tức
+  return {
+    success: false,
+    error: 'Khách hàng không được phép tự hủy đơn hàng. Vui lòng liên hệ nhân viên hỗ trợ để được hỗ trợ hủy đơn.',
+    status: 403,
+    contactSupport: true
+  };
 };

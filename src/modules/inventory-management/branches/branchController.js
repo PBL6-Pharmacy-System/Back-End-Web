@@ -18,11 +18,12 @@ export const getAllBranches = async (req, res) => {
       sortOrder = 'asc'
     } = req.query;
 
+    // ✅ FIX: Chỉ set active khi có giá trị, không convert undefined thành false
     const result = await branchService.getAllBranches({
       includeInventory: includeInventory === 'true',
       search: search?.trim(),
-      active: active === 'true',
-      hasInventory: hasInventory === 'true',
+      active: active !== undefined ? active === 'true' : undefined,  // ✅ FIXED
+      hasInventory: hasInventory !== undefined ? hasInventory === 'true' : undefined,  // ✅ FIXED
       page: parseInt(page),
       limit: parseInt(limit),
       sortBy,

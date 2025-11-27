@@ -71,7 +71,7 @@ export const NOTIFICATION_TYPES = {
 // Voucher Discount Types
 export const DISCOUNT_TYPES = {
   PERCENTAGE: 'percentage',
-  FIXED_AMOUNT: 'fixed_amount'
+  FIXED: 'fixed'  // ✅ Đổi từ 'fixed_amount' thành 'fixed'
 };
 
 // Gender

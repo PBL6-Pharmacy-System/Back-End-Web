@@ -44,8 +44,8 @@ const validateProduct = (data) => {
 
 // Check if product has related data and can be deleted
 const canDeleteProduct = async (id) => {
-  const orderItems = await prisma.orderitems.count({ 
-    where: { product_id: Number(id) } 
+  const orderItems = await prisma.orderitems.count({
+    where: { product_id: Number(id) }
   });
 
   return orderItems === 0;
@@ -65,7 +65,7 @@ const categoryCache = {
  */
 const getAllCategoryIds = async (categoryId) => {
   const id = Number(categoryId);
-  
+
   // Load toàn bộ categories 1 lần (cache 5 phút)
   const now = Date.now();
   if (!categoryCache.data || (now - categoryCache.timestamp) > categoryCache.TTL) {
@@ -74,10 +74,10 @@ const getAllCategoryIds = async (categoryId) => {
     });
     categoryCache.timestamp = now;
   }
-  
+
   const allCategories = categoryCache.data;
   const categoryIds = [id];
-  
+
   // Build children map in-memory (O(n))
   const childrenMap = {};
   allCategories.forEach(cat => {
@@ -86,7 +86,7 @@ const getAllCategoryIds = async (categoryId) => {
       childrenMap[cat.parent_id].push(cat.id);
     }
   });
-  
+
   // Traverse children recursively in-memory (không query DB)
   const findChildren = (parentId) => {
     const children = childrenMap[parentId] || [];
@@ -95,19 +95,19 @@ const getAllCategoryIds = async (categoryId) => {
       findChildren(childId); // Đệ quy trong memory
     });
   };
-  
+
   findChildren(id);
   return categoryIds;
 };
 
-export const getAllProducts = async ({ 
-  search, 
-  categoryId, 
-  supplierId, 
-  minPrice, 
+export const getAllProducts = async ({
+  search,
+  categoryId,
+  supplierId,
+  minPrice,
   maxPrice,
-  page = 1, 
-  limit = 10 
+  page = 1,
+  limit = 10
 }) => {
   try {
     const where = {};
@@ -199,13 +199,13 @@ export const getProductById = async (id) => {
           select: { id: true, name: true, parent_id: true }
         },
         suppliers: {
-          select: { id: true, name: true, phone: true }
+          select: { id: true, name: true, contact_info: true }
         },
         unittype: {
           select: { id: true, name: true }
         },
         productunits: {
-          select: { id: true, unit_name: true, conversion_factor: true, is_base_unit: true }
+          select: { id: true, unit_name: true, conversion_factor: true, price: true }
         }
       }
     });
@@ -223,7 +223,7 @@ export const getProductById = async (id) => {
       where: { product_id: product.id },
       _sum: { stock: true }
     });
-    
+
     const availableStock = totalStock._sum.stock || 0;
 
     return {
@@ -252,6 +252,7 @@ export const createProduct = async (data) => {
     }
 
     // Validate foreign keys existence
+    // ✅ FIX: base_unit_id references unittype, not productunits
     const [category, supplier, baseUnit] = await Promise.all([
       data.category_id ? prisma.categories.findUnique({
         where: { id: Number(data.category_id) }
@@ -259,7 +260,7 @@ export const createProduct = async (data) => {
       data.supplier_id ? prisma.suppliers.findUnique({
         where: { id: Number(data.supplier_id) }
       }) : true,
-      prisma.productunits.findUnique({
+      prisma.unittype.findUnique({
         where: { id: Number(data.base_unit_id) }
       })
     ]);
@@ -490,7 +491,7 @@ export const searchProducts = async ({ keyword, page = 1, limit = 10 }) => {
         error: 'Vui lòng nhập từ khóa tìm kiếm'
       };
     }
-//OR để query sản phẩm theo bất kỳ trường nào mà keyword khớp
+    //OR để query sản phẩm theo bất kỳ trường nào mà keyword khớp
     const where = {
       OR: [
         { name: { contains: keyword, mode: 'insensitive' } },

@@ -1,4 +1,5 @@
 import prisma from '../../../config/db.js';
+import { Prisma } from '@prisma/client';
 
 // Dashboard tổng quan
 export const getDashboardOverview = async () => {
@@ -125,32 +126,40 @@ export const getRevenueByPeriod = async ({ startDate, endDate, groupBy = 'day' }
         dateFormat = 'YYYY-MM-DD';
     }
 
-    const revenue = await prisma.$queryRaw`
+    // Build where conditions
+    let whereConditions = `WHERE status IN ('completed', 'delivered')`;
+    if (startDate) {
+      whereConditions += ` AND order_date >= '${new Date(startDate).toISOString()}'`;
+    }
+    if (endDate) {
+      whereConditions += ` AND order_date <= '${new Date(endDate).toISOString()}'`;
+    }
+
+    const revenue = await prisma.$queryRawUnsafe(`
       SELECT
-        TO_CHAR(order_date, ${dateFormat}) as period,
+        TO_CHAR(order_date, '${dateFormat}') as period,
         COUNT(*)::int as order_count,
         SUM(final_amount)::decimal as total_revenue,
         SUM(discount_amount)::decimal as total_discount,
         AVG(final_amount)::decimal as avg_order_value
       FROM orders
-      WHERE status IN ('completed', 'delivered')
-      ${startDate ? prisma.Prisma.sql`AND order_date >= ${new Date(startDate)}` : prisma.Prisma.empty}
-      ${endDate ? prisma.Prisma.sql`AND order_date <= ${new Date(endDate)}` : prisma.Prisma.empty}
+      ${whereConditions}
       GROUP BY period
       ORDER BY period DESC
-    `;
+    `);
 
     return {
       success: true,
       data: revenue.map(r => ({
         period: r.period,
         orderCount: r.order_count,
-        totalRevenue: parseFloat(r.total_revenue),
+        totalRevenue: parseFloat(r.total_revenue || 0),
         totalDiscount: parseFloat(r.total_discount || 0),
-        avgOrderValue: parseFloat(r.avg_order_value)
+        avgOrderValue: parseFloat(r.avg_order_value || 0)
       }))
     };
   } catch (error) {
+    console.error('getRevenueByPeriod error:', error);
     throw error;
   }
 };
@@ -193,7 +202,15 @@ export const getOrdersByStatus = async ({ startDate, endDate }) => {
 // Sản phẩm bán chạy nhất
 export const getBestSellingProducts = async ({ startDate, endDate, limit = 10 }) => {
   try {
-    const products = await prisma.$queryRaw`
+    let whereConditions = `WHERE o.status IN ('completed', 'delivered')`;
+    if (startDate) {
+      whereConditions += ` AND o.order_date >= '${new Date(startDate).toISOString()}'`;
+    }
+    if (endDate) {
+      whereConditions += ` AND o.order_date <= '${new Date(endDate).toISOString()}'`;
+    }
+
+    const products = await prisma.$queryRawUnsafe(`
       SELECT
         p.id,
         p.name,
@@ -207,13 +224,11 @@ export const getBestSellingProducts = async ({ startDate, endDate, limit = 10 })
       JOIN orderitems oi ON p.id = oi.product_id
       JOIN orders o ON oi.order_id = o.id
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE o.status IN ('completed', 'delivered')
-      ${startDate ? prisma.Prisma.sql`AND o.order_date >= ${new Date(startDate)}` : prisma.Prisma.empty}
-      ${endDate ? prisma.Prisma.sql`AND o.order_date <= ${new Date(endDate)}` : prisma.Prisma.empty}
+      ${whereConditions}
       GROUP BY p.id, p.name, p.price, p.image_url, c.name
       ORDER BY total_sold DESC
-      LIMIT ${limit}
-    `;
+      LIMIT ${parseInt(limit)}
+    `);
 
     return {
       success: true,
@@ -224,11 +239,12 @@ export const getBestSellingProducts = async ({ startDate, endDate, limit = 10 })
         imageUrl: p.image_url,
         categoryName: p.category_name,
         totalSold: p.total_sold,
-        totalRevenue: parseFloat(p.total_revenue),
+        totalRevenue: parseFloat(p.total_revenue || 0),
         orderCount: p.order_count
       }))
     };
   } catch (error) {
+    console.error('getBestSellingProducts error:', error);
     throw error;
   }
 };
@@ -236,7 +252,15 @@ export const getBestSellingProducts = async ({ startDate, endDate, limit = 10 })
 // Khách hàng mua nhiều nhất
 export const getTopCustomers = async ({ startDate, endDate, limit = 10 }) => {
   try {
-    const customers = await prisma.$queryRaw`
+    let whereConditions = `WHERE o.status IN ('completed', 'delivered')`;
+    if (startDate) {
+      whereConditions += ` AND o.order_date >= '${new Date(startDate).toISOString()}'`;
+    }
+    if (endDate) {
+      whereConditions += ` AND o.order_date <= '${new Date(endDate).toISOString()}'`;
+    }
+
+    const customers = await prisma.$queryRawUnsafe(`
       SELECT
         c.id,
         u.full_name,
@@ -249,13 +273,11 @@ export const getTopCustomers = async ({ startDate, endDate, limit = 10 }) => {
       FROM customers c
       JOIN users u ON c.user_id = u.id
       JOIN orders o ON c.id = o.customer_id
-      WHERE o.status IN ('completed', 'delivered')
-      ${startDate ? prisma.Prisma.sql`AND o.order_date >= ${new Date(startDate)}` : prisma.Prisma.empty}
-      ${endDate ? prisma.Prisma.sql`AND o.order_date <= ${new Date(endDate)}` : prisma.Prisma.empty}
+      ${whereConditions}
       GROUP BY c.id, u.full_name, u.email, u.phone
       ORDER BY total_spent DESC
-      LIMIT ${limit}
-    `;
+      LIMIT ${parseInt(limit)}
+    `);
 
     return {
       success: true,
@@ -265,12 +287,13 @@ export const getTopCustomers = async ({ startDate, endDate, limit = 10 }) => {
         email: c.email,
         phone: c.phone,
         orderCount: c.order_count,
-        totalSpent: parseFloat(c.total_spent),
-        avgOrderValue: parseFloat(c.avg_order_value),
+        totalSpent: parseFloat(c.total_spent || 0),
+        avgOrderValue: parseFloat(c.avg_order_value || 0),
         lastOrderDate: c.last_order_date
       }))
     };
   } catch (error) {
+    console.error('getTopCustomers error:', error);
     throw error;
   }
 };
@@ -278,7 +301,15 @@ export const getTopCustomers = async ({ startDate, endDate, limit = 10 }) => {
 // Hiệu quả voucher
 export const getVoucherPerformance = async ({ startDate, endDate }) => {
   try {
-    const voucherStats = await prisma.$queryRaw`
+    let dateFilter = '';
+    if (startDate) {
+      dateFilter += ` AND o.order_date >= '${new Date(startDate).toISOString()}'`;
+    }
+    if (endDate) {
+      dateFilter += ` AND o.order_date <= '${new Date(endDate).toISOString()}'`;
+    }
+
+    const voucherStats = await prisma.$queryRawUnsafe(`
       SELECT
         v.id,
         v.code,
@@ -287,16 +318,15 @@ export const getVoucherPerformance = async ({ startDate, endDate }) => {
         v.usage_limit,
         v.used_count,
         COUNT(o.id)::int as order_count,
-        SUM(o.discount_amount)::decimal as total_discount_given,
-        SUM(o.final_amount)::decimal as total_revenue
+        COALESCE(SUM(o.discount_amount), 0)::decimal as total_discount_given,
+        COALESCE(SUM(o.final_amount), 0)::decimal as total_revenue
       FROM vouchers v
       LEFT JOIN orders o ON v.id = o.voucher_id
         AND o.status IN ('completed', 'delivered')
-        ${startDate ? prisma.Prisma.sql`AND o.order_date >= ${new Date(startDate)}` : prisma.Prisma.empty}
-        ${endDate ? prisma.Prisma.sql`AND o.order_date <= ${new Date(endDate)}` : prisma.Prisma.empty}
+        ${dateFilter}
       GROUP BY v.id, v.code, v.discount_type, v.discount_value, v.usage_limit, v.used_count
       ORDER BY total_revenue DESC
-    `;
+    `);
 
     return {
       success: true,
@@ -313,6 +343,7 @@ export const getVoucherPerformance = async ({ startDate, endDate }) => {
       }))
     };
   } catch (error) {
+    console.error('getVoucherPerformance error:', error);
     throw error;
   }
 };
@@ -383,29 +414,30 @@ export const getFlashsalePerformance = async ({ flashsaleId }) => {
 // Tỷ lệ chuyển đổi (Conversion Rate)
 export const getConversionRate = async ({ startDate, endDate }) => {
   try {
-    // Tổng số khách truy cập (ước tính từ số lượng giỏ hàng được tạo)
-    // Và số đơn hàng thành công
-    const [totalCarts, completedOrders] = await Promise.all([
-      prisma.$queryRaw`
-        SELECT COUNT(DISTINCT customer_id)::int as count
-        FROM orders
-        ${startDate && endDate ? prisma.Prisma.sql`WHERE order_date BETWEEN ${new Date(startDate)} AND ${new Date(endDate)}` : prisma.Prisma.empty}
-      `,
+    let whereFilter = '';
+    if (startDate && endDate) {
+      whereFilter = `WHERE order_date BETWEEN '${new Date(startDate).toISOString()}' AND '${new Date(endDate).toISOString()}'`;
+    }
 
-      prisma.orders.count({
-        where: {
-          status: { in: ['completed', 'delivered'] },
-          ...(startDate && endDate && {
-            order_date: {
-              gte: new Date(startDate),
-              lte: new Date(endDate)
-            }
-          })
-        }
-      })
-    ]);
+    const totalCartsResult = await prisma.$queryRawUnsafe(`
+      SELECT COUNT(DISTINCT customer_id)::int as count
+      FROM orders
+      ${whereFilter}
+    `);
 
-    const totalVisitors = totalCarts[0]?.count || 0;
+    const completedOrders = await prisma.orders.count({
+      where: {
+        status: { in: ['completed', 'delivered'] },
+        ...(startDate && endDate && {
+          order_date: {
+            gte: new Date(startDate),
+            lte: new Date(endDate)
+          }
+        })
+      }
+    });
+
+    const totalVisitors = totalCartsResult[0]?.count || 0;
     const conversionRate = totalVisitors > 0
       ? (completedOrders / totalVisitors) * 100
       : 0;
@@ -419,6 +451,7 @@ export const getConversionRate = async ({ startDate, endDate }) => {
       }
     };
   } catch (error) {
+    console.error('getConversionRate error:', error);
     throw error;
   }
 };
@@ -473,19 +506,19 @@ export const getAverageOrderValue = async ({ startDate, endDate, groupBy = 'all'
           dateFormat = 'YYYY-MM-DD';
       }
 
-      const aovByPeriod = await prisma.$queryRaw`
+      const aovByPeriod = await prisma.$queryRawUnsafe(`
         SELECT
-          TO_CHAR(order_date, ${dateFormat}) as period,
+          TO_CHAR(order_date, '${dateFormat}') as period,
           AVG(final_amount)::decimal as avg_order_value,
           COUNT(*)::int as order_count,
           SUM(final_amount)::decimal as total_revenue
         FROM orders
         WHERE status IN ('completed', 'delivered')
-        ${startDate ? prisma.Prisma.sql`AND order_date >= ${new Date(startDate)}` : prisma.Prisma.empty}
-        ${endDate ? prisma.Prisma.sql`AND order_date <= ${new Date(endDate)}` : prisma.Prisma.empty}
+        ${startDate ? `AND order_date >= '${new Date(startDate).toISOString()}'` : ''}
+        ${endDate ? `AND order_date <= '${new Date(endDate).toISOString()}'` : ''}
         GROUP BY period
         ORDER BY period DESC
-      `;
+      `);
 
       return {
         success: true,
@@ -505,7 +538,15 @@ export const getAverageOrderValue = async ({ startDate, endDate, groupBy = 'all'
 // Doanh thu theo phương thức thanh toán
 export const getRevenueByPaymentMethod = async ({ startDate, endDate }) => {
   try {
-    const paymentStats = await prisma.$queryRaw`
+    let dateFilter = '';
+    if (startDate) {
+      dateFilter += ` AND p.payment_date >= '${new Date(startDate).toISOString()}'`;
+    }
+    if (endDate) {
+      dateFilter += ` AND p.payment_date <= '${new Date(endDate).toISOString()}'`;
+    }
+
+    const paymentStats = await prisma.$queryRawUnsafe(`
       SELECT
         p.payment_method,
         COUNT(*)::int as transaction_count,
@@ -514,21 +555,21 @@ export const getRevenueByPaymentMethod = async ({ startDate, endDate }) => {
       JOIN orders o ON p.order_id = o.id
       WHERE p.status = 'completed'
       AND o.status IN ('completed', 'delivered')
-      ${startDate ? prisma.Prisma.sql`AND p.payment_date >= ${new Date(startDate)}` : prisma.Prisma.empty}
-      ${endDate ? prisma.Prisma.sql`AND p.payment_date <= ${new Date(endDate)}` : prisma.Prisma.empty}
+      ${dateFilter}
       GROUP BY p.payment_method
       ORDER BY total_amount DESC
-    `;
+    `);
 
     return {
       success: true,
       data: paymentStats.map(ps => ({
         paymentMethod: ps.payment_method,
         transactionCount: ps.transaction_count,
-        totalAmount: parseFloat(ps.total_amount)
+        totalAmount: parseFloat(ps.total_amount || 0)
       }))
     };
   } catch (error) {
+    console.error('getRevenueByPaymentMethod error:', error);
     throw error;
   }
 };

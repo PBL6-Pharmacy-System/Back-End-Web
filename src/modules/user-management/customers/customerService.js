@@ -368,7 +368,7 @@ export const updateCustomer = async (id, data) => {
 // Check if customer can be deleted
 const canDeleteCustomer = async (id) => {
   const orderCount = await prisma.orders.count({
-    where: { user_id: Number(id) }
+    where: { customer_id: Number(id) }
   });
   return orderCount === 0;
 };
@@ -480,7 +480,7 @@ export const getCustomerReviews = async (customerId, { page = 1, limit = 10 }) =
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          product: true
+          products: true
         },
         orderBy: {
           created_at: 'desc'
@@ -524,7 +524,7 @@ export const getCustomerStats = async (customerId) => {
     const [orders, reviews] = await Promise.all([
       prisma.orders.findMany({
         where: {
-          user_id: Number(customerId),
+          customer_id: Number(customerId),
           status: 'completed'
         }
       }),

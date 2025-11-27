@@ -192,10 +192,33 @@ export const receiveTransfer = async (req, res) => {
 };
 
 // Cancel transfer
+// ✅ FIX: Thêm kiểm tra branch ownership cho Staff
 export const cancelTransfer = async (req, res) => {
   try {
     const userId = req.user.userId;
     const { reason } = req.body;
+
+    // ✅ Get transfer first to check ownership
+    const transferResult = await inventoryTransferService.getTransferById(req.params.id);
+
+    if (!transferResult.success) {
+      return res.status(transferResult.status).json(transferResult);
+    }
+
+    // ✅ CHECK: Staff chỉ được hủy transfer từ chi nhánh của mình (người tạo)
+    if (req.user.role_name === 'staff') {
+      if (transferResult.data.from_branch_id !== req.user.branch_id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn chỉ có quyền hủy phiếu chuyển kho từ chi nhánh của mình',
+          details: {
+            your_branch_id: req.user.branch_id,
+            transfer_from_branch_id: transferResult.data.from_branch_id
+          }
+        });
+      }
+    }
+
     const result = await inventoryTransferService.cancelTransfer(req.params.id, userId, reason);
 
     if (!result.success) {

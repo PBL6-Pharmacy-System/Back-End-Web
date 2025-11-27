@@ -51,8 +51,8 @@ router.put('/customers/:id',
     customerController.updateCustomer
 );
 
-// Public - Tạo customer mới (khi register)
-router.post('/customers', customerController.createCustomer);
+// ✅ FIXED: Chỉ Admin mới có thể tạo customer thủ công (tránh bypass OTP flow)
+router.post('/customers', authenticateToken, authorizeAdmin, customerController.createCustomer);
 
 // Admin only - Xóa customer
 router.delete('/customers/:id', authenticateToken, authorizeAdmin, validateId(), customerController.deleteCustomer);

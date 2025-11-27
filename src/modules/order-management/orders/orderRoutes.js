@@ -1,9 +1,8 @@
 import express from 'express';
 import { validateId } from '../../../middlewares/validate.middleware.js';
-import { orderStatusLimiter } from '../../../middlewares/rateLimit.middleware.js'; // ✅ Added
+import { orderStatusLimiter } from '../../../middlewares/rateLimit.middleware.js';
 import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
 import * as orderController from './orderController.js';
-import { orderStatusLimiter } from '../../../middlewares/rateLimit.middleware.js'; // ✅ Added
 
 const router = express.Router();
 

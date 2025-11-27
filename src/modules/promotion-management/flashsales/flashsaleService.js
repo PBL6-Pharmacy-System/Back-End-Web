@@ -52,9 +52,9 @@ export const getAllFlashsales = async ({ page = 1, limit = 10 }) => {
 export const getActiveFlashsale = async () => {
   try {
     const now = getCurrentUTC(); // Use UTC for database comparison
-    
+
     console.log('[GET ACTIVE FLASHSALE] Current UTC:', now.toISOString());
-    
+
     const flashsale = await prisma.flashsales.findFirst({
       where: {
         start_time: { lte: now },
@@ -91,11 +91,12 @@ export const getActiveFlashsale = async () => {
 };
 
 // Tạo flashsale mới
+// ✅ FIX #9: Set initial status dựa trên thời gian
 export const createFlashsale = async (data) => {
   try {
     const { name, description, start_time, end_time, products } = data;
 
-      // Validate dữ liệu đầu vào
+    // Validate dữ liệu đầu vào
     if (!name || !start_time || !end_time || !products || !Array.isArray(products) || products.length === 0) {
       return {
         success: false,
@@ -122,13 +123,13 @@ export const createFlashsale = async (data) => {
     // Validate thời gian
     const startTimeUTC = parseVNDateInput(start_time);
     const endTimeUTC = parseVNDateInput(end_time);
-    
+
     console.log('[CREATE FLASHSALE] Input times:');
     console.log('  Start input:', start_time);
     console.log('  Start UTC:', startTimeUTC.toISOString());
     console.log('  End input:', end_time);
     console.log('  End UTC:', endTimeUTC.toISOString());
-    
+
     if (startTimeUTC >= endTimeUTC) {
       return {
         success: false,
@@ -159,12 +160,28 @@ export const createFlashsale = async (data) => {
       };
     }
 
+    // ✅ FIX #9: Xác định initial status dựa trên thời gian hiện tại
+    const now = getCurrentUTC();
+    let initialStatus = 'pending';
+
+    if (endTimeUTC < now) {
+      // Flashsale đã kết thúc (trường hợp tạo flashsale với thời gian quá khứ)
+      initialStatus = 'ended';
+    } else if (startTimeUTC <= now && endTimeUTC >= now) {
+      // Flashsale đang diễn ra
+      initialStatus = 'active';
+    }
+    // Còn lại là 'pending' (flashsale trong tương lai)
+
+    console.log('[CREATE FLASHSALE] Initial status:', initialStatus);
+
     const flashsale = await prisma.flashsales.create({
       data: {
         name,
         description,
         start_time: startTimeUTC,
         end_time: endTimeUTC,
+        status: initialStatus,  // ✅ FIX #9: Set status đúng
         flashsale_products: {
           create: products.map(p => ({
             product_id: p.product_id,
@@ -229,11 +246,11 @@ export const updateFlashsale = async (id, data) => {
     // Validate thời gian nếu có cập nhật
     const newStartTime = start_time ? parseVNDateInput(start_time) : existing.start_time;
     const newEndTime = end_time ? parseVNDateInput(end_time) : existing.end_time;
-    
+
     console.log('[UPDATE FLASHSALE] Times:');
     if (start_time) console.log('  New Start UTC:', newStartTime.toISOString());
     if (end_time) console.log('  New End UTC:', newEndTime.toISOString());
-    
+
     if (newStartTime >= newEndTime) {
       return {
         success: false,
@@ -322,7 +339,7 @@ export const deleteFlashsale = async (id) => {
     };
   } catch (error) {
     console.error('[DELETE FLASHSALE ERROR]', error);
-    
+
     // Handle specific Prisma errors
     if (error.code === 'P2025') {
       return {
@@ -330,7 +347,7 @@ export const deleteFlashsale = async (id) => {
         error: 'Không tìm thấy flashsale để xóa'
       };
     }
-    
+
     throw error;
   }
 };

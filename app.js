@@ -9,6 +9,15 @@ import { startPaymentExpirationJob } from './src/jobs/paymentExpirationJob.js';
 import { errorHandler, notFound } from './src/middlewares/errorHandler.middleware.js';
 import { apiLimiter } from './src/middlewares/rateLimit.middleware.js';
 
+// ✅ SECURITY: Validate required environment variables
+const requiredEnvVars = ['JWT_SECRET'];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`❌ FATAL: ${envVar} is not defined in environment variables`);
+    process.exit(1);
+  }
+}
+
 // Auth
 import authRoutes from './src/modules/auth/authRoutes.js';
 
@@ -36,8 +45,11 @@ import orderRoutes from './src/modules/order-management/orders/orderRoutes.js';
 import momoRoutes from './src/modules/order-management/payments/gateways/momo/momoRoutes.js';
 import vnpayRoutes from './src/modules/order-management/payments/gateways/vnpay/vnpayRoutes.js';
 import paymentRoutes from './src/modules/order-management/payments/paymentRoutes.js';
-import shipmentRoutes from './src/modules/order-management/shipments/shipmentRoutes.js';
-import shippingAddressRoutes from './src/modules/order-management/shipping-addresses/shippingAddressRoutes.js';
+
+// Shipping Management
+import shippingFeeRoutes from './src/modules/shipping-management/shipping-fees/shippingFeeRoutes.js';
+import shipmentRoutes from './src/modules/shipping-management/shipments/shipmentRoutes.js';
+import shippingAddressRoutes from './src/modules/shipping-management/shipping-addresses/shippingAddressRoutes.js';
 
 // Promotion Management
 import flashsaleRoutes from './src/modules/promotion-management/flashsales/flashsaleRoutes.js';
@@ -69,12 +81,15 @@ import citiesRoutes from './src/modules/location/cities/citiesRoutes.js';
 const app = express();
 
 // Global middlewares
+// ✅ SECURITY: Improved CORS configuration
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
-  credentials: true
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID']
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Apply rate limiting to all requests
 app.use('/api', apiLimiter);
@@ -120,11 +135,14 @@ app.use('/api', stockOperationsRoutes);
 // Order management
 app.use('/api', cartRoutes);
 app.use('/api', orderRoutes);
-app.use('/api', shippingAddressRoutes);
 app.use('/api', paymentRoutes);
 app.use('/api/payments/vnpay', vnpayRoutes);
 app.use('/api/payments/momo', momoRoutes);
+
+// Shipping management
+app.use('/api/shipping', shippingFeeRoutes);
 app.use('/api', shipmentRoutes);
+app.use('/api', shippingAddressRoutes);
 
 // Notification management
 app.use('/api', notificationRoutes);
@@ -170,6 +188,6 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📡 API URL: http://localhost:${PORT}/api`);
-  
+
   startPaymentExpirationJob();
 });

@@ -117,9 +117,13 @@ export const uploadPrescription = async (prescriptionData) => {
         customers: {
           select: {
             id: true,
-            full_name: true,
-            email: true,
-            phone: true
+            users: {
+              select: {
+                full_name: true,
+                email: true,
+                phone: true
+              }
+            }
           }
         },
         orders: {
@@ -153,9 +157,13 @@ export const getPrescriptionById = async (prescriptionId) => {
         customers: {
           select: {
             id: true,
-            full_name: true,
-            email: true,
-            phone: true
+            users: {
+              select: {
+                full_name: true,
+                email: true,
+                phone: true
+              }
+            }
           }
         },
         orders: {
@@ -241,8 +249,12 @@ export const getAllPrescriptions = async (filters = {}) => {
           customers: {
             select: {
               id: true,
-              full_name: true,
-              phone: true
+              users: {
+                select: {
+                  full_name: true,
+                  phone: true
+                }
+              }
             }
           },
           users: {
@@ -405,8 +417,12 @@ export const verifyPrescription = async (prescriptionId, verificationData, userI
         customers: {
           select: {
             id: true,
-            full_name: true,
-            email: true
+            users: {
+              select: {
+                full_name: true,
+                email: true
+              }
+            }
           }
         },
         users: {

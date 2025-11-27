@@ -205,6 +205,7 @@ export const updatePaymentStatus = async (paymentId, status, userId = null) => {
 
 /**
  * Process COD payment (mark as completed when delivered)
+ * ✅ FIX #7: Xóa đoạn update sold_count vì đã được xử lý trong orderService.updateOrderStatus()
  */
 export const processCODPayment = async (paymentId, userId = null) => {
   try {
@@ -284,38 +285,12 @@ export const processCODPayment = async (paymentId, userId = null) => {
         }
       });
 
-      // Update order status if still pending/confirmed
-      if (['pending', 'confirmed'].includes(payment.orders.status)) {
-        await tx.orders.update({
-          where: { id: payment.order_id },
-          data: {
-            status: ORDER_STATUS.COMPLETED,
-            updated_at: new Date()
-          }
-        });
+      // ✅ FIX #7: KHÔNG update sold_count ở đây
+      // sold_count đã được update trong orderService.updateOrderStatus() khi order chuyển sang DELIVERED
+      // Nếu update ở đây sẽ bị tăng 2 lần
 
-        // Create order status history
-        await tx.order_status_history.create({
-          data: {
-            order_id: payment.order_id,
-            status: ORDER_STATUS.COMPLETED,
-            changed_by: userId,
-            changed_at: new Date()
-          }
-        });
-      }
-
-      // Update product sold_count
-      for (const item of payment.orders.orderitems) {
-        await tx.products.update({
-          where: { id: item.product_id },
-          data: {
-            sold_count: {
-              increment: item.quantity
-            }
-          }
-        });
-      }
+      // Note: Order status đã là DELIVERED nên không cần update lại
+      // Chỉ cần xác nhận payment đã hoàn thành
     });
 
     return {
