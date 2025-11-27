@@ -99,7 +99,8 @@ export const checkout = async (data) => {
       customerId,
       voucherCode,
       shippingAddressId,
-      paymentMethod = 'cash'
+      paymentMethod = 'cash',
+      note
     } = data;
 
     // Map payment method aliases to database values
@@ -276,6 +277,7 @@ export const checkout = async (data) => {
           final_amount: finalAmount,
           voucher_id: voucherResult.voucher?.id,
           shipping_address_id: finalShippingAddressId,
+          note: note || null,
           order_date: new Date(),
           updated_at: new Date()
         },

@@ -71,7 +71,8 @@ export const getPaymentById = async (paymentId) => {
               select: {
                 id: true,
                 quantity: true,
-                unit_price: true,
+                price: true,
+                subtotal: true,
                 products: {
                   select: {
                     id: true,

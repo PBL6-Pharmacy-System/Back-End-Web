@@ -66,8 +66,8 @@ export const getAllOrders = async (filters = {}) => {
             select: {
               id: true,
               quantity: true,
-              unit_price: true,
-              total_price: true,
+              price: true,
+              subtotal: true,
               products: {
                 select: {
                   id: true,
@@ -90,7 +90,7 @@ export const getAllOrders = async (filters = {}) => {
           shippingaddresses: {
             select: {
               id: true,
-              address: true,
+              address_line: true,
               city_id: true
             }
           },
@@ -152,8 +152,8 @@ export const getOrderById = async (orderId) => {
           select: {
             id: true,
             quantity: true,
-            unit_price: true,
-            total_price: true,
+            price: true,
+            subtotal: true,
             products: {
               select: {
                 id: true,
@@ -183,8 +183,11 @@ export const getOrderById = async (orderId) => {
           select: {
             id: true,
             recipient_name: true,
-            phone: true,
-            address: true,
+            recipient_phone: true,
+            address_line: true,
+            city: true,
+            state: true,
+            postal_code: true,
             city_id: true
           }
         },
@@ -218,9 +221,9 @@ export const getOrderById = async (orderId) => {
           },
           select: {
             id: true,
-            old_status: true,
-            new_status: true,
+            status: true,
             changed_at: true,
+            changed_by: true,
             users: {
               select: {
                 full_name: true
@@ -530,6 +533,43 @@ export const cancelOrder = async (orderId, userId, reason = null) => {
       success: true,
       data: cancelledOrder,
       message: 'Đơn hàng đã được hủy thành công'
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Update order note
+ */
+export const updateOrderNote = async (orderId, note) => {
+  try {
+    // Check if order exists
+    const order = await prisma.orders.findUnique({
+      where: { id: Number(orderId) }
+    });
+
+    if (!order) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy đơn hàng'
+      };
+    }
+
+    // Update note
+    const updatedOrder = await prisma.orders.update({
+      where: { id: Number(orderId) },
+      data: {
+        note: note || null,
+        updated_at: new Date()
+      }
+    });
+
+    return {
+      success: true,
+      data: updatedOrder,
+      message: 'Cập nhật ghi chú đơn hàng thành công'
     };
   } catch (error) {
     throw error;

@@ -1,7 +1,7 @@
 import express from 'express';
-import * as orderController from './orderController.js';
-import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
+import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
+import * as orderController from './orderController.js';
 
 const router = express.Router();
 
@@ -64,6 +64,19 @@ router.put(
   authorizeRoles('admin', 'staff'),
   validateId(),
   orderController.updateOrderStatus
+);
+
+/**
+ * PUT /api/orders/:id/note
+ * Update order note (Admin/Staff only)
+ * Body: { note: string }
+ */
+router.put(
+  '/orders/:id/note',
+  authenticateToken,
+  authorizeRoles('admin', 'staff'),
+  validateId(),
+  orderController.updateOrderNote
 );
 
 /**
