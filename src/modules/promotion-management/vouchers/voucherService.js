@@ -223,10 +223,9 @@ export const getVoucherById = async (id) => {
           select: {
             id: true,
             order_date: true,
-            total_amount: true,
-            final_amount: true
+            total_amount: true
           },
-          take: 10, // Chỉ lấy 10 orders gần nhất
+          take: 5, // Giảm từ 10 xuống 5 orders
           orderBy: {
             order_date: 'desc'
           }

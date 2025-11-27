@@ -51,6 +51,55 @@ const canDeleteProduct = async (id) => {
   return orderItems === 0;
 };
 
+// Cache cho category hierarchy (TTL: 5 phút)
+const categoryCache = {
+  data: null,
+  timestamp: null,
+  TTL: 5 * 60 * 1000 // 5 minutes
+};
+
+/**
+ * Lấy tất cả category IDs (bao gồm cả children) của một category
+ * Tối ưu: Chỉ 1 query + in-memory traversal
+ * Ví dụ: categoryId=128 (TPCN) → [128, 132, 133, ..., 159, 1-127]
+ */
+const getAllCategoryIds = async (categoryId) => {
+  const id = Number(categoryId);
+  
+  // Load toàn bộ categories 1 lần (cache 5 phút)
+  const now = Date.now();
+  if (!categoryCache.data || (now - categoryCache.timestamp) > categoryCache.TTL) {
+    categoryCache.data = await prisma.categories.findMany({
+      select: { id: true, parent_id: true }
+    });
+    categoryCache.timestamp = now;
+  }
+  
+  const allCategories = categoryCache.data;
+  const categoryIds = [id];
+  
+  // Build children map in-memory (O(n))
+  const childrenMap = {};
+  allCategories.forEach(cat => {
+    if (cat.parent_id) {
+      if (!childrenMap[cat.parent_id]) childrenMap[cat.parent_id] = [];
+      childrenMap[cat.parent_id].push(cat.id);
+    }
+  });
+  
+  // Traverse children recursively in-memory (không query DB)
+  const findChildren = (parentId) => {
+    const children = childrenMap[parentId] || [];
+    children.forEach(childId => {
+      categoryIds.push(childId);
+      findChildren(childId); // Đệ quy trong memory
+    });
+  };
+  
+  findChildren(id);
+  return categoryIds;
+};
+
 export const getAllProducts = async ({ 
   search, 
   categoryId, 
@@ -72,8 +121,10 @@ export const getAllProducts = async ({
       ];
     }
 
+    // Query products thuộc category và TẤT CẢ subcategories bên trong
     if (categoryId) {
-      where.category_id = Number(categoryId);
+      const categoryIds = await getAllCategoryIds(categoryId);
+      where.category_id = { in: categoryIds };
     }
 
     if (supplierId) {
@@ -94,13 +145,17 @@ export const getAllProducts = async ({
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          categories: true,
-          suppliers: true,
-          unittype: true,
+          categories: {
+            select: { id: true, name: true } // Tối ưu: chỉ lấy cần thiết
+          },
+          suppliers: {
+            select: { id: true, name: true }
+          },
+          unittype: {
+            select: { id: true, name: true }
+          },
           branchinventory: {
-            select: {
-              stock: true
-            }
+            select: { stock: true }
           }
         },
         orderBy: { name: 'asc' }
@@ -140,10 +195,18 @@ export const getProductById = async (id) => {
     const product = await prisma.products.findUnique({
       where: { id: Number(id) },
       include: {
-      categories: true,
-      suppliers: true,
-      unittype: true,
-      productunits: true
+        categories: {
+          select: { id: true, name: true, parent_id: true }
+        },
+        suppliers: {
+          select: { id: true, name: true, phone: true }
+        },
+        unittype: {
+          select: { id: true, name: true }
+        },
+        productunits: {
+          select: { id: true, unit_name: true, conversion_factor: true, is_base_unit: true }
+        }
       }
     });
 
@@ -241,10 +304,18 @@ export const createProduct = async (data) => {
         base_unit_id: Number(data.base_unit_id),
       },
       include: {
-        categories: true, 
-        suppliers: true,  
-        unittype: true,   
-        productunits: true,
+        categories: {
+          select: { id: true, name: true }
+        },
+        suppliers: {
+          select: { id: true, name: true }
+        },
+        unittype: {
+          select: { id: true, name: true }
+        },
+        productunits: {
+          select: { id: true, unit_name: true, conversion_factor: true }
+        }
       },
     });
 
@@ -345,9 +416,15 @@ export const updateProduct = async (id, data) => {
         base_unit_id: data.base_unit_id ? Number(data.base_unit_id) : undefined,
       },
       include: {
-        categories: true,
-        suppliers: true,
-        unittype: true
+        categories: {
+          select: { id: true, name: true }
+        },
+        suppliers: {
+          select: { id: true, name: true }
+        },
+        unittype: {
+          select: { id: true, name: true }
+        }
       }
     });
 
@@ -429,14 +506,18 @@ export const searchProducts = async ({ keyword, page = 1, limit = 10 }) => {
         skip: (page - 1) * limit,
         take: limit,
         include: {
-        categories: true,
-        suppliers: true,
-        unittype: true,
-        branchinventory: {
-          select: {
-            stock: true
+          categories: {
+            select: { id: true, name: true } // Tối ưu: chỉ lấy cần thiết
+          },
+          suppliers: {
+            select: { id: true, name: true }
+          },
+          unittype: {
+            select: { id: true, name: true }
+          },
+          branchinventory: {
+            select: { stock: true }
           }
-        }
         },
         orderBy: { name: 'asc' }
       }),

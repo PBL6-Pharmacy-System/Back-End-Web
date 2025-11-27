@@ -1,5 +1,5 @@
 import prisma from '../../../config/db.js';
-import { getCurrentUTC, parseVNDateInput, logDateComparison } from '../../../utils/timezone.js';
+import { getCurrentUTC, parseVNDateInput } from '../../../utils/timezone.js';
 
 // Lấy tất cả flashsale
 export const getAllFlashsales = async ({ page = 1, limit = 10 }) => {
@@ -10,8 +10,19 @@ export const getAllFlashsales = async ({ page = 1, limit = 10 }) => {
         take: limit,
         include: {
           flashsale_products: {
-            include: {
-              products: true
+            select: {
+              id: true,
+              flash_price: true,
+              stock_limit: true,
+              sold_count: true,
+              products: {
+                select: {
+                  id: true,
+                  name: true,
+                  price: true,
+                  image_url: true
+                }
+              }
             }
           }
         },

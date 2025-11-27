@@ -81,10 +81,18 @@ export const getAllUsers = async ({
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          roles: true,
-          customers: true,
-          staff: true,
-          admin: true
+          roles: {
+            select: { id: true, role_name: true }
+          },
+          customers: {
+            select: { id: true, membership_level: true }
+          },
+          staff: {
+            select: { id: true, position: true }
+          },
+          admin: {
+            select: { id: true }
+          }
         },
         orderBy: {
           [sortBy]: sortOrder
@@ -119,14 +127,24 @@ export const getUserById = async (id) => {
     const user = await prisma.users.findUnique({
       where: { id: Number(id) },
       include: {
-        roles: true,
-        customers: true,
+        roles: {
+          select: { id: true, role_name: true }
+        },
+        customers: {
+          select: { id: true, membership_level: true, points: true }
+        },
         staff: {
-          include: {
-            branches: true
+          select: {
+            id: true,
+            position: true,
+            branches: {
+              select: { id: true, name: true }
+            }
           }
         },
-        admin: true
+        admin: {
+          select: { id: true }
+        }
       }
     });
 

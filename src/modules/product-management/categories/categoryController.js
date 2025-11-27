@@ -124,3 +124,29 @@ export const getCategoryStats = async (req, res) => {
     });
   }
 };
+
+export const getCategoryTree = async (req, res) => {
+  try {
+    const { 
+      onlyActiveProducts = 'false'
+    } = req.query;
+
+    const result = await categoryService.getCategoryTree({
+      onlyActiveProducts: onlyActiveProducts === 'true'
+    });
+
+    if (!result.success) {
+      return res.status(result.status || 500).json(result);
+    }
+
+    // Add cache header (cache for 5 minutes)
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(result);
+  } catch (err) {
+    console.error('Error in getCategoryTree:', err);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Lỗi khi lấy cây phân cấp danh mục' 
+    });
+  }
+};

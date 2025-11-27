@@ -1,6 +1,6 @@
 import prisma from '../../../config/db.js';
 import { hashPassword } from '../../../utils/helpers.js';
-import { validateRequiredFields, validateNumericFields } from '../../../utils/validation.js';
+import { validateRequiredFields } from '../../../utils/validation.js';
 
 // Validate staff data
 const validateStaffData = (data, isUpdate = false) => {
@@ -43,9 +43,7 @@ export const getAllStaff = async ({ branchId, page = 1, limit = 10, isActive }) 
               email: true,
               phone: true,
               full_name: true,
-              avatar_url: true,
               is_active: true,
-              created_at: true,
               roles: {
                 select: {
                   id: true,

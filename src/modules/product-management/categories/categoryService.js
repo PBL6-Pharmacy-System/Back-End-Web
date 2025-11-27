@@ -32,14 +32,7 @@ const validateCategoryData = async (data, categoryId = null) => {
     };
   }
 
-  // Validate description length if provided
-  if (data.description && data.description.length > 500) {
-    return {
-      success: false,
-      status: 400,
-      error: 'Mô tả không được vượt quá 500 ký tự'
-    };
-  }
+
 
   // Check for existing category with same name
   const existingCategory = await findCategoryByName(data.name.trim());
@@ -97,12 +90,7 @@ export const getAllCategories = async ({
     const where = {
       AND: [
         parentId ? { parent_id: parentId } : {},
-        search ? {
-          OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { description: { contains: search, mode: 'insensitive' } }
-          ]
-        } : {}
+        search ? { name: { contains: search, mode: 'insensitive' } } : {}
       ].filter(obj => Object.keys(obj).length > 0)
     };
 
@@ -110,9 +98,11 @@ export const getAllCategories = async ({
       prisma.categories.count({ where }),
       prisma.categories.findMany({
         where,
-        include: {
-          products: includeProducts
-        },
+        include: includeProducts ? {
+          products: {
+            select: { id: true, name: true, price: true }
+          }
+        } : {},
         orderBy: { [sortBy]: sortOrder.toLowerCase() },
         skip: (page - 1) * limit,
         take: limit
@@ -145,9 +135,11 @@ export const getCategoryById = async (id, includeProducts = true) => {
   try {
     const category = await prisma.categories.findUnique({
       where: { id: Number(id) },
-      include: {
-        products: includeProducts
-      }
+      include: includeProducts ? {
+        products: {
+          select: { id: true, name: true, price: true, image_url: true }
+        }
+      } : {}
     });
 
     if (!category) {
@@ -194,7 +186,6 @@ export const createCategory = async (data) => {
     const category = await prisma.categories.create({
       data: {
         name: data.name.trim(),
-        description: data.description,
         parent_id: data.parent_id,
         image_url: data.image_url,
         is_active: true
@@ -252,7 +243,6 @@ export const updateCategory = async (id, data) => {
       where: { id: Number(id) },
       data: {
         name: data.name?.trim(),
-        description: data.description,
         parent_id: data.parent_id,
         image_url: data.image_url,
         is_active: data.is_active
@@ -426,6 +416,152 @@ export const getCategoryStats = async (categoryId) => {
       success: false,
       status: 500,
       error: 'Lỗi khi lấy thống kê danh mục'
+    };
+  }
+};
+
+/**
+ * Lấy cây phân cấp categories (dạng nested tree)
+ * Phù hợp cho Flutter app/Frontend để hiển thị menu
+ * Đếm products bao gồm cả products của các category con
+ * @param {Object} options - Tùy chọn lọc
+ * @param {boolean} options.onlyActiveProducts - Chỉ đếm products active (mặc định: false)
+ */
+export const getCategoryTree = async (options = {}) => {
+  const { 
+    onlyActiveProducts = false 
+  } = options;
+
+  try {
+    // Build where clause cho products
+    const productWhere = onlyActiveProducts ? { is_active: true } : {};
+
+    // Lấy tất cả categories với thông tin products
+    const allCategories = await prisma.categories.findMany({
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        parent_id: true,
+        products: {
+          where: productWhere,
+          select: { id: true }
+        }
+      }
+    });
+
+    // Hàm đệ quy để đếm products (bao gồm children)
+    const getProductCountRecursive = (categoryId, categoryMap) => {
+      const category = categoryMap[categoryId];
+      if (!category) return 0;
+      
+      // Đếm products trực tiếp của category này
+      let count = category.directProductCount;
+      
+      // Cộng thêm products từ tất cả children
+      category.children.forEach(childId => {
+        count += getProductCountRecursive(childId, categoryMap);
+      });
+      
+      return count;
+    };
+
+    // Tạo map để tra cứu nhanh
+    const categoryMap = {};
+    const childrenMap = {}; // Map lưu danh sách children IDs
+    
+    allCategories.forEach(cat => {
+      categoryMap[cat.id] = {
+        id: cat.id,
+        name: cat.name,
+        parent_id: cat.parent_id,
+        directProductCount: cat.products.length, // Số products trực tiếp
+        product_count: 0, // Sẽ tính sau (bao gồm children)
+        children: [] // Array chứa children objects
+      };
+      childrenMap[cat.id] = []; // Array chứa children IDs
+    });
+
+    // Build children map
+    allCategories.forEach(cat => {
+      if (cat.parent_id !== null && categoryMap[cat.parent_id]) {
+        childrenMap[cat.parent_id].push(cat.id);
+      }
+    });
+
+    // Gán children IDs vào categoryMap
+    Object.keys(childrenMap).forEach(catId => {
+      categoryMap[catId].children = childrenMap[catId];
+    });
+
+    // Tính product_count cho tất cả categories (bao gồm children)
+    allCategories.forEach(cat => {
+      categoryMap[cat.id].product_count = getProductCountRecursive(cat.id, categoryMap);
+    });
+
+    // Build tree structure với children là objects (không phải IDs)
+    const tree = [];
+    allCategories.forEach(cat => {
+      const categoryNode = categoryMap[cat.id];
+      
+      if (cat.parent_id === null) {
+        // Main category (root)
+        tree.push({
+          id: categoryNode.id,
+          name: categoryNode.name,
+          parent_id: categoryNode.parent_id,
+          product_count: categoryNode.product_count,
+          children: categoryNode.children.map(childId => categoryMap[childId])
+        });
+      }
+    });
+
+    // Convert children IDs to objects recursively
+    const convertChildrenToObjects = (node) => {
+      if (node.children && node.children.length > 0) {
+        node.children = node.children.map(child => {
+          const childNode = typeof child === 'number' ? categoryMap[child] : child;
+          return {
+            id: childNode.id,
+            name: childNode.name,
+            parent_id: childNode.parent_id,
+            product_count: childNode.product_count,
+            children: childNode.children.map(grandchildId => {
+              const grandchild = categoryMap[grandchildId];
+              return {
+                id: grandchild.id,
+                name: grandchild.name,
+                parent_id: grandchild.parent_id,
+                product_count: grandchild.product_count,
+                children: [] // Level 3 không có children nữa
+              };
+            })
+          };
+        });
+      }
+      return node;
+    };
+
+    // Apply conversion
+    tree.forEach(node => convertChildrenToObjects(node));
+
+    return {
+      success: true,
+      data: tree,
+      meta: {
+        total_categories: allCategories.length,
+        main_categories: tree.length,
+        filters: {
+          only_active_products: onlyActiveProducts
+        }
+      }
+    };
+  } catch (error) {
+    console.error('Error getting category tree:', error);
+    return {
+      success: false,
+      status: 500,
+      error: 'Lỗi khi lấy cây phân cấp categories'
     };
   }
 };

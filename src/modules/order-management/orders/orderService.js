@@ -52,28 +52,30 @@ export const getAllOrders = async (filters = {}) => {
         },
         include: {
           customers: {
-            include: {
+            select: {
+              id: true,
               users: {
                 select: {
                   full_name: true,
-                  email: true,
                   phone: true
                 }
               }
             }
           },
           orderitems: {
-            include: {
+            select: {
+              id: true,
+              quantity: true,
+              unit_price: true,
+              total_price: true,
               products: {
                 select: {
                   id: true,
-                  name: true,
-                  image_url: true
+                  name: true
                 }
               },
               productunits: {
                 select: {
-                  id: true,
                   unit_name: true
                 }
               }
@@ -81,29 +83,27 @@ export const getAllOrders = async (filters = {}) => {
           },
           vouchers: {
             select: {
-              id: true,
               code: true,
-              discount_type: true,
               discount_value: true
             }
           },
-          shippingaddresses: true,
-          payments: {
+          shippingaddresses: {
             select: {
               id: true,
+              address: true,
+              city_id: true
+            }
+          },
+          payments: {
+            select: {
               payment_method: true,
-              amount: true,
-              status: true,
-              transaction_id: true,
-              payment_date: true
+              status: true
             }
           },
           shipments: {
             select: {
-              id: true,
               status: true,
-              tracking_number: true,
-              estimated_delivery: true
+              tracking_number: true
             }
           }
         }
@@ -137,7 +137,8 @@ export const getOrderById = async (orderId) => {
       where: { id: Number(orderId) },
       include: {
         customers: {
-          include: {
+          select: {
+            id: true,
             users: {
               select: {
                 full_name: true,
@@ -148,28 +149,80 @@ export const getOrderById = async (orderId) => {
           }
         },
         orderitems: {
-          include: {
-            products: true,
-            productunits: true
+          select: {
+            id: true,
+            quantity: true,
+            unit_price: true,
+            total_price: true,
+            products: {
+              select: {
+                id: true,
+                name: true,
+                image_url: true,
+                price: true
+              }
+            },
+            productunits: {
+              select: {
+                id: true,
+                unit_name: true,
+                conversion_factor: true
+              }
+            }
           }
         },
-        vouchers: true,
-        shippingaddresses: true,
-        payments: true,
+        vouchers: {
+          select: {
+            id: true,
+            code: true,
+            discount_type: true,
+            discount_value: true
+          }
+        },
+        shippingaddresses: {
+          select: {
+            id: true,
+            recipient_name: true,
+            phone: true,
+            address: true,
+            city_id: true
+          }
+        },
+        payments: {
+          select: {
+            id: true,
+            payment_method: true,
+            amount: true,
+            status: true,
+            transaction_id: true,
+            payment_date: true
+          }
+        },
         shipments: {
-          include: {
-            branches: true
+          select: {
+            id: true,
+            status: true,
+            tracking_number: true,
+            estimated_delivery: true,
+            branches: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
           }
         },
         order_status_history: {
           orderBy: {
             changed_at: 'desc'
           },
-          include: {
+          select: {
+            id: true,
+            old_status: true,
+            new_status: true,
+            changed_at: true,
             users: {
               select: {
-                id: true,
-                username: true,
                 full_name: true
               }
             }

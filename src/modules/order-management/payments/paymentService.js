@@ -50,26 +50,32 @@ export const getPaymentById = async (paymentId) => {
       where: { id: Number(paymentId) },
       include: {
         orders: {
-          include: {
+          select: {
+            id: true,
+            order_date: true,
+            total_amount: true,
+            final_amount: true,
+            status: true,
             customers: {
-              include: {
+              select: {
+                id: true,
                 users: {
                   select: {
-                    id: true,
                     full_name: true,
-                    email: true,
                     phone: true
                   }
                 }
               }
             },
             orderitems: {
-              include: {
+              select: {
+                id: true,
+                quantity: true,
+                unit_price: true,
                 products: {
                   select: {
                     id: true,
-                    name: true,
-                    price: true
+                    name: true
                   }
                 }
               }
