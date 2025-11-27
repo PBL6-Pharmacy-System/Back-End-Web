@@ -1,7 +1,7 @@
 import express from 'express';
-import * as flashsaleController from './flashsaleController.js';
 import { authenticateToken, authorizeAdmin } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
+import * as flashsaleController from './flashsaleController.js';
 
 const router = express.Router();
 

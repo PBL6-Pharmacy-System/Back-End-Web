@@ -99,7 +99,8 @@ export const checkout = async (data) => {
       customerId,
       voucherCode,
       shippingAddressId,
-      paymentMethod = 'cash'
+      paymentMethod = 'cash',
+      note
     } = data;
 
     // Map payment method aliases to database values
@@ -123,7 +124,7 @@ export const checkout = async (data) => {
     });
 
     // ✅ OPTIMIZED: Run parallel queries instead of sequential
-    const [customer, cart, address] = await Promise.all([
+    const [customer, cart, addressResult] = await Promise.all([
       // Validate customer - only select needed fields
       prisma.customers.findUnique({
         where: { id: customerId },
@@ -184,6 +185,7 @@ export const checkout = async (data) => {
       };
     }
 
+    let address = addressResult;
     if (!address) {
       // Try to get any address as fallback
       const fallbackAddress = await prisma.shippingaddresses.findFirst({
@@ -275,6 +277,7 @@ export const checkout = async (data) => {
           final_amount: finalAmount,
           voucher_id: voucherResult.voucher?.id,
           shipping_address_id: finalShippingAddressId,
+          note: note || null,
           order_date: new Date(),
           updated_at: new Date()
         },

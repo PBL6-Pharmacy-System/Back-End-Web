@@ -10,7 +10,6 @@ const router = express.Router();
 // Public routes - Không cần authentication
 router.get('/products', productController.getAllProducts);
 router.get('/products/search', searchLimiter, productController.searchProducts);
-router.get('/products/category/:categoryName', productController.getProductsByCategory);
 router.get('/products/best-sellers', bestSellersController.getBestSellers);
 router.get('/products/:id', validateId(), productController.getProductById);
 router.get('/products/:id/stats', validateId(), bestSellersController.getProductStats);

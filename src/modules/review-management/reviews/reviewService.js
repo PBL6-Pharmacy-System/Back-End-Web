@@ -147,8 +147,23 @@ export const getReviewById = async (id) => {
     const review = await prisma.reviews.findUnique({
       where: { id: Number(id) },
       include: {
-        customers: true,
-        products: true
+        customers: {
+          select: {
+            id: true,
+            users: {
+              select: {
+                full_name: true
+              }
+            }
+          }
+        },
+        products: {
+          select: {
+            id: true,
+            name: true,
+            image_url: true
+          }
+        }
       }
     });
 

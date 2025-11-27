@@ -147,6 +147,29 @@ export const cancelOrder = async (req, res, next) => {
 };
 
 /**
+ * Update order note
+ */
+export const updateOrderNote = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+
+    const result = await orderService.updateOrderNote(id, note);
+
+    if (!result.success) {
+      return res.status(result.status || 400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get order statistics (Admin)
  */
 export const getOrderStatistics = async (req, res, next) => {

@@ -22,7 +22,7 @@ export const getCustomerAddresses = async (customerId) => {
     const addresses = await prisma.shippingaddresses.findMany({
       where: {
         customer_id: Number(customerId)
-      },
+      }, 
       orderBy: [
         { is_default: 'desc' }, // Default address first
         { created_at: 'desc' }
@@ -80,6 +80,8 @@ export const getAddressById = async (addressId) => {
 export const createAddress = async (customerId, addressData) => {
   try {
     const {
+      recipient_name,
+      recipient_phone,
       address_line,
       city,
       state,
@@ -94,6 +96,15 @@ export const createAddress = async (customerId, addressData) => {
         success: false,
         status: 400,
         error: 'Địa chỉ và thành phố là bắt buộc'
+      };
+    }
+
+    // Validate recipient info
+    if (!recipient_name || !recipient_phone) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Tên và số điện thoại người nhận là bắt buộc'
       };
     }
 
@@ -134,6 +145,8 @@ export const createAddress = async (customerId, addressData) => {
     const address = await prisma.shippingaddresses.create({
       data: {
         customer_id: Number(customerId),
+        recipient_name,
+        recipient_phone,
         address_line,
         city,
         state,
@@ -161,6 +174,8 @@ export const createAddress = async (customerId, addressData) => {
 export const updateAddress = async (addressId, addressData) => {
   try {
     const {
+      recipient_name,
+      recipient_phone,
       address_line,
       city,
       state,
@@ -200,6 +215,8 @@ export const updateAddress = async (addressId, addressData) => {
     const updatedAddress = await prisma.shippingaddresses.update({
       where: { id: Number(addressId) },
       data: {
+        ...(recipient_name && { recipient_name }),
+        ...(recipient_phone && { recipient_phone }),
         ...(address_line && { address_line }),
         ...(city && { city }),
         ...(state !== undefined && { state }),

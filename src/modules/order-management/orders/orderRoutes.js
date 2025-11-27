@@ -1,7 +1,8 @@
 import express from 'express';
-import * as orderController from './orderController.js';
-import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
+import { orderStatusLimiter } from '../../../middlewares/rateLimit.middleware.js'; // ✅ Added
+import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
+import * as orderController from './orderController.js';
 import { orderStatusLimiter } from '../../../middlewares/rateLimit.middleware.js'; // ✅ Added
 
 const router = express.Router();
@@ -105,6 +106,19 @@ router.put(
   validateId(),
   orderStatusLimiter, // ✅ Added rate limiting
   orderController.updateOrderStatus
+);
+
+/**
+ * PUT /api/orders/:id/note
+ * Update order note (Admin/Staff only)
+ * Body: { note: string }
+ */
+router.put(
+  '/orders/:id/note',
+  authenticateToken,
+  authorizeRoles('admin', 'staff'),
+  validateId(),
+  orderController.updateOrderNote
 );
 
 /**

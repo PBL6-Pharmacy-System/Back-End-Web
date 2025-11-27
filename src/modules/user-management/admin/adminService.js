@@ -46,10 +46,7 @@ export const getAllAdmins = async ({ page = 1, limit = 10 }) => {
               email: true,
               phone: true,
               full_name: true,
-              avatar_url: true,
               is_active: true,
-              created_at: true,
-              last_login: true,
               roles: {
                 select: {
                   id: true,

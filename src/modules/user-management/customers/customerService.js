@@ -54,10 +54,8 @@ export const getAllCustomers = async ({ search, membership, status, page = 1, li
               email: true,
               phone: true,
               full_name: true,
-              avatar_url: true,
               is_active: true,
-              is_verified: true,
-              last_login: true
+              is_verified: true
             }
           },
           cities: {
@@ -65,13 +63,7 @@ export const getAllCustomers = async ({ search, membership, status, page = 1, li
               id: true,
               name: true
             }
-          },
-          orders: {
-            include: {
-              orderitems: true
-            }
-          },
-          reviews: true
+          }
         }
       }),
       prisma.customers.count({ where })

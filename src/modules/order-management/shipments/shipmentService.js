@@ -37,7 +37,9 @@ export const createShipment = async (shipmentData) => {
     const order = await prisma.orders.findUnique({
       where: { id: Number(orderId) },
       include: {
-        customers: true
+        customers: {
+          select: { id: true }
+        }
       }
     });
 

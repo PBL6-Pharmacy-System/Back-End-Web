@@ -52,28 +52,30 @@ export const getAllOrders = async (filters = {}) => {
         },
         include: {
           customers: {
-            include: {
+            select: {
+              id: true,
               users: {
                 select: {
                   full_name: true,
-                  email: true,
                   phone: true
                 }
               }
             }
           },
           orderitems: {
-            include: {
+            select: {
+              id: true,
+              quantity: true,
+              price: true,
+              subtotal: true,
               products: {
                 select: {
                   id: true,
-                  name: true,
-                  image_url: true
+                  name: true
                 }
               },
               productunits: {
                 select: {
-                  id: true,
                   unit_name: true
                 }
               }
@@ -81,13 +83,29 @@ export const getAllOrders = async (filters = {}) => {
           },
           vouchers: {
             select: {
-              id: true,
               code: true,
-              discount_type: true,
               discount_value: true
             }
           },
-          shippingaddresses: true
+          shippingaddresses: {
+            select: {
+              id: true,
+              address_line: true,
+              city_id: true
+            }
+          },
+          payments: {
+            select: {
+              payment_method: true,
+              status: true
+            }
+          },
+          shipments: {
+            select: {
+              status: true,
+              tracking_number: true
+            }
+          }
         }
       }),
       prisma.orders.count({ where })
@@ -119,7 +137,8 @@ export const getOrderById = async (orderId) => {
       where: { id: Number(orderId) },
       include: {
         customers: {
-          include: {
+          select: {
+            id: true,
             users: {
               select: {
                 full_name: true,
@@ -130,28 +149,83 @@ export const getOrderById = async (orderId) => {
           }
         },
         orderitems: {
-          include: {
-            products: true,
-            productunits: true
+          select: {
+            id: true,
+            quantity: true,
+            price: true,
+            subtotal: true,
+            products: {
+              select: {
+                id: true,
+                name: true,
+                image_url: true,
+                price: true
+              }
+            },
+            productunits: {
+              select: {
+                id: true,
+                unit_name: true,
+                conversion_factor: true
+              }
+            }
           }
         },
-        vouchers: true,
-        shippingaddresses: true,
-        payments: true,
+        vouchers: {
+          select: {
+            id: true,
+            code: true,
+            discount_type: true,
+            discount_value: true
+          }
+        },
+        shippingaddresses: {
+          select: {
+            id: true,
+            recipient_name: true,
+            recipient_phone: true,
+            address_line: true,
+            city: true,
+            state: true,
+            postal_code: true,
+            city_id: true
+          }
+        },
+        payments: {
+          select: {
+            id: true,
+            payment_method: true,
+            amount: true,
+            status: true,
+            transaction_id: true,
+            payment_date: true
+          }
+        },
         shipments: {
-          include: {
-            branches: true
+          select: {
+            id: true,
+            status: true,
+            tracking_number: true,
+            estimated_delivery: true,
+            branches: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
           }
         },
         order_status_history: {
           orderBy: {
             changed_at: 'desc'
           },
-          include: {
+          select: {
+            id: true,
+            status: true,
+            changed_at: true,
+            changed_by: true,
             users: {
               select: {
-                id: true,
-                username: true,
                 full_name: true
               }
             }
@@ -246,7 +320,18 @@ export const getCustomerOrders = async (customerId, filters = {}) => {
           vouchers: {
             select: {
               code: true,
-              discount_value: true
+              discount_value: true,
+              discount_type: true
+            }
+          },
+          payments: {
+            select: {
+              id: true,
+              payment_method: true,
+              amount: true,
+              status: true,
+              transaction_id: true,
+              payment_date: true
             }
           },
           shipments: {
@@ -448,6 +533,43 @@ export const cancelOrder = async (orderId, userId, reason = null) => {
       success: true,
       data: cancelledOrder,
       message: 'Đơn hàng đã được hủy thành công'
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Update order note
+ */
+export const updateOrderNote = async (orderId, note) => {
+  try {
+    // Check if order exists
+    const order = await prisma.orders.findUnique({
+      where: { id: Number(orderId) }
+    });
+
+    if (!order) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy đơn hàng'
+      };
+    }
+
+    // Update note
+    const updatedOrder = await prisma.orders.update({
+      where: { id: Number(orderId) },
+      data: {
+        note: note || null,
+        updated_at: new Date()
+      }
+    });
+
+    return {
+      success: true,
+      data: updatedOrder,
+      message: 'Cập nhật ghi chú đơn hàng thành công'
     };
   } catch (error) {
     throw error;

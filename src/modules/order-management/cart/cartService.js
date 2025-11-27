@@ -124,6 +124,12 @@ const getFlashsalePrice = async (productId) => {
         flashsale_products: {
           where: {
             product_id: productId
+          },
+          select: {
+            id: true,
+            flash_price: true,
+            stock_limit: true,
+            sold_count: true
           }
         }
       }
