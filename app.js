@@ -46,6 +46,7 @@ import cartRoutes from './src/modules/order-management/cart/cartRoutes.js';
 import orderRoutes from './src/modules/order-management/orders/orderRoutes.js';
 import momoRoutes from './src/modules/order-management/payments/gateways/momo/momoRoutes.js';
 import vnpayRoutes from './src/modules/order-management/payments/gateways/vnpay/vnpayRoutes.js';
+import paypalRoutes from './src/modules/order-management/payments/gateways/paypal/paypalRoutes.js';
 import paymentRoutes from './src/modules/order-management/payments/paymentRoutes.js';
 
 // Shipping Management
@@ -140,6 +141,7 @@ app.use('/api', orderRoutes);
 app.use('/api', paymentRoutes);
 app.use('/api/payments/vnpay', vnpayRoutes);
 app.use('/api/payments/momo', momoRoutes);
+app.use('/api/payments/paypal', paypalRoutes);
 
 // Shipping management
 app.use('/api/shipping', shippingFeeRoutes);

@@ -7,6 +7,7 @@ export const PAYMENT_METHODS = {
   BANK_TRANSFER: 'bank_transfer',
   VNPAY: 'vnpay',
   MOMO: 'momo',
+  PAYPAL: 'paypal',
   CREDIT_CARD: 'credit_card'
 };
 
