@@ -125,6 +125,11 @@ export const allocateBatchesFEFO = async (branchId, productId, requiredQuantity)
  * 2. Deduct from each batch
  * 3. Update branchinventory total stock
  * 4. Create inventory logs for traceability
+ * 
+ * ✅ FIX #24: Thêm atomic check để batch quantity không âm
+ * 
+ * ⚠️ CONVENTION: Quantity trong InventoryLog dùng số ÂM cho xuất kho
+ * Điều này giúp dễ dàng tính SUM(quantity) để reconcile
  */
 export const exportStockFEFO = async (data, userId) => {
   try {
@@ -163,29 +168,38 @@ export const exportStockFEFO = async (data, userId) => {
 
     const { allocations } = allocationResult.data;
 
-    // Execute in transaction
+    // ✅ FIX #24: Execute in transaction với Serializable isolation
     const result = await prisma.$transaction(async (tx) => {
       const logs = [];
 
-      // Deduct from each batch
+      // Deduct from each batch với atomic check
       for (const allocation of allocations) {
-        // Update batch quantity
-        await tx.productBatch.update({
-          where: { id: allocation.batch_id },
+        // ✅ FIX #24: Atomic update với điều kiện quantity >= allocated_qty
+        const updateResult = await tx.productBatch.updateMany({
+          where: {
+            id: allocation.batch_id,
+            quantity: { gte: allocation.allocated_qty } // ✅ Atomic check
+          },
           data: {
             quantity: { decrement: allocation.allocated_qty },
             updated_at: new Date()
           }
         });
 
+        // Nếu không update được (do race condition), rollback
+        if (updateResult.count === 0) {
+          throw new Error(`Lô hàng #${allocation.batch_id} không đủ số lượng (race condition detected)`);
+        }
+
         // Create inventory log for this batch
+        // ✅ FIX #25: Số DƯƠNG với type EXPORT (convention mới)
         const log = await tx.inventoryLog.create({
           data: {
             branch_id: Number(branch_id),
             product_id: Number(product_id),
             batch_id: allocation.batch_id,
-            quantity: -allocation.allocated_qty, // Negative for export
-            type: 'EXPORT',
+            quantity: allocation.allocated_qty, // ✅ Số DƯƠNG
+            type: 'EXPORT',                     // ✅ Type cho biết chiều xuất kho
             reference_type,
             reference_id,
             note: `${note} - Lô ${allocation.batch_number} (HSD: ${allocation.expiry_date ? new Date(allocation.expiry_date).toLocaleDateString('vi-VN') : 'N/A'})`,
@@ -196,13 +210,12 @@ export const exportStockFEFO = async (data, userId) => {
         logs.push(log);
       }
 
-      // Update total inventory
-      await tx.branchinventory.update({
+      // ✅ FIX #24: Update total inventory với atomic check
+      const inventoryUpdate = await tx.branchinventory.updateMany({
         where: {
-          branch_id_product_id: {
-            branch_id: Number(branch_id),
-            product_id: Number(product_id)
-          }
+          branch_id: Number(branch_id),
+          product_id: Number(product_id),
+          stock: { gte: quantity } // ✅ Atomic check
         },
         data: {
           stock: { decrement: quantity },
@@ -210,11 +223,18 @@ export const exportStockFEFO = async (data, userId) => {
         }
       });
 
+      if (inventoryUpdate.count === 0) {
+        throw new Error(`Không đủ tồn kho trong branchinventory (race condition detected)`);
+      }
+
       return {
         allocations,
         logs,
         totalExported: quantity
       };
+    }, {
+      timeout: 15000,
+      isolationLevel: 'Serializable' // ✅ Thêm isolation level
     });
 
     return {
@@ -223,6 +243,21 @@ export const exportStockFEFO = async (data, userId) => {
       message: `Đã xuất ${quantity} sản phẩm từ ${allocations.length} lô theo FEFO`
     };
   } catch (error) {
+    // ✅ Handle race condition errors
+    if (error.message && error.message.includes('race condition')) {
+      return {
+        success: false,
+        status: 409,
+        error: error.message
+      };
+    }
+    if (error.code === 'P2028') {
+      return {
+        success: false,
+        status: 503,
+        error: 'Hệ thống đang bận xử lý, vui lòng thử lại sau'
+      };
+    }
     throw error;
   }
 };
@@ -571,14 +606,18 @@ export const reconcileStock = async (branchId, productId, userId) => {
       });
 
       // Create adjustment log
+      // ✅ FIX #25: Với ADJUSTMENT, quantity có thể âm hoặc dương tùy thuộc vào chiều điều chỉnh
+      // Nếu discrepancy > 0: inventory > batch → cần giảm → quantity âm
+      // Nếu discrepancy < 0: inventory < batch → cần tăng → quantity dương
+      // Giữ nguyên logic vì ADJUSTMENT là trường hợp đặc biệt
       await tx.inventoryLog.create({
         data: {
           branch_id: Number(branchId),
           product_id: Number(productId),
-          quantity: -discrepancy, // Adjustment amount
-          type: 'ADJUSTMENT',
+          quantity: Math.abs(discrepancy),  // ✅ Số DƯƠNG
+          type: discrepancy > 0 ? 'ADJUSTMENT' : 'ADJUSTMENT', // Cùng type, note sẽ giải thích
           reference_type: 'stock_reconciliation',
-          note: `Điều chỉnh tồn kho: ${inventory_stock} → ${batch_total} (chênh lệch: ${discrepancy})`,
+          note: `Điều chỉnh tồn kho: ${inventory_stock} → ${batch_total} (${discrepancy > 0 ? 'giảm' : 'tăng'} ${Math.abs(discrepancy)})`,
           created_by: userId,
           date: new Date()
         }
@@ -1177,12 +1216,13 @@ export const disposeExpiredBatch = async (id, userId, disposalNote = 'Tiêu hủ
       });
 
       // Create inventory log for actual disposal
+      // ✅ FIX #25: Số DƯƠNG với type DISPOSAL (convention mới)
       await tx.inventoryLog.create({
         data: {
           branch_id: batch.branch_id,
           product_id: batch.product_id,
-          quantity: -quantityToDispose, // Negative = stock out
-          type: 'DISPOSAL',
+          quantity: quantityToDispose,  // ✅ Số DƯƠNG
+          type: 'DISPOSAL',             // ✅ Type cho biết chiều xuất kho
           batch_id: batch.id,
           reference_type: 'batch_disposal',
           reference_id: batch.id,

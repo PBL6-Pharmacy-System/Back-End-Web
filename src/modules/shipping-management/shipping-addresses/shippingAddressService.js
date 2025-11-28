@@ -257,6 +257,9 @@ export const updateAddress = async (addressId, addressData) => {
     }
 };
 
+/**
+ * ✅ FIX ISSUE #11: Thêm kiểm tra shipments khi xóa địa chỉ
+ */
 export const deleteAddress = async (addressId) => {
     try {
         const address = await prisma.shippingaddresses.findUnique({
@@ -281,6 +284,23 @@ export const deleteAddress = async (addressId) => {
                 status: 400,
                 error: 'Không thể xóa địa chỉ đang được sử dụng trong đơn hàng chưa hoàn thành',
                 activeOrders: ordersUsingAddress
+            };
+        }
+
+        // ✅ FIX ISSUE #11: Kiểm tra shipments cũng reference tới shipping_address_id
+        const shipmentsUsingAddress = await prisma.shipments.count({
+            where: {
+                shipping_address_id: Number(addressId),
+                status: { notIn: ['delivered', 'failed', 'returned'] }
+            }
+        });
+
+        if (shipmentsUsingAddress > 0) {
+            return {
+                success: false,
+                status: 400,
+                error: 'Không thể xóa địa chỉ đang được sử dụng trong vận chuyển chưa hoàn thành',
+                activeShipments: shipmentsUsingAddress
             };
         }
 

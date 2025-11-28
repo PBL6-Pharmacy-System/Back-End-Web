@@ -206,9 +206,11 @@ export const updatePaymentStatus = async (paymentId, status, userId = null) => {
 /**
  * Process COD payment (mark as completed when delivered)
  * ✅ FIX #7: Xóa đoạn update sold_count vì đã được xử lý trong orderService.updateOrderStatus()
+ * ✅ FIX #20: Thêm idempotency check mạnh trong transaction
  */
 export const processCODPayment = async (paymentId, userId = null) => {
   try {
+    // Initial validation outside transaction
     const payment = await prisma.payments.findUnique({
       where: { id: Number(paymentId) },
       include: {
@@ -240,14 +242,6 @@ export const processCODPayment = async (paymentId, userId = null) => {
       };
     }
 
-    if (payment.status === PAYMENT_STATUS.COMPLETED) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Thanh toán đã được xử lý'
-      };
-    }
-
     // Check if order is delivered
     if (payment.orders.status !== ORDER_STATUS.DELIVERED) {
       return {
@@ -257,8 +251,25 @@ export const processCODPayment = async (paymentId, userId = null) => {
       };
     }
 
-    // Process COD payment in transaction
-    await prisma.$transaction(async (tx) => {
+    // ✅ FIX #20: Process COD payment in transaction với idempotency check
+    const result = await prisma.$transaction(async (tx) => {
+      // Re-check payment status TRONG transaction để tránh race condition
+      const currentPayment = await tx.payments.findUnique({
+        where: { id: Number(paymentId) },
+        select: { id: true, status: true }
+      });
+
+      // Idempotency check: Nếu đã completed thì return success (không throw error)
+      if (currentPayment.status === PAYMENT_STATUS.COMPLETED) {
+        console.log(`[PaymentService] Payment #${paymentId} already completed, skipping (idempotent)`);
+        return { alreadyProcessed: true };
+      }
+
+      // Nếu đã cancelled hoặc refunded thì không cho process
+      if ([PAYMENT_STATUS.CANCELLED, PAYMENT_STATUS.REFUNDED].includes(currentPayment.status)) {
+        throw new Error(`Không thể xử lý thanh toán có trạng thái "${currentPayment.status}"`);
+      }
+
       // Update payment status
       await tx.payments.update({
         where: { id: Number(paymentId) },
@@ -274,30 +285,45 @@ export const processCODPayment = async (paymentId, userId = null) => {
         data: {
           payment_id: Number(paymentId),
           action: 'cod_confirmed',
-          old_status: payment.status,
+          old_status: currentPayment.status,
           new_status: PAYMENT_STATUS.COMPLETED,
           metadata: {
             confirmed_by: userId,
-            confirmed_at: new Date()
+            confirmed_at: new Date().toISOString(),
+            idempotency_check: true
           },
           created_by: userId,
           created_at: new Date()
         }
       });
 
-      // ✅ FIX #7: KHÔNG update sold_count ở đây
-      // sold_count đã được update trong orderService.updateOrderStatus() khi order chuyển sang DELIVERED
-      // Nếu update ở đây sẽ bị tăng 2 lần
-
-      // Note: Order status đã là DELIVERED nên không cần update lại
-      // Chỉ cần xác nhận payment đã hoàn thành
+      return { alreadyProcessed: false };
+    }, {
+      timeout: 10000 // 10 second timeout
     });
+
+    // Return appropriate message based on whether it was already processed
+    if (result.alreadyProcessed) {
+      return {
+        success: true,
+        message: 'Thanh toán COD đã được xác nhận trước đó',
+        data: { alreadyProcessed: true }
+      };
+    }
 
     return {
       success: true,
       message: 'Xác nhận thanh toán COD thành công'
     };
   } catch (error) {
+    // Handle specific errors
+    if (error.message?.includes('Không thể xử lý thanh toán')) {
+      return {
+        success: false,
+        status: 400,
+        error: error.message
+      };
+    }
     throw error;
   }
 };

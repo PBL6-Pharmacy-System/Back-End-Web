@@ -1,9 +1,11 @@
 import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
-import './src/jobs/cartExpirationJob.js';
+// Jobs - chỉ import những job cần thiết
 import './src/jobs/flashsaleJob.js';
 import { startPaymentExpirationJob } from './src/jobs/paymentExpirationJob.js';
+import { startReservationCleanupJob } from './src/jobs/reservationCleanupJob.js';
+import { startCartCleanupJob } from './src/jobs/cartCleanupJob.js';
 
 // Middlewares
 import { errorHandler, notFound } from './src/middlewares/errorHandler.middleware.js';
@@ -189,5 +191,12 @@ app.listen(PORT, () => {
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📡 API URL: http://localhost:${PORT}/api`);
 
+  // Start background jobs
   startPaymentExpirationJob();
+
+  // Start reservation cleanup job (mỗi 5 phút)
+  startReservationCleanupJob();
+
+  // Start cart cleanup job (chạy lúc 2:00 AM hàng ngày)
+  startCartCleanupJob();
 });

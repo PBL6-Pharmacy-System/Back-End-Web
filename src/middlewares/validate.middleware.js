@@ -137,7 +137,7 @@ export const sanitizeInput = (req, res, next) => {
 
 const sanitizeObject = (obj) => {
   const sanitized = {};
-  
+
   for (const [key, value] of Object.entries(obj)) {
     if (typeof value === 'string') {
       // Loại bỏ script tags và các ký tự nguy hiểm
@@ -153,3 +153,122 @@ const sanitizeObject = (obj) => {
 
   return sanitized;
 };
+
+// ===============================================
+// TEXT FIELD VALIDATORS
+// ===============================================
+
+/**
+ * Sanitize và validate text fields (note, reason, description, etc.)
+ * @param {Object} options - Validation options
+ * @param {string[]} options.fields - Field names to validate
+ * @param {number} options.maxLength - Maximum length (default: 1000)
+ * @param {number} options.minLength - Minimum length (default: 0)
+ * @param {boolean} options.required - Whether field is required (default: false)
+ */
+export const validateTextFields = (options = {}) => {
+  const {
+    fields = ['note', 'reason'],
+    maxLength = 1000,
+    minLength = 0,
+    required = false
+  } = options;
+
+  return (req, res, next) => {
+    for (const field of fields) {
+      const value = req.body[field];
+
+      // Check required
+      if (required && (value === undefined || value === null || value === '')) {
+        return res.status(400).json({
+          success: false,
+          error: `Trường "${field}" là bắt buộc`
+        });
+      }
+
+      // Skip if not provided and not required
+      if (value === undefined || value === null) {
+        continue;
+      }
+
+      // Must be string
+      if (typeof value !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: `Trường "${field}" phải là chuỗi ký tự`
+        });
+      }
+
+      // Trim and sanitize
+      const sanitized = sanitizeTextField(value);
+
+      // Check length
+      if (sanitized.length < minLength) {
+        return res.status(400).json({
+          success: false,
+          error: `Trường "${field}" phải có ít nhất ${minLength} ký tự`
+        });
+      }
+
+      if (sanitized.length > maxLength) {
+        return res.status(400).json({
+          success: false,
+          error: `Trường "${field}" không được vượt quá ${maxLength} ký tự`
+        });
+      }
+
+      // Update with sanitized value
+      req.body[field] = sanitized;
+    }
+
+    next();
+  };
+};
+
+/**
+ * Sanitize a single text field
+ * Removes dangerous characters while preserving Vietnamese text
+ */
+const sanitizeTextField = (text) => {
+  if (!text) return '';
+
+  return String(text)
+    .trim()
+    // Remove script tags
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    // Remove HTML tags but keep content
+    .replace(/<[^>]*>/g, '')
+    // Remove null bytes
+    .replace(/\0/g, '')
+    // Normalize whitespace (but keep single spaces and newlines)
+    .replace(/[\t\r]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/ {2,}/g, ' ');
+};
+
+/**
+ * Validate note field specifically (common use case)
+ */
+export const validateNote = validateTextFields({
+  fields: ['note'],
+  maxLength: 2000,
+  required: false
+});
+
+/**
+ * Validate reason field specifically (for cancel operations)
+ */
+export const validateReason = validateTextFields({
+  fields: ['reason'],
+  maxLength: 500,
+  required: false
+});
+
+/**
+ * Validate both note and reason
+ */
+export const validateNoteAndReason = validateTextFields({
+  fields: ['note', 'reason'],
+  maxLength: 1000,
+  required: false
+});

@@ -128,6 +128,60 @@ export const CART_LIMITS = {
   CART_EXPIRATION_DAYS: 30 // Cart expires after 30 days
 };
 
+// ✅ FIX ISSUE #10: Thêm constants cho InventoryLog types
+// ⚠️ CONVENTION MỚI: Quantity luôn DƯƠNG, Type cho biết hướng di chuyển
+// - IMPORT, RETURN, CANCEL_RETURN, TRANSFER_IN: Tăng stock
+// - EXPORT, OUT, TRANSFER_OUT, DAMAGE, DISPOSAL: Giảm stock
+export const INVENTORY_LOG_TYPE = {
+  IMPORT: 'IMPORT',           // Nhập kho từ NCC
+  EXPORT: 'EXPORT',           // Xuất kho (bán hàng) - thay thế cho OUT
+  OUT: 'OUT',                 // ⚠️ DEPRECATED: Dùng EXPORT thay thế
+  ADJUSTMENT: 'ADJUSTMENT',   // Điều chỉnh kiểm kê
+  TRANSFER_IN: 'TRANSFER_IN', // Chuyển kho vào
+  TRANSFER_OUT: 'TRANSFER_OUT', // Chuyển kho ra
+  RETURN: 'RETURN',           // Hoàn trả từ khách hàng (shipment returned)
+  CANCEL_RETURN: 'CANCEL_RETURN', // Hoàn kho do hủy đơn
+  STOCK_TAKE: 'STOCK_TAKE',   // Kiểm kê kho
+  DAMAGE: 'DAMAGE',           // Hàng hư hỏng
+  EXPIRED: 'EXPIRED',         // Đánh dấu hàng hết hạn (chưa xuất kho)
+  DISPOSAL: 'DISPOSAL'        // Tiêu hủy hàng hết hạn (xuất kho thực tế)
+};
+
+// Inventory log types that increase stock (nhập kho)
+export const INVENTORY_INCREASE_TYPES = [
+  INVENTORY_LOG_TYPE.IMPORT,
+  INVENTORY_LOG_TYPE.RETURN,
+  INVENTORY_LOG_TYPE.CANCEL_RETURN,
+  INVENTORY_LOG_TYPE.TRANSFER_IN
+];
+
+// Inventory log types that decrease stock (xuất kho)
+export const INVENTORY_DECREASE_TYPES = [
+  INVENTORY_LOG_TYPE.EXPORT,
+  INVENTORY_LOG_TYPE.OUT,
+  INVENTORY_LOG_TYPE.TRANSFER_OUT,
+  INVENTORY_LOG_TYPE.DAMAGE,
+  INVENTORY_LOG_TYPE.DISPOSAL
+];
+
+/**
+ * ✅ NEW: Helper để tính stock movement từ inventory log
+ * Convention: quantity luôn DƯƠNG, type quyết định chiều tăng/giảm
+ * @param {string} type - Loại inventory log
+ * @param {number} quantity - Số lượng (luôn dương)
+ * @returns {number} - Số dương nếu tăng stock, số âm nếu giảm stock
+ */
+export const calculateStockMovement = (type, quantity) => {
+  const absQuantity = Math.abs(quantity);
+  if (INVENTORY_INCREASE_TYPES.includes(type)) {
+    return absQuantity; // Tăng stock
+  }
+  if (INVENTORY_DECREASE_TYPES.includes(type)) {
+    return -absQuantity; // Giảm stock
+  }
+  return 0; // ADJUSTMENT, STOCK_TAKE, EXPIRED không tự động thay đổi stock
+};
+
 // HTTP Status Codes
 export const HTTP_STATUS = {
   OK: 200,

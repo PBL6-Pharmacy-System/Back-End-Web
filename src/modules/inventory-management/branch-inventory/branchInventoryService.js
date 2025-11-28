@@ -1692,3 +1692,278 @@ export const getStockStatisticsByBranch = async (branchId) => {
     throw error;
   }
 };
+
+/**
+ * ✅ FIX ISSUE #12: Get product stock với phân tách available_stock và total_stock
+ * - total_stock: Tổng tồn kho (bao gồm cả hàng expired)
+ * - available_stock: Tồn kho có thể bán (loại trừ hàng expired)
+ * - expired_stock: Hàng đã hết hạn (cần xử lý tiêu hủy)
+ * - reserved_stock: Hàng đang được giữ chỗ (inventoryReservation)
+ */
+export const getProductAvailableStock = async (productId, branchId = null) => {
+  try {
+    if (!productId) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Thiếu thông tin sản phẩm'
+      };
+    }
+
+    // Check if product exists
+    const product = await prisma.products.findUnique({
+      where: { id: Number(productId) },
+      include: {
+        unittype: true,
+        productunits: true
+      }
+    });
+
+    if (!product) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Sản phẩm không tồn tại'
+      };
+    }
+
+    const branchFilter = branchId ? { branch_id: Number(branchId) } : {};
+
+    // Get inventory from branchinventory
+    const inventories = await prisma.branchinventory.findMany({
+      where: {
+        product_id: Number(productId),
+        ...branchFilter
+      },
+      include: {
+        branches: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            city_id: true
+          }
+        }
+      }
+    });
+
+    // Get batch details for accurate stock calculation
+    const now = new Date();
+    const batches = await prisma.productBatch.findMany({
+      where: {
+        product_id: Number(productId),
+        ...branchFilter
+      }
+    });
+
+    // Get active reservations
+    const reservations = await prisma.inventoryReservation.findMany({
+      where: {
+        product_id: Number(productId),
+        status: 'active',
+        expires_at: { gt: now },
+        ...branchFilter
+      }
+    });
+
+    // Calculate stock breakdown per branch
+    const branchStockDetails = [];
+
+    for (const inventory of inventories) {
+      const branchBatches = batches.filter(b => b.branch_id === inventory.branch_id);
+      const branchReservations = reservations.filter(r => r.branch_id === inventory.branch_id);
+
+      // Calculate from batches
+      let activeStock = 0;
+      let expiredStock = 0;
+
+      for (const batch of branchBatches) {
+        if (batch.status === 'expired' || (batch.expiry_date && batch.expiry_date < now)) {
+          expiredStock += batch.quantity;
+        } else if (batch.status === 'active') {
+          activeStock += batch.quantity;
+        }
+        // 'disposed' batches không tính vì đã xuất kho
+      }
+
+      // Calculate reserved quantity
+      const reservedStock = branchReservations.reduce((sum, r) => sum + r.quantity, 0);
+
+      // If no batches, use inventory stock as active stock
+      const totalFromBatches = activeStock + expiredStock;
+      if (totalFromBatches === 0 && inventory.stock > 0) {
+        activeStock = inventory.stock; // Fallback khi không có batch tracking
+      }
+
+      // Available = Active - Reserved
+      const availableStock = Math.max(0, activeStock - reservedStock);
+
+      branchStockDetails.push({
+        branch_id: inventory.branch_id,
+        branch_name: inventory.branches.name,
+        branch_address: inventory.branches.address,
+        city_id: inventory.branches.city_id,
+
+        // Stock breakdown
+        total_stock: inventory.stock || 0,           // Từ branchinventory
+        active_stock: activeStock,                    // Hàng active từ batches
+        expired_stock: expiredStock,                  // Hàng expired (chưa tiêu hủy)
+        reserved_stock: reservedStock,                // Đang được giữ chỗ
+        available_stock: availableStock,              // Có thể bán ngay
+
+        // Status flags
+        in_stock: availableStock > 0,
+        has_expired: expiredStock > 0,
+        has_reservations: reservedStock > 0,
+
+        // Additional info
+        min_stock: inventory.min_stock,
+        max_stock: inventory.max_stock,
+        last_updated: inventory.last_updated
+      });
+    }
+
+    // Calculate totals across all branches
+    const totals = branchStockDetails.reduce((acc, b) => ({
+      total_stock: acc.total_stock + b.total_stock,
+      active_stock: acc.active_stock + b.active_stock,
+      expired_stock: acc.expired_stock + b.expired_stock,
+      reserved_stock: acc.reserved_stock + b.reserved_stock,
+      available_stock: acc.available_stock + b.available_stock
+    }), {
+      total_stock: 0,
+      active_stock: 0,
+      expired_stock: 0,
+      reserved_stock: 0,
+      available_stock: 0
+    });
+
+    return {
+      success: true,
+      data: {
+        product_id: product.id,
+        product_name: product.name,
+        unit_type: product.unittype?.name,
+
+        // Aggregated stock info
+        ...totals,
+
+        // Status
+        in_stock: totals.available_stock > 0,
+        has_expired_items: totals.expired_stock > 0,
+
+        // Warning messages
+        warnings: [
+          ...(totals.expired_stock > 0 ? [`⚠️ Có ${totals.expired_stock} sản phẩm hết hạn cần xử lý tiêu hủy`] : []),
+          ...(totals.reserved_stock > 0 ? [`ℹ️ Có ${totals.reserved_stock} sản phẩm đang được giữ chỗ`] : [])
+        ],
+
+        // Branch details
+        branch_count: branchStockDetails.length,
+        branches: branchStockDetails
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * ✅ FIX ISSUE #12: Get available stock cho nhiều sản phẩm (batch query)
+ * Optimized cho catalog/product listing
+ */
+export const getMultipleProductsAvailableStock = async (productIds, branchId = null) => {
+  try {
+    if (!productIds || productIds.length === 0) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Thiếu danh sách sản phẩm'
+      };
+    }
+
+    const now = new Date();
+    const branchFilter = branchId ? { branch_id: Number(branchId) } : {};
+
+    // Batch query inventories
+    const inventories = await prisma.branchinventory.findMany({
+      where: {
+        product_id: { in: productIds.map(Number) },
+        ...branchFilter
+      }
+    });
+
+    // Batch query batches
+    const batches = await prisma.productBatch.findMany({
+      where: {
+        product_id: { in: productIds.map(Number) },
+        ...branchFilter
+      }
+    });
+
+    // Batch query reservations
+    const reservations = await prisma.inventoryReservation.findMany({
+      where: {
+        product_id: { in: productIds.map(Number) },
+        status: 'active',
+        expires_at: { gt: now },
+        ...branchFilter
+      }
+    });
+
+    // Group by product
+    const result = {};
+
+    for (const productId of productIds) {
+      const pid = Number(productId);
+      const productInventories = inventories.filter(i => i.product_id === pid);
+      const productBatches = batches.filter(b => b.product_id === pid);
+      const productReservations = reservations.filter(r => r.product_id === pid);
+
+      // Calculate totals
+      let totalStock = 0;
+      let activeStock = 0;
+      let expiredStock = 0;
+
+      // From inventory
+      totalStock = productInventories.reduce((sum, inv) => sum + (inv.stock || 0), 0);
+
+      // From batches
+      for (const batch of productBatches) {
+        if (batch.status === 'expired' || (batch.expiry_date && batch.expiry_date < now)) {
+          expiredStock += batch.quantity;
+        } else if (batch.status === 'active') {
+          activeStock += batch.quantity;
+        }
+      }
+
+      // If no batches, use inventory stock
+      if (productBatches.length === 0) {
+        activeStock = totalStock;
+      }
+
+      // Reserved
+      const reservedStock = productReservations.reduce((sum, r) => sum + r.quantity, 0);
+
+      // Available
+      const availableStock = Math.max(0, activeStock - reservedStock);
+
+      result[pid] = {
+        product_id: pid,
+        total_stock: totalStock,
+        available_stock: availableStock,
+        expired_stock: expiredStock,
+        reserved_stock: reservedStock,
+        in_stock: availableStock > 0,
+        has_expired: expiredStock > 0
+      };
+    }
+
+    return {
+      success: true,
+      data: result
+    };
+  } catch (error) {
+    throw error;
+  }
+};

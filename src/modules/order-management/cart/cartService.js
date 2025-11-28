@@ -1,7 +1,8 @@
 import prisma from '../../../config/db.js';
 import { findOptimalBranchesForOrder, getCustomerLocation } from '../../../utils/branchSelection.js';
-import { CART_LIMITS, ORDER_STATUS } from '../../../utils/constants.js';
+import { CART_LIMITS, ORDER_STATUS, INVENTORY_LOG_TYPE } from '../../../utils/constants.js';
 import { validateNumericFields } from '../../../utils/validation.js';
+import { allocateBatchesFEFO } from '../../inventory-management/product-batch/productBatchService.js';
 
 const validateOrderItem = (item) => {
   // Required fields
@@ -17,7 +18,7 @@ const validateOrderItem = (item) => {
   if (item.unitPrice !== undefined && item.unitPrice !== null) {
     numericFields.push('unitPrice');
   }
-  
+
   const invalidNumbers = validateNumericFields(item, numericFields);
   if (invalidNumbers.length > 0) {
     return {
@@ -113,7 +114,7 @@ const validateStockAvailability = async (items) => {
 const getFlashsalePrice = async (productId, quantity = null) => {
   try {
     const now = new Date();
-    
+
     // Tìm flashsale đang active
     const flashsale = await prisma.flashsales.findFirst({
       where: {
@@ -142,7 +143,7 @@ const getFlashsalePrice = async (productId, quantity = null) => {
     }
 
     const flashsaleProduct = flashsale.flashsale_products[0];
-    
+
     // Kiểm tra còn hàng flashsale không
     if (flashsaleProduct.sold_count >= flashsaleProduct.stock_limit) {
       return null;
@@ -175,19 +176,19 @@ const calculateOrderTotals = async (items) => {
 
   for (const item of items) {
     const { quantity, unitPrice, productId } = item;
-    
+
     // Kiểm tra giá flashsale (không update sold_count)
     const flashsaleProduct = await getFlashsalePrice(productId, quantity);
-    
+
     if (flashsaleProduct) {
       // Tính giá với flashsale
       const flashPrice = Number(flashsaleProduct.flash_price);
       const regularPrice = quantity * unitPrice;
       const flashsalePrice = quantity * flashPrice;
-      
+
       subtotal += flashsalePrice;
       totalDiscount += (regularPrice - flashsalePrice);
-      
+
       // Lưu lại để update trong transaction sau
       flashsaleItems.push({
         flashsaleProductId: flashsaleProduct.id,
@@ -197,7 +198,7 @@ const calculateOrderTotals = async (items) => {
       // Tính giá bình thường
       subtotal += quantity * unitPrice;
     }
-    
+
     totalQuantity += quantity;
   }
 
@@ -237,6 +238,107 @@ const updateFlashsaleSoldCountInTransaction = async (tx, flashsaleItems) => {
       }
     });
   }
+};
+
+/**
+ * ✅ FIX ISSUE #3 & #4: Thời gian hết hạn reservation (sync với checkoutService)
+ */
+const RESERVATION_EXPIRY_MINUTES = 15;
+
+/**
+ * ✅ FIX ISSUE #3: Tạo inventory reservation để giữ chỗ tạm thời
+ * Đồng bộ logic với checkoutService.js
+ */
+const createInventoryReservations = async (tx, orderId, branchId, items) => {
+  const reservations = [];
+  const expiresAt = new Date(Date.now() + RESERVATION_EXPIRY_MINUTES * 60 * 1000);
+
+  for (const item of items) {
+    const conversionFactor = Number(item.conversionFactor || item.productunits?.conversion_factor || 1);
+    const baseQuantityNeeded = item.quantity * conversionFactor;
+    const productId = item.productId || item.product_id;
+
+    // Kiểm tra tồn kho
+    const inventory = await tx.branchinventory.findUnique({
+      where: {
+        branch_id_product_id: {
+          branch_id: branchId,
+          product_id: productId
+        }
+      }
+    });
+
+    if (!inventory) {
+      throw new Error(`Sản phẩm không có trong kho chi nhánh`);
+    }
+
+    // Tính số lượng đã được reserve bởi các đơn hàng khác
+    const existingReservations = await tx.inventoryReservation.aggregate({
+      where: {
+        branch_id: branchId,
+        product_id: productId,
+        status: 'active',
+        expires_at: { gt: new Date() }
+      },
+      _sum: { quantity: true }
+    });
+
+    const reservedQty = existingReservations._sum.quantity || 0;
+    const availableStock = inventory.stock - reservedQty;
+
+    if (availableStock < baseQuantityNeeded) {
+      const productName = item.products?.name || `ID ${productId}`;
+      throw new Error(`Sản phẩm "${productName}" không đủ số lượng trong kho (cần ${baseQuantityNeeded}, còn ${availableStock})`);
+    }
+
+    // Tạo reservation
+    const reservation = await tx.inventoryReservation.create({
+      data: {
+        branch_id: branchId,
+        product_id: productId,
+        order_id: orderId,
+        quantity: baseQuantityNeeded,
+        status: 'active',
+        expires_at: expiresAt,
+        created_at: new Date(),
+        updated_at: new Date()
+      }
+    });
+
+    reservations.push(reservation);
+  }
+
+  return reservations;
+};
+
+/**
+ * ✅ FIX ISSUE #3: Hoàn tất reservation
+ */
+const completeReservations = async (tx, orderId) => {
+  await tx.inventoryReservation.updateMany({
+    where: { order_id: orderId, status: 'active' },
+    data: { status: 'completed', updated_at: new Date() }
+  });
+};
+
+/**
+ * ✅ FIX ISSUE #3: Hủy reservation
+ */
+const cancelReservations = async (tx, orderId) => {
+  await tx.inventoryReservation.updateMany({
+    where: { order_id: orderId, status: 'active' },
+    data: { status: 'cancelled', updated_at: new Date() }
+  });
+};
+
+/**
+ * Generate tracking number (sync với checkoutService)
+ */
+const generateTrackingNumber = () => {
+  const prefix = 'VN';
+  const timestamp = Date.now().toString().slice(-8);
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${prefix}${timestamp}${random}`;
 };
 
 export const getCart = async (customerId) => {
@@ -529,7 +631,7 @@ export const addToCart = async (customerId, orderData) => {
       if (existingCartItem) {
         // Update existing item
         const newQuantity = existingCartItem.quantity + Number(quantity);
-        
+
         item = await tx.orderitems.update({
           where: { id: existingCartItem.id },
           data: {
@@ -638,7 +740,7 @@ export const updateCartItem = async (itemId, quantity) => {
     // Check stock availability from branch inventory
     const conversionFactor = Number(currentItem.productunits.conversion_factor);
     const baseQuantityNeeded = Number(quantity) * conversionFactor;
-    
+
     // Check if product is available in any branch
     const availableBranch = await prisma.branchinventory.findFirst({
       where: {
@@ -784,7 +886,17 @@ export const removeCartItem = async (customerId, itemId) => {
   }
 };
 
-export const checkout = async (orderId, shippingAddressId = null) => {
+/**
+ * ✅ FIX ISSUE #14, #15, #16, #17: Checkout đã được đồng bộ với checkoutService
+ * - Tạo payment record
+ * - Sử dụng inventoryReservation
+ * - Dùng đúng INVENTORY_LOG_TYPE
+ * - Tạo shipment với branch_id
+ * 
+ * ⚠️ KHUYẾN NGHỊ: Sử dụng checkoutService.checkout() thay vì hàm này
+ * Hàm này được giữ lại cho backward compatibility
+ */
+export const checkout = async (orderId, shippingAddressId = null, paymentMethod = 'COD') => {
   try {
     // Get current order
     const order = await prisma.orders.findUnique({
@@ -808,77 +920,45 @@ export const checkout = async (orderId, shippingAddressId = null) => {
     });
 
     if (!order) {
-      return {
-        success: false,
-        status: 404,
-        error: 'Không tìm thấy đơn hàng'
-      };
+      return { success: false, status: 404, error: 'Không tìm thấy đơn hàng' };
     }
 
     if (order.status !== ORDER_STATUS.CART) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Đơn hàng đã được xử lý'
-      };
+      return { success: false, status: 400, error: 'Đơn hàng đã được xử lý' };
     }
 
     if (order.orderitems.length === 0) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Giỏ hàng trống'
-      };
+      return { success: false, status: 400, error: 'Giỏ hàng trống' };
     }
 
-    // ✅ FIX: Xác định shipping_address_id
+    // Xác định shipping_address_id
     let finalShippingAddressId = shippingAddressId;
-    
-    // Nếu không truyền vào, lấy địa chỉ mặc định của customer
+
     if (!finalShippingAddressId) {
       if (order.customers?.shippingaddresses?.length > 0) {
         finalShippingAddressId = order.customers.shippingaddresses[0].id;
       } else {
-        // Tìm địa chỉ bất kỳ của customer
         const anyAddress = await prisma.shippingaddresses.findFirst({
           where: { customer_id: order.customer_id },
           orderBy: { created_at: 'desc' }
         });
-        
         if (anyAddress) {
           finalShippingAddressId = anyAddress.id;
         }
       }
     }
 
-    // Validate shipping address
     if (!finalShippingAddressId) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Vui lòng thêm địa chỉ giao hàng trước khi đặt hàng'
-      };
+      return { success: false, status: 400, error: 'Vui lòng thêm địa chỉ giao hàng trước khi đặt hàng' };
     }
 
-    // Verify shipping address exists and belongs to customer
+    // Verify shipping address
     const shippingAddress = await prisma.shippingaddresses.findUnique({
       where: { id: Number(finalShippingAddressId) }
     });
 
-    if (!shippingAddress) {
-      return {
-        success: false,
-        status: 404,
-        error: 'Địa chỉ giao hàng không tồn tại'
-      };
-    }
-
-    if (shippingAddress.customer_id !== order.customer_id) {
-      return {
-        success: false,
-        status: 403,
-        error: 'Địa chỉ giao hàng không thuộc về khách hàng này'
-      };
+    if (!shippingAddress || shippingAddress.customer_id !== order.customer_id) {
+      return { success: false, status: 403, error: 'Địa chỉ giao hàng không hợp lệ' };
     }
 
     // Get customer location for branch selection
@@ -891,19 +971,19 @@ export const checkout = async (orderId, shippingAddressId = null) => {
       conversionFactor: Number(item.productunits.conversion_factor)
     }));
 
-    // Find optimal branches to fulfill the order
+    // Find optimal branches
     let branchAllocation;
     try {
       branchAllocation = await findOptimalBranchesForOrder(orderItemsForBranch, customerLocation);
     } catch (error) {
-      return {
-        success: false,
-        status: 400,
-        error: error.message
-      };
+      return { success: false, status: 400, error: error.message };
     }
 
-    // ✅ FIX: Kiểm tra và chuẩn bị flashsale items để update sold_count
+    if (!branchAllocation.branches || branchAllocation.branches.length === 0) {
+      return { success: false, status: 400, error: 'Không tìm thấy chi nhánh có đủ hàng' };
+    }
+
+    // Kiểm tra flashsale items
     const flashsaleItems = [];
     for (const item of order.orderitems) {
       const flashsaleProduct = await getFlashsalePrice(item.product_id, item.quantity);
@@ -915,15 +995,17 @@ export const checkout = async (orderId, shippingAddressId = null) => {
       }
     }
 
-    // Process checkout in transaction
+    // Calculate totals
+    const totalAmount = order.orderitems.reduce((sum, item) => sum + Number(item.subtotal), 0);
+
+    // ✅ FIX #14, #15, #16, #17: Transaction với đầy đủ logic
     const result = await prisma.$transaction(async (tx) => {
-      // ✅ FIX: Update flashsale sold_count TRƯỚC KHI update order
-      // Để đảm bảo race condition được handle đúng
+      // Update flashsale sold_count
       if (flashsaleItems.length > 0) {
         await updateFlashsaleSoldCountInTransaction(tx, flashsaleItems);
       }
 
-      // Update order status and shipping address
+      // Update order status
       const updatedOrder = await tx.orders.update({
         where: { id: Number(orderId) },
         data: {
@@ -932,51 +1014,74 @@ export const checkout = async (orderId, shippingAddressId = null) => {
           updated_at: new Date()
         },
         include: {
-          orderitems: {
-            include: {
-              products: true,
-              productunits: true
-            }
-          },
+          orderitems: { include: { products: true, productunits: true } },
           customers: true,
           shippingaddresses: true
         }
       });
 
-      // Reserve inventory from allocated branches
+      // ✅ FIX #14: Tạo payment record
+      const payment = await tx.payments.create({
+        data: {
+          order_id: updatedOrder.id,
+          payment_method: paymentMethod,
+          amount: totalAmount,
+          status: 'pending',
+          transaction_id: `TXN-${Date.now()}-${updatedOrder.id}`
+        }
+      });
+
+      // Process each branch allocation
       for (const branchAlloc of branchAllocation.branches) {
+        // ✅ FIX #15: Tạo inventory reservations trước
+        const itemsForReservation = branchAlloc.items.map(item => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          conversionFactor: item.conversionFactor
+        }));
+
+        try {
+          await createInventoryReservations(tx, orderId, branchAlloc.branch.id, itemsForReservation);
+        } catch (reservationError) {
+          throw new Error(`Không đủ hàng tại chi nhánh ${branchAlloc.branch.name}: ${reservationError.message}`);
+        }
+
+        // Deduct inventory
         for (const item of branchAlloc.items) {
           const requiredQty = Number(item.quantity) * Number(item.conversionFactor);
-          
-          await tx.branchinventory.update({
+
+          // ✅ Atomic update với check
+          const updated = await tx.branchinventory.updateMany({
             where: {
-              branch_id_product_id: {
-                branch_id: branchAlloc.branch.id,
-                product_id: Number(item.productId)
-              }
+              branch_id: branchAlloc.branch.id,
+              product_id: Number(item.productId),
+              stock: { gte: requiredQty }
             },
             data: {
-              stock: {
-                decrement: requiredQty
-              }
+              stock: { decrement: requiredQty },
+              last_updated: new Date()
             }
           });
 
-          // Log inventory decrease
+          if (updated.count === 0) {
+            throw new Error(`Sản phẩm không đủ số lượng trong kho`);
+          }
+
+          // ✅ FIX #25: Dùng quantity DƯƠNG với type EXPORT (convention mới)
           const inventoryLogEntry = await tx.inventoryLog.create({
             data: {
               branch_id: branchAlloc.branch.id,
               product_id: Number(item.productId),
-              quantity: -requiredQty,
-              type: 'sale',
-              note: 'Checkout order',
+              quantity: requiredQty,              // ✅ Số DƯƠNG
+              type: INVENTORY_LOG_TYPE.EXPORT,    // ✅ Type cho biết chiều xuất kho
+              note: `Checkout order #${orderId}`,
               reference_id: orderId,
               reference_type: 'order',
-              created_by: order.customer_id
+              created_by: order.customer_id,
+              date: new Date()
             }
           });
 
-          // Create junction table entry
           await tx.inventoryLog_Order.create({
             data: {
               inventory_log_id: inventoryLogEntry.id,
@@ -985,18 +1090,21 @@ export const checkout = async (orderId, shippingAddressId = null) => {
           });
         }
 
-        // Create shipment record with shipping_address_id
+        // ✅ FIX #17: Tạo shipment với branch_id
         await tx.shipments.create({
           data: {
             order_id: updatedOrder.id,
             branch_id: branchAlloc.branch.id,
             shipping_address_id: Number(finalShippingAddressId),
-            tracking_number: `SHIP-${Date.now()}-${branchAlloc.branch.id}`,
+            tracking_number: generateTrackingNumber(),
             status: 'pending',
             shipped_date: null,
-            estimated_delivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+            estimated_delivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
           }
         });
+
+        // Complete reservations for this branch
+        await completeReservations(tx, orderId);
       }
 
       // Create order status history
@@ -1008,16 +1116,21 @@ export const checkout = async (orderId, shippingAddressId = null) => {
         }
       });
 
-      return {
-        order: updatedOrder,
-        branchAllocation
-      };
+      return { order: updatedOrder, payment, branchAllocation };
+    }, {
+      timeout: 30000,
+      isolationLevel: 'Serializable'  // ✅ FIX #15: Serializable isolation
     });
 
     return {
       success: true,
       data: {
         ...result.order,
+        payment: {
+          id: result.payment.id,
+          method: result.payment.payment_method,
+          status: result.payment.status
+        },
         fulfillment: {
           strategy: result.branchAllocation.strategy,
           branches: result.branchAllocation.branches.map(b => ({
@@ -1030,6 +1143,16 @@ export const checkout = async (orderId, shippingAddressId = null) => {
       }
     };
   } catch (error) {
+    console.error('Checkout error:', error);
+
+    if (error.message?.includes('không đủ')) {
+      return { success: false, error: error.message, status: 400 };
+    }
+
+    if (error.code === 'P2028') {
+      return { success: false, error: 'Hệ thống đang bận, vui lòng thử lại', status: 503 };
+    }
+
     throw error;
   }
 };
@@ -1100,10 +1223,10 @@ export const createOrder = async (customerId, orderData) => {
         const productUnit = await tx.productunits.findUnique({
           where: { id: Number(item.productUnitId) }
         });
-        
+
         const conversionFactor = Number(productUnit.conversion_factor);
         const baseQuantity = Number(item.quantity) * conversionFactor;
-        
+
         await tx.branchinventory.update({
           where: {
             branch_id_product_id: {
@@ -1574,7 +1697,7 @@ export const validateCartBeforeCheckout = async (customerId) => {
       // Check stock availability from branch inventory
       const conversionFactor = Number(item.productunits.conversion_factor);
       const baseQuantityNeeded = item.quantity * conversionFactor;
-      
+
       const availableBranch = await prisma.branchinventory.findFirst({
         where: {
           product_id: item.product_id,

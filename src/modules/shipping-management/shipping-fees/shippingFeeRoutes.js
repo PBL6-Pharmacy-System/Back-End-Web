@@ -10,20 +10,36 @@ import express from 'express';
 import * as shippingFeeController from './shippingFeeController.js';
 import { authenticateToken, authorizeAdmin } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
+import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
+
+// ===============================================
+// RATE LIMITERS - Chống abuse public endpoints
+// ===============================================
+const geocodeLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 phút
+    max: 10, // 10 requests/phút
+    message: { success: false, error: 'Quá nhiều yêu cầu, vui lòng thử lại sau 1 phút' }
+});
+
+const calculateLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 30, // 30 requests/phút
+    message: { success: false, error: 'Quá nhiều yêu cầu, vui lòng thử lại sau 1 phút' }
+});
 
 // ===============================================
 // PUBLIC ROUTES - Tính phí ship & Location
 // ===============================================
 
 router.get('/zones', shippingFeeController.getShippingZones);
-router.get('/calculate', shippingFeeController.calculateFee);
+router.get('/calculate', calculateLimiter, shippingFeeController.calculateFee);
 
-// GraphHopper API endpoints - Geocoding & Distance
-router.post('/geocode', shippingFeeController.geocodeAddress);
-router.post('/reverse-geocode', shippingFeeController.reverseGeocode);
-router.post('/distance', shippingFeeController.calculateDistance);
+// GraphHopper API endpoints - Geocoding & Distance (với rate limit)
+router.post('/geocode', geocodeLimiter, shippingFeeController.geocodeAddress);
+router.post('/reverse-geocode', geocodeLimiter, shippingFeeController.reverseGeocode);
+router.post('/distance', calculateLimiter, shippingFeeController.calculateDistance);
 
 // ===============================================
 // AUTHENTICATED ROUTES - Ước tính phí ship

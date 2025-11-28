@@ -42,7 +42,7 @@ router.delete('/staff/:id',
 router.get('/branches/:branchId/staff',
   authenticateToken,
   authorizeRoles('admin'),
-  validateId(),
+  validateId('branchId'), // ✅ Fixed: specify param name
   staffController.getStaffByBranch
 );
 

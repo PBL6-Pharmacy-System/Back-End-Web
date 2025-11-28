@@ -405,6 +405,7 @@ export const shipTransfer = async (id, userId, trackingNumber) => {
       });
 
       // Create inventory log for export
+      // ✅ FIX #25: Số DƯƠNG với type TRANSFER_OUT (convention mới)
       const batchInfo = allocations.length > 0
         ? ` [FEFO: ${allocations.map(a => `${a.batch_number}(${a.allocated_qty})`).join(', ')}]`
         : '';
@@ -413,8 +414,8 @@ export const shipTransfer = async (id, userId, trackingNumber) => {
         data: {
           branch_id: transfer.from_branch_id,
           product_id: transfer.product_id,
-          quantity: -transfer.quantity,
-          type: 'TRANSFER_OUT',
+          quantity: transfer.quantity,           // ✅ Số DƯƠNG
+          type: 'TRANSFER_OUT',                  // ✅ Type cho biết chiều xuất kho
           reference_type: 'transfer',
           reference_id: transfer.id,
           batch_id: allocations.length === 1 ? allocations[0].batch_id : null,

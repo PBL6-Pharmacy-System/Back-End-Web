@@ -2,6 +2,7 @@ import express from 'express';
 import { validateId } from '../../../middlewares/validate.middleware.js';
 import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
 import * as paymentController from './paymentController.js';
+import prisma from '../../../config/db.js';
 
 const router = express.Router();
 
@@ -9,16 +10,47 @@ const router = express.Router();
  * ✅ Middleware to validate payment ownership
  * Admin/Staff: Access all payments
  * Customer: Access only their own payments (via order ownership)
- * Note: Actual ownership check will be in controller
  */
-const validatePaymentOwnership = (req, res, next) => {
-  // Admin và Staff có quyền truy cập tất cả
-  if (req.user.role_name === 'admin' || req.user.role_name === 'staff') {
-    return next();
-  }
+const validatePaymentOwnership = async (req, res, next) => {
+  try {
+    // Admin và Staff có quyền truy cập tất cả
+    if (req.user.role_name === 'admin' || req.user.role_name === 'staff') {
+      return next();
+    }
 
-  // Customer: Controller sẽ kiểm tra payment.order.customer_id === req.user.customer_id
-  next();
+    // Customer: Kiểm tra payment thuộc về order của họ
+    const paymentId = req.params.id;
+    const payment = await prisma.payments.findUnique({
+      where: { id: Number(paymentId) },
+      select: {
+        orders: {
+          select: { customer_id: true }
+        }
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        error: 'Không tìm thấy thông tin thanh toán'
+      });
+    }
+
+    if (payment.orders?.customer_id !== req.user.customer_id) {
+      return res.status(403).json({
+        success: false,
+        error: 'Bạn không có quyền xem thông tin thanh toán này'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Error in validatePaymentOwnership:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Lỗi kiểm tra quyền truy cập'
+    });
+  }
 };
 
 /**

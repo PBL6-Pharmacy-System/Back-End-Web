@@ -2,6 +2,29 @@ import prisma from '../../../config/db.js';
 import { ORDER_STATUS } from '../../../utils/constants.js';
 
 /**
+ * ✅ FIX #20: Valid order status transitions (State Machine)
+ */
+const VALID_ORDER_TRANSITIONS = {
+  [ORDER_STATUS.PENDING]: [ORDER_STATUS.CONFIRMED, ORDER_STATUS.CANCELLED],
+  [ORDER_STATUS.CONFIRMED]: [ORDER_STATUS.PROCESSING, ORDER_STATUS.CANCELLED],
+  [ORDER_STATUS.PROCESSING]: [ORDER_STATUS.SHIPPING, ORDER_STATUS.CANCELLED],
+  [ORDER_STATUS.SHIPPING]: [ORDER_STATUS.DELIVERED, ORDER_STATUS.RETURNED, ORDER_STATUS.CANCELLED],
+  [ORDER_STATUS.DELIVERED]: [ORDER_STATUS.COMPLETED, ORDER_STATUS.RETURNED],
+  [ORDER_STATUS.COMPLETED]: [ORDER_STATUS.RETURNED], // Chỉ có thể return sau completed
+  [ORDER_STATUS.CANCELLED]: [], // Terminal state
+  [ORDER_STATUS.RETURNED]: []   // Terminal state
+};
+
+/**
+ * Kiểm tra transition có hợp lệ không
+ */
+const isValidOrderTransition = (currentStatus, newStatus) => {
+  const validNextStatuses = VALID_ORDER_TRANSITIONS[currentStatus];
+  if (!validNextStatuses) return false;
+  return validNextStatuses.includes(newStatus);
+};
+
+/**
  * Get all orders with pagination and filters (Admin)
  */
 export const getAllOrders = async (filters = {}) => {
@@ -130,8 +153,12 @@ export const getAllOrders = async (filters = {}) => {
 
 /**
  * Get order by ID
+ * ✅ FIX ISSUE #8: Thêm kiểm tra ownership để bảo mật
+ * @param {number} orderId - ID đơn hàng
+ * @param {number|null} customerId - ID khách hàng (nếu là customer request)
+ * @param {boolean} isAdmin - Có phải admin/staff không
  */
-export const getOrderById = async (orderId) => {
+export const getOrderById = async (orderId, customerId = null, isAdmin = false) => {
   try {
     const order = await prisma.orders.findUnique({
       where: { id: Number(orderId) },
@@ -239,6 +266,15 @@ export const getOrderById = async (orderId) => {
         success: false,
         status: 404,
         error: 'Không tìm thấy đơn hàng'
+      };
+    }
+
+    // ✅ FIX ISSUE #8: Kiểm tra ownership nếu không phải admin
+    if (!isAdmin && customerId && order.customer_id !== Number(customerId)) {
+      return {
+        success: false,
+        status: 403,
+        error: 'Bạn không có quyền xem đơn hàng này'
       };
     }
 
@@ -366,6 +402,8 @@ export const getCustomerOrders = async (customerId, filters = {}) => {
 /**
  * Update order status
  * ✅ FIX #1: Thêm logic tăng sold_count khi order chuyển sang delivered/completed
+ * ✅ FIX #20: Thêm state machine validation
+ * ✅ FIX #22: Thêm Serializable isolation level
  */
 export const updateOrderStatus = async (orderId, status, userId) => {
   try {
@@ -409,6 +447,18 @@ export const updateOrderStatus = async (orderId, status, userId) => {
       };
     }
 
+    // ✅ FIX #20: Validate state transition
+    if (!isValidOrderTransition(currentOrder.status, status)) {
+      const validNextStatuses = VALID_ORDER_TRANSITIONS[currentOrder.status] || [];
+      return {
+        success: false,
+        status: 400,
+        error: `Không thể chuyển từ "${currentOrder.status}" sang "${status}". Các trạng thái hợp lệ: ${validNextStatuses.join(', ') || 'Không có (trạng thái cuối)'}`,
+        currentStatus: currentOrder.status,
+        validTransitions: validNextStatuses
+      };
+    }
+
     // Check if this is a transition to delivered/completed (for sold_count update)
     const previousStatus = currentOrder.status;
     const isCompletingOrder =
@@ -422,7 +472,7 @@ export const updateOrderStatus = async (orderId, status, userId) => {
       status !== ORDER_STATUS.DELIVERED &&
       status !== ORDER_STATUS.COMPLETED;
 
-    // Update order status and create history record
+    // ✅ FIX #22: Update order status với Serializable isolation level
     const result = await prisma.$transaction(async (tx) => {
       // Update order
       const updatedOrder = await tx.orders.update({
@@ -498,6 +548,9 @@ export const updateOrderStatus = async (orderId, status, userId) => {
       }
 
       return updatedOrder;
+    }, {
+      timeout: 15000,
+      isolationLevel: 'Serializable' // ✅ Thêm isolation level
     });
 
     return {
@@ -505,13 +558,29 @@ export const updateOrderStatus = async (orderId, status, userId) => {
       data: result
     };
   } catch (error) {
+    // ✅ FIX #22: Handle transaction timeout/conflict
+    if (error.code === 'P2028') {
+      return {
+        success: false,
+        status: 503,
+        error: 'Hệ thống đang bận xử lý, vui lòng thử lại sau'
+      };
+    }
     throw error;
   }
 };
 
 /**
  * Cancel order
- * ✅ FIX: Hoàn kho về ĐÚNG chi nhánh đã xuất hàng (từ shipments)
+ * ✅ FIX ISSUE #2, #5, #6, #9, #18, #19, #23: 
+ * - Hoàn kho về ĐÚNG chi nhánh đã xuất hàng (từ shipments)
+ * - Hoàn kho cho CẢ đơn PENDING (vì inventory đã bị trừ khi checkout)
+ * - Thêm COMPLETED và RETURNED vào nonCancellableStatuses
+ * - Hoàn cả productBatch khi cancel
+ * - Rollback voucher khi hủy đơn
+ * - ✅ FIX #18: Rollback flashsale sold_count (dựa trên order_date thay vì 24h)
+ * - ✅ FIX #19: Handle multi-branch shipments
+ * - ✅ FIX #23: Thêm Serializable isolation level
  */
 export const cancelOrder = async (orderId, userId, reason = null) => {
   try {
@@ -521,7 +590,8 @@ export const cancelOrder = async (orderId, userId, reason = null) => {
       include: {
         orderitems: {
           include: {
-            productunits: true
+            productunits: true,
+            products: true
           }
         },
         shipments: {
@@ -529,6 +599,12 @@ export const cancelOrder = async (orderId, userId, reason = null) => {
             id: true,
             branch_id: true,
             status: true
+          }
+        },
+        vouchers: {
+          select: {
+            id: true,
+            code: true
           }
         }
       }
@@ -542,9 +618,11 @@ export const cancelOrder = async (orderId, userId, reason = null) => {
       };
     }
 
-    // Check if order can be cancelled
+    // ✅ FIX ISSUE #5: Thêm COMPLETED và RETURNED vào danh sách không thể hủy
     const nonCancellableStatuses = [
       ORDER_STATUS.DELIVERED,
+      ORDER_STATUS.COMPLETED,
+      ORDER_STATUS.RETURNED,
       ORDER_STATUS.CANCELLED,
       ORDER_STATUS.CART
     ];
@@ -553,12 +631,12 @@ export const cancelOrder = async (orderId, userId, reason = null) => {
       return {
         success: false,
         status: 400,
-        error: 'Không thể hủy đơn hàng này'
+        error: `Không thể hủy đơn hàng có trạng thái "${currentOrder.status}"`
       };
     }
 
-    // Cancel order and restore inventory
-    const [cancelledOrder] = await prisma.$transaction(async (tx) => {
+    // ✅ FIX #23: Cancel order và restore inventory với Serializable isolation
+    const result = await prisma.$transaction(async (tx) => {
       // Update order status
       const order = await tx.orders.update({
         where: { id: Number(orderId) },
@@ -587,64 +665,168 @@ export const cancelOrder = async (orderId, userId, reason = null) => {
         }
       });
 
-      // ✅ FIX #1: Restore inventory to CORRECT branch (from shipments)
-      // Only restore if order was past PENDING status (inventory was deducted)
-      if (currentOrder.status !== ORDER_STATUS.PENDING) {
-        // Get branch_id from shipments (chi nhánh đã được chọn gần vị trí khách hàng nhất)
-        const shipment = currentOrder.shipments[0]; // Lấy shipment đầu tiên
+      // ✅ FIX ISSUE #9: Rollback voucher nếu có
+      if (currentOrder.voucher_id) {
+        // ✅ FIX: Kiểm tra used_count > 0 trước khi decrement
+        const voucher = await tx.vouchers.findUnique({
+          where: { id: currentOrder.voucher_id },
+          select: { used_count: true }
+        });
 
-        if (shipment && shipment.branch_id) {
-          // Hoàn kho về đúng chi nhánh đã xuất hàng
+        if (voucher && voucher.used_count > 0) {
+          await tx.vouchers.update({
+            where: { id: currentOrder.voucher_id },
+            data: {
+              used_count: { decrement: 1 }
+            }
+          });
+        }
+
+        await tx.uservouchers.updateMany({
+          where: {
+            order_id: Number(orderId),
+            voucher_id: currentOrder.voucher_id
+          },
+          data: {
+            is_used: false
+          }
+        });
+
+        console.log(`[OrderService] Rolled back voucher #${currentOrder.voucher_id} for cancelled order #${orderId}`);
+      }
+
+      // ✅ FIX ISSUE #18: Rollback flashsale sold_count
+      // Tìm flashsale dựa trên ORDER_DATE thay vì thời điểm hiện tại
+      const orderDate = currentOrder.order_date || new Date();
+      for (const item of currentOrder.orderitems) {
+        // Tìm flashsale đang active tại THỜI ĐIỂM ĐẶT HÀNG
+        const flashsaleAtOrderTime = await tx.flashsales.findFirst({
+          where: {
+            start_time: { lte: orderDate },
+            end_time: { gte: orderDate }
+          },
+          include: {
+            flashsale_products: {
+              where: { product_id: item.product_id }
+            }
+          }
+        });
+
+        if (flashsaleAtOrderTime && flashsaleAtOrderTime.flashsale_products.length > 0) {
+          const flashsaleProduct = flashsaleAtOrderTime.flashsale_products[0];
+
+          // Chỉ rollback nếu sold_count >= quantity
+          if (flashsaleProduct.sold_count >= item.quantity) {
+            await tx.flashsale_products.update({
+              where: { id: flashsaleProduct.id },
+              data: {
+                sold_count: { decrement: item.quantity }
+              }
+            });
+            console.log(`[OrderService] Rolled back flashsale sold_count for product #${item.product_id}, qty: ${item.quantity}`);
+          }
+        }
+      }
+
+      // ✅ FIX ISSUE #19: Handle ALL shipments (multi-branch)
+      // Hoàn kho cho TẤT CẢ các shipments, không chỉ shipments[0]
+      for (const shipment of currentOrder.shipments) {
+        if (!shipment.branch_id) continue;
+
+        // ✅ FIX: Tìm inventory logs cho shipment này - hỗ trợ CẢ 2 convention
+        // Convention cũ: type='OUT', quantity < 0
+        // Convention mới: type='EXPORT', quantity > 0
+        const inventoryLogs = await tx.inventoryLog.findMany({
+          where: {
+            reference_type: 'order',
+            reference_id: Number(orderId),
+            branch_id: shipment.branch_id,
+            OR: [
+              // Convention cũ: số âm
+              { type: { in: ['OUT', 'sale'] }, quantity: { lt: 0 } },
+              // Convention mới: số dương với type EXPORT
+              { type: 'EXPORT', quantity: { gt: 0 } }
+            ]
+          }
+        });
+
+        // Group logs by product_id để tính tổng cần hoàn
+        const productRestoreMap = new Map();
+
+        for (const log of inventoryLogs) {
+          const currentQty = productRestoreMap.get(log.product_id) || 0;
+          // ✅ FIX: Xử lý cả số âm (convention cũ) và số dương (convention mới)
+          const qtyToRestore = log.quantity < 0 ? Math.abs(log.quantity) : log.quantity;
+          productRestoreMap.set(log.product_id, currentQty + qtyToRestore);
+
+          // ✅ FIX ISSUE #6: Hoàn batch nếu có
+          if (log.batch_id) {
+            await tx.productBatch.update({
+              where: { id: log.batch_id },
+              data: {
+                quantity: { increment: qtyToRestore },
+                updated_at: new Date()
+              }
+            });
+            console.log(`[OrderService] Restored batch #${log.batch_id} with qty ${qtyToRestore}`);
+          }
+        }
+
+        // Nếu không có logs (legacy orders), tính từ orderitems
+        if (inventoryLogs.length === 0) {
           for (const item of currentOrder.orderitems) {
-            // Tính số lượng cần hoàn (theo đơn vị cơ bản)
             const conversionFactor = item.productunits?.conversion_factor
               ? Number(item.productunits.conversion_factor)
               : 1;
             const baseQuantity = item.quantity * conversionFactor;
-
-            // Update branch inventory
-            await tx.branchinventory.update({
-              where: {
-                branch_id_product_id: {
-                  branch_id: shipment.branch_id,
-                  product_id: item.product_id
-                }
-              },
-              data: {
-                stock: { increment: baseQuantity },
-                last_updated: new Date()
-              }
-            });
-
-            // Create inventory log for tracking
-            const inventoryLog = await tx.inventoryLog.create({
-              data: {
-                branch_id: shipment.branch_id,
-                product_id: item.product_id,
-                quantity: baseQuantity, // Số dương (nhập lại kho)
-                type: 'CANCEL_RETURN',
-                reference_type: 'order',
-                reference_id: orderId,
-                note: `Hoàn kho do hủy đơn #${orderId}${reason ? ` - Lý do: ${reason}` : ''}`,
-                created_by: userId,
-                date: new Date()
-              }
-            });
-
-            // Create junction table entry
-            await tx.inventoryLog_Order.create({
-              data: {
-                inventory_log_id: inventoryLog.id,
-                order_id: Number(orderId)
-              }
-            });
+            productRestoreMap.set(item.product_id, baseQuantity);
           }
-
-          console.log(`[OrderService] Restored inventory to branch #${shipment.branch_id} for cancelled order #${orderId}`);
-        } else {
-          // Fallback: Nếu không có shipment, log warning và không hoàn kho
-          console.warn(`[OrderService] No shipment found for order #${orderId}, cannot restore inventory to specific branch`);
         }
+
+        // Hoàn kho cho từng product
+        for (const [productId, restoreQty] of productRestoreMap) {
+          await tx.branchinventory.update({
+            where: {
+              branch_id_product_id: {
+                branch_id: shipment.branch_id,
+                product_id: productId
+              }
+            },
+            data: {
+              stock: { increment: restoreQty },
+              last_updated: new Date()
+            }
+          });
+
+          // Create inventory log for tracking
+          const inventoryLog = await tx.inventoryLog.create({
+            data: {
+              branch_id: shipment.branch_id,
+              product_id: productId,
+              quantity: restoreQty,
+              type: 'CANCEL_RETURN',
+              reference_type: 'order',
+              reference_id: orderId,
+              note: `Hoàn kho do hủy đơn #${orderId}${reason ? ` - Lý do: ${reason}` : ''}`,
+              created_by: userId,
+              date: new Date()
+            }
+          });
+
+          await tx.inventoryLog_Order.create({
+            data: {
+              inventory_log_id: inventoryLog.id,
+              order_id: Number(orderId)
+            }
+          });
+        }
+
+        console.log(`[OrderService] Restored inventory to branch #${shipment.branch_id} for cancelled order #${orderId}`);
+      }
+
+      // Fallback nếu không có shipments
+      if (currentOrder.shipments.length === 0) {
+        console.warn(`[OrderService] No shipments found for order #${orderId}, cannot restore inventory to specific branch`);
       }
 
       // Cancel any active inventory reservations
@@ -659,15 +841,27 @@ export const cancelOrder = async (orderId, userId, reason = null) => {
         }
       });
 
-      return [order];
+      return order;
+    }, {
+      timeout: 20000,
+      isolationLevel: 'Serializable' // ✅ FIX #23: Thêm isolation level
     });
 
     return {
       success: true,
-      data: cancelledOrder,
+      data: result,
       message: 'Đơn hàng đã được hủy thành công'
     };
   } catch (error) {
+    // ✅ FIX #23: Handle transaction timeout/conflict
+    if (error.code === 'P2028') {
+      return {
+        success: false,
+        status: 503,
+        error: 'Hệ thống đang bận xử lý, vui lòng thử lại sau'
+      };
+    }
+    console.error(`[OrderService] Error cancelling order #${orderId}:`, error);
     throw error;
   }
 };

@@ -1,17 +1,37 @@
 import express from 'express';
 import * as inventoryTransferController from './inventoryTransferController.js';
-import { authenticateToken, authorizeAdminOrStaff, authorizeAdmin } from '../../auth/auth.middleware.js';
-import { validateId } from '../../../middlewares/validate.middleware.js';
+import {
+  authenticateToken,
+  authorizeAdminOrStaff,
+  authorizeAdmin,
+  authorizeTransferBranch,
+  authorizeCreateTransfer
+} from '../../auth/auth.middleware.js';
+import { validateId, validateTextFields } from '../../../middlewares/validate.middleware.js';
 
 const router = express.Router();
 
-// Admin/Staff only routes - Quản lý chuyển kho giữa chi nhánh
+// Validators
+const validateTransferNote = validateTextFields({
+  fields: ['note'],
+  maxLength: 1000,
+  required: false
+});
+
+const validateCancelReason = validateTextFields({
+  fields: ['reason'],
+  maxLength: 500,
+  required: false
+});
+
+// GET /api/inventory-transfers - Lấy danh sách chuyển kho
 router.get('/inventory-transfers',
   authenticateToken,
   authorizeAdminOrStaff,
   inventoryTransferController.getAllTransfers
 );
 
+// GET /api/inventory-transfers/:id - Lấy chi tiết chuyển kho
 router.get('/inventory-transfers/:id',
   authenticateToken,
   authorizeAdminOrStaff,
@@ -19,15 +39,17 @@ router.get('/inventory-transfers/:id',
   inventoryTransferController.getTransferById
 );
 
-// Tạo phiếu chuyển kho
-// ⚠️ Staff branch authorization được check trong controller (validate from_branch_id)
+// POST /api/inventory-transfers - Tạo phiếu chuyển kho
+// ✅ Middleware authorizeCreateTransfer kiểm tra Staff chỉ tạo từ chi nhánh của mình
 router.post('/inventory-transfers',
   authenticateToken,
   authorizeAdminOrStaff,
+  authorizeCreateTransfer,
+  validateTransferNote,
   inventoryTransferController.createTransferRequest
 );
 
-// Duyệt phiếu - Admin only
+// POST /api/inventory-transfers/:id/approve - Duyệt phiếu (Admin only)
 router.post('/inventory-transfers/:id/approve',
   authenticateToken,
   authorizeAdmin,
@@ -35,29 +57,34 @@ router.post('/inventory-transfers/:id/approve',
   inventoryTransferController.approveTransfer
 );
 
-// Xuất kho - Staff chi nhánh nguồn
-// ⚠️ Staff branch authorization được check trong controller (validate from_branch_id)
+// POST /api/inventory-transfers/:id/ship - Xuất kho
+// ✅ Middleware authorizeTransferBranch('from') kiểm tra Staff chỉ xuất từ chi nhánh nguồn
 router.post('/inventory-transfers/:id/ship',
   authenticateToken,
   authorizeAdminOrStaff,
   validateId(),
+  authorizeTransferBranch('from'),
   inventoryTransferController.shipTransfer
 );
 
-// Nhận kho - Staff chi nhánh đích
-// ⚠️ Staff branch authorization được check trong controller (validate to_branch_id)
+// POST /api/inventory-transfers/:id/receive - Nhận kho
+// ✅ Middleware authorizeTransferBranch('to') kiểm tra Staff chỉ nhận tại chi nhánh đích
 router.post('/inventory-transfers/:id/receive',
   authenticateToken,
   authorizeAdminOrStaff,
   validateId(),
+  authorizeTransferBranch('to'),
   inventoryTransferController.receiveTransfer
 );
 
-// Hủy phiếu
+// POST /api/inventory-transfers/:id/cancel - Hủy phiếu
+// ✅ Middleware authorizeTransferBranch('from') kiểm tra Staff chỉ hủy phiếu của chi nhánh mình
 router.post('/inventory-transfers/:id/cancel',
   authenticateToken,
   authorizeAdminOrStaff,
   validateId(),
+  authorizeTransferBranch('from'),
+  validateCancelReason,
   inventoryTransferController.cancelTransfer
 );
 

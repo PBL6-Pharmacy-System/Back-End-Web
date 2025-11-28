@@ -7,6 +7,7 @@
 
 import prisma from '../../../config/db.js';
 import { ORDER_STATUS, SHIPMENT_STATUS } from '../../../utils/constants.js';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Định nghĩa các transition hợp lệ cho shipment status
@@ -44,17 +45,49 @@ const getInvalidTransitionMessage = (currentStatus, newStatus) => {
 };
 
 /**
- * Generate unique tracking number
+ * ✅ FIX ISSUE #8: Generate unique tracking number với UUID
+ * Sử dụng combination của prefix + timestamp + UUID để đảm bảo unique
+ * @param {number} maxRetries - Số lần retry tối đa nếu trùng
  */
-const generateTrackingNumber = () => {
+const generateTrackingNumber = async (maxRetries = 3) => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const prefix = 'VN';
+        const timestamp = Date.now().toString(36).toUpperCase(); // Base36 timestamp
+        const uuid = uuidv4().split('-')[0].toUpperCase(); // First segment of UUID
+        const trackingNumber = `${prefix}${timestamp}${uuid}`;
+
+        // Check if tracking number already exists
+        const existing = await prisma.shipments.findUnique({
+            where: { tracking_number: trackingNumber }
+        });
+
+        if (!existing) {
+            return trackingNumber;
+        }
+
+        console.warn(`[ShipmentService] Tracking number collision detected on attempt ${attempt + 1}, retrying...`);
+    }
+
+    // Fallback: Use full UUID if all retries fail
+    const fallbackTracking = `VN${uuidv4().replace(/-/g, '').toUpperCase().slice(0, 16)}`;
+    console.warn(`[ShipmentService] Using fallback tracking number: ${fallbackTracking}`);
+    return fallbackTracking;
+};
+
+/**
+ * ✅ FIX ISSUE #8: Sync version - Generate tracking number không cần check DB
+ * Dùng cho cases không cần async (backward compatibility)
+ */
+const generateTrackingNumberSync = () => {
     const prefix = 'VN';
-    const timestamp = Date.now().toString().slice(-8);
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-    return `${prefix}${timestamp}${random}`;
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const uuid = uuidv4().split('-')[0].toUpperCase();
+    return `${prefix}${timestamp}${uuid}`;
 };
 
 /**
  * Create shipment for an order
+ * ✅ FIX ISSUE #8: Sử dụng async generateTrackingNumber với retry
  */
 export const createShipment = async (shipmentData) => {
     try {
@@ -105,7 +138,8 @@ export const createShipment = async (shipmentData) => {
             return { success: false, status: 400, error: 'Đơn hàng đã có vận chuyển' };
         }
 
-        const trackingNumber = generateTrackingNumber();
+        // ✅ FIX #8: Sử dụng async generateTrackingNumber với retry
+        const trackingNumber = await generateTrackingNumber();
         const estimatedDate = estimatedDelivery
             ? new Date(estimatedDelivery)
             : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -143,7 +177,9 @@ export const createShipment = async (shipmentData) => {
         return { success: true, data: shipment, message: 'Tạo vận chuyển thành công' };
     } catch (error) {
         if (error.code === 'P2002' && error.meta?.target?.includes('tracking_number')) {
-            return { success: false, status: 400, error: 'Mã vận đơn đã tồn tại' };
+            // ✅ FIX #8: Retry với tracking number mới nếu vẫn bị trùng
+            console.error('[ShipmentService] Tracking number unique constraint violation, generating new one...');
+            return await createShipment(shipmentData); // Recursive retry
         }
         throw error;
     }
@@ -326,7 +362,7 @@ export const trackShipment = async (trackingNumber) => {
 
 /**
  * Update shipment status
- * ✅ FIX: Thêm logic hoàn kho khi shipment RETURNED
+ * ✅ FIX ISSUE #7: Thêm idempotency check - không hoàn kho nhiều lần khi RETURNED
  */
 export const updateShipmentStatus = async (shipmentId, status, userId = null) => {
     try {
@@ -337,7 +373,7 @@ export const updateShipmentStatus = async (shipmentId, status, userId = null) =>
 
         const currentShipment = await prisma.shipments.findUnique({
             where: { id: Number(shipmentId) },
-            include: { 
+            include: {
                 orders: {
                     include: {
                         orderitems: {
@@ -346,7 +382,7 @@ export const updateShipmentStatus = async (shipmentId, status, userId = null) =>
                             }
                         }
                     }
-                } 
+                }
             }
         });
 
@@ -356,9 +392,9 @@ export const updateShipmentStatus = async (shipmentId, status, userId = null) =>
 
         // Validate status transition
         if (!isValidTransition(currentShipment.status, status)) {
-            return { 
-                success: false, 
-                status: 400, 
+            return {
+                success: false,
+                status: 400,
                 error: getInvalidTransitionMessage(currentShipment.status, status),
                 currentStatus: currentShipment.status,
                 requestedStatus: status,
@@ -416,9 +452,27 @@ export const updateShipmentStatus = async (shipmentId, status, userId = null) =>
             ]);
         }
 
-        // ✅ FIX: Khi RETURNED, cần hoàn lại tồn kho
+        // ✅ FIX ISSUE #7: Khi RETURNED, kiểm tra idempotency trước khi hoàn kho
         if (status === SHIPMENT_STATUS.RETURNED) {
             await prisma.$transaction(async (tx) => {
+                // ✅ IDEMPOTENCY CHECK: Kiểm tra xem đã có inventory log RETURN cho shipment này chưa
+                const existingReturnLog = await tx.inventoryLog.findFirst({
+                    where: {
+                        reference_type: 'shipment_return',
+                        reference_id: Number(shipmentId)
+                    }
+                });
+
+                if (existingReturnLog) {
+                    console.log(`[ShipmentService] Shipment #${shipmentId} already returned, skipping inventory restore`);
+                    // Vẫn update order status nhưng không hoàn kho nữa
+                    await tx.orders.update({
+                        where: { id: currentShipment.order_id },
+                        data: { status: ORDER_STATUS.RETURNED, updated_at: new Date() }
+                    });
+                    return; // Skip inventory restore
+                }
+
                 // Update order status
                 await tx.orders.update({
                     where: { id: currentShipment.order_id },
@@ -436,10 +490,10 @@ export const updateShipmentStatus = async (shipmentId, status, userId = null) =>
 
                 // ✅ Hoàn kho về chi nhánh đã xuất hàng (branch_id của shipment)
                 const branchId = currentShipment.branch_id;
-                
+
                 for (const item of currentShipment.orders.orderitems) {
-                    const conversionFactor = item.productunits?.conversion_factor 
-                        ? Number(item.productunits.conversion_factor) 
+                    const conversionFactor = item.productunits?.conversion_factor
+                        ? Number(item.productunits.conversion_factor)
                         : 1;
                     const baseQuantity = item.quantity * conversionFactor;
 
@@ -455,7 +509,7 @@ export const updateShipmentStatus = async (shipmentId, status, userId = null) =>
                         }
                     });
 
-                    // Tạo inventory log
+                    // Tạo inventory log với reference để idempotency check
                     await tx.inventoryLog.create({
                         data: {
                             branch_id: branchId,
@@ -463,7 +517,7 @@ export const updateShipmentStatus = async (shipmentId, status, userId = null) =>
                             quantity: baseQuantity,
                             type: 'RETURN',
                             reference_type: 'shipment_return',
-                            reference_id: shipmentId,
+                            reference_id: Number(shipmentId), // Dùng shipmentId để check idempotency
                             note: `Hoàn kho do đơn hàng #${currentShipment.order_id} bị trả lại`,
                             created_by: userId,
                             date: new Date()
@@ -471,13 +525,41 @@ export const updateShipmentStatus = async (shipmentId, status, userId = null) =>
                     });
                 }
 
+                // ✅ Hoàn cả batch nếu có - hỗ trợ CẢ 2 convention
+                const inventoryLogs = await tx.inventoryLog.findMany({
+                    where: {
+                        reference_type: 'order',
+                        reference_id: currentShipment.order_id,
+                        OR: [
+                            // Convention cũ: type='OUT', quantity < 0
+                            { type: 'OUT', quantity: { lt: 0 }, batch_id: { not: null } },
+                            // Convention mới: type='EXPORT', quantity > 0
+                            { type: 'EXPORT', quantity: { gt: 0 }, batch_id: { not: null } }
+                        ]
+                    }
+                });
+
+                for (const log of inventoryLogs) {
+                    if (log.batch_id) {
+                        // ✅ FIX: Xử lý cả số âm (convention cũ) và số dương (convention mới)
+                        const qtyToRestore = log.quantity < 0 ? Math.abs(log.quantity) : log.quantity;
+                        await tx.productBatch.update({
+                            where: { id: log.batch_id },
+                            data: {
+                                quantity: { increment: qtyToRestore },
+                                updated_at: new Date()
+                            }
+                        });
+                    }
+                }
+
                 console.log(`[ShipmentService] Restored inventory for returned shipment #${shipmentId}, order #${currentShipment.order_id}`);
             });
         }
 
-        return { 
-            success: true, 
-            data: updatedShipment, 
+        return {
+            success: true,
+            data: updatedShipment,
             message: 'Cập nhật trạng thái vận chuyển thành công',
             previousStatus: currentShipment.status,
             newStatus: status

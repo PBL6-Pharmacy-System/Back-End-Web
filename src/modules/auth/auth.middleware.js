@@ -277,6 +277,187 @@ export const optionalAuth = async (req, res, next) => {
   }
 };
 
+/**
+ * Middleware kiểm tra quyền Staff trên inventory transfer
+ * Dùng cho các operations: ship, receive, cancel
+ * 
+ * @param {'from' | 'to' | 'from_or_creator'} branchType - Loại branch cần check
+ */
+export const authorizeTransferBranch = (branchType = 'from') => {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          error: 'Chưa xác thực'
+        });
+      }
+
+      // Admin có quyền truy cập tất cả
+      if (req.user.role_name === 'admin') {
+        return next();
+      }
+
+      // Customer không có quyền
+      if (req.user.role_name === 'customer') {
+        return res.status(403).json({
+          success: false,
+          error: 'Khách hàng không có quyền truy cập chức năng này'
+        });
+      }
+
+      // Staff: Kiểm tra branch ownership
+      if (req.user.role_name === 'staff') {
+        const staffBranchId = req.user.branch_id;
+
+        if (!staffBranchId) {
+          return res.status(403).json({
+            success: false,
+            error: 'Nhân viên chưa được gán chi nhánh'
+          });
+        }
+
+        // Lấy transfer ID từ params
+        const transferId = req.params.id;
+        if (!transferId) {
+          return res.status(400).json({
+            success: false,
+            error: 'Thiếu transfer ID'
+          });
+        }
+
+        // Lấy thông tin transfer
+        const transfer = await prisma.inventoryTransfer.findUnique({
+          where: { id: Number(transferId) },
+          select: {
+            from_branch_id: true,
+            to_branch_id: true,
+            created_by: true
+          }
+        });
+
+        if (!transfer) {
+          return res.status(404).json({
+            success: false,
+            error: 'Không tìm thấy phiếu chuyển kho'
+          });
+        }
+
+        // Kiểm tra quyền dựa trên branchType
+        let hasPermission = false;
+        let errorMessage = '';
+
+        switch (branchType) {
+          case 'from':
+            // Staff chỉ được thao tác trên transfer từ chi nhánh của mình
+            hasPermission = transfer.from_branch_id === staffBranchId;
+            errorMessage = 'Bạn chỉ có quyền thao tác phiếu chuyển từ chi nhánh của mình';
+            break;
+
+          case 'to':
+            // Staff chỉ được nhận hàng đến chi nhánh của mình
+            hasPermission = transfer.to_branch_id === staffBranchId;
+            errorMessage = 'Bạn chỉ có quyền nhận hàng chuyển đến chi nhánh của mình';
+            break;
+
+          case 'from_or_creator':
+            // Staff được thao tác nếu là người tạo hoặc thuộc chi nhánh nguồn
+            hasPermission = transfer.from_branch_id === staffBranchId;
+            errorMessage = 'Bạn chỉ có quyền thao tác phiếu chuyển từ chi nhánh của mình';
+            break;
+
+          default:
+            hasPermission = false;
+            errorMessage = 'Loại kiểm tra quyền không hợp lệ';
+        }
+
+        if (!hasPermission) {
+          return res.status(403).json({
+            success: false,
+            error: errorMessage,
+            details: {
+              your_branch_id: staffBranchId,
+              transfer_from_branch_id: transfer.from_branch_id,
+              transfer_to_branch_id: transfer.to_branch_id
+            }
+          });
+        }
+
+        // Attach transfer data để controller không cần query lại
+        req.transfer = transfer;
+      }
+
+      next();
+    } catch (error) {
+      console.error('Error in authorizeTransferBranch:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Lỗi kiểm tra quyền truy cập'
+      });
+    }
+  };
+};
+
+/**
+ * Middleware kiểm tra from_branch_id khi tạo transfer
+ * Staff chỉ được tạo transfer từ chi nhánh của mình
+ */
+export const authorizeCreateTransfer = (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Chưa xác thực'
+      });
+    }
+
+    // Admin có quyền tạo từ bất kỳ chi nhánh nào
+    if (req.user.role_name === 'admin') {
+      return next();
+    }
+
+    // Staff: Kiểm tra from_branch_id
+    if (req.user.role_name === 'staff') {
+      const staffBranchId = req.user.branch_id;
+
+      if (!staffBranchId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Nhân viên chưa được gán chi nhánh'
+        });
+      }
+
+      const fromBranchId = req.body.from_branch_id || req.body.fromBranchId;
+
+      if (!fromBranchId) {
+        // Tự động set from_branch_id là chi nhánh của staff
+        req.body.from_branch_id = staffBranchId;
+        req.body.fromBranchId = staffBranchId;
+        return next();
+      }
+
+      if (Number(fromBranchId) !== staffBranchId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn chỉ có quyền tạo phiếu chuyển từ chi nhánh của mình',
+          details: {
+            your_branch_id: staffBranchId,
+            requested_from_branch_id: fromBranchId
+          }
+        });
+      }
+    }
+
+    next();
+  } catch (error) {
+    console.error('Error in authorizeCreateTransfer:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Lỗi kiểm tra quyền tạo phiếu chuyển kho'
+    });
+  }
+};
+
 // ✅ Backward compatibility - alias cho các tên cũ
 export const authorizeRoles = requireRoles;
 export const authorizeOwner = authorizeOwnerOrAdmin;

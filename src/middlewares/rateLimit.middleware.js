@@ -164,3 +164,102 @@ export const orderStatusLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+
+/**
+ * ✅ NEW: Checkout rate limiter
+ * Giới hạn số lần checkout để tránh spam và abuse
+ * Production: 5 checkouts per 15 minutes per user
+ * Development: 500 checkouts per 15 minutes
+ */
+export const checkoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5 * DEV_MULTIPLIER,
+  message: {
+    success: false,
+    error: 'Bạn đã thực hiện quá nhiều lần thanh toán. Vui lòng thử lại sau 15 phút.',
+    code: 'CHECKOUT_RATE_LIMITED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Rate limit theo user ID nếu có, fallback to IP
+    const userId = req.user?.id || req.body?.customerId;
+    return userId ? `checkout-user-${userId}` : `checkout-ip-${req.ip}`;
+  }
+});
+
+/**
+ * ✅ NEW: Cancel order rate limiter
+ * Giới hạn số lần hủy đơn để tránh abuse
+ * Production: 10 cancels per hour
+ * Development: 1000 cancels per hour
+ */
+export const cancelOrderLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10 * DEV_MULTIPLIER,
+  message: {
+    success: false,
+    error: 'Bạn đã hủy quá nhiều đơn hàng. Vui lòng thử lại sau 1 giờ.',
+    code: 'CANCEL_RATE_LIMITED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const userId = req.user?.id;
+    return userId ? `cancel-user-${userId}` : `cancel-ip-${req.ip}`;
+  }
+});
+
+/**
+ * ✅ NEW: Inventory operations rate limiter
+ * Giới hạn các thao tác inventory quan trọng
+ * Production: 50 operations per 15 minutes
+ * Development: 5000 operations per 15 minutes
+ */
+export const inventoryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50 * DEV_MULTIPLIER,
+  message: {
+    success: false,
+    error: 'Quá nhiều thao tác kho, vui lòng thử lại sau',
+    code: 'INVENTORY_RATE_LIMITED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
+ * ✅ NEW: Product stats rate limiter
+ * Giới hạn truy cập thống kê sản phẩm để tránh abuse/scraping
+ * Production: 30 requests per minute per IP
+ * Development: 3000 requests per minute
+ */
+export const productStatsLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30 * DEV_MULTIPLIER,
+  message: {
+    success: false,
+    error: 'Quá nhiều request thống kê sản phẩm, vui lòng thử lại sau 1 phút',
+    code: 'PRODUCT_STATS_RATE_LIMITED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+/**
+ * ✅ NEW: Best sellers rate limiter
+ * Giới hạn truy cập best sellers để tránh abuse
+ * Production: 20 requests per minute per IP
+ * Development: 2000 requests per minute
+ */
+export const bestSellersLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 20 * DEV_MULTIPLIER,
+  message: {
+    success: false,
+    error: 'Quá nhiều request best sellers, vui lòng thử lại sau 1 phút',
+    code: 'BEST_SELLERS_RATE_LIMITED'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});

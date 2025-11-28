@@ -117,7 +117,18 @@ export const calculateFee = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Vui lòng cung cấp khoảng cách (distance)' });
         }
 
-        const result = await shippingFeeService.calculateShippingFee(Number(distance), Number(orderTotal) || 0);
+        // ✅ FIX: Validate input
+        const distanceNum = Number(distance);
+        if (isNaN(distanceNum) || distanceNum < 0 || distanceNum > 10000) {
+            return res.status(400).json({ success: false, error: 'Khoảng cách không hợp lệ (0-10000 km)' });
+        }
+
+        const orderTotalNum = Number(orderTotal) || 0;
+        if (orderTotalNum < 0) {
+            return res.status(400).json({ success: false, error: 'Giá trị đơn hàng không hợp lệ' });
+        }
+
+        const result = await shippingFeeService.calculateShippingFee(distanceNum, orderTotalNum);
 
         res.json({ success: true, data: result });
     } catch (error) {
@@ -136,13 +147,22 @@ export const geocodeAddress = async (req, res) => {
         const { address } = req.body;
 
         if (!address) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Vui lòng cung cấp địa chỉ (address)' 
+            return res.status(400).json({
+                success: false,
+                error: 'Vui lòng cung cấp địa chỉ (address)'
             });
         }
 
-        const result = await shippingFeeService.geocodeShippingAddress(address);
+        // ✅ FIX: Validate & sanitize address input
+        const sanitizedAddress = String(address).trim();
+        if (sanitizedAddress.length < 5 || sanitizedAddress.length > 500) {
+            return res.status(400).json({
+                success: false,
+                error: 'Địa chỉ phải từ 5-500 ký tự'
+            });
+        }
+
+        const result = await shippingFeeService.geocodeShippingAddress(sanitizedAddress);
 
         if (!result.success) {
             return res.status(400).json(result);
@@ -165,16 +185,32 @@ export const reverseGeocode = async (req, res) => {
         const { latitude, longitude } = req.body;
 
         if (latitude === undefined || longitude === undefined) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Vui lòng cung cấp tọa độ (latitude, longitude)' 
+            return res.status(400).json({
+                success: false,
+                error: 'Vui lòng cung cấp tọa độ (latitude, longitude)'
             });
         }
 
-        const result = await shippingFeeService.getAddressFromCoordinates(
-            Number(latitude), 
-            Number(longitude)
-        );
+        // ✅ FIX: Validate coordinates
+        const lat = Number(latitude);
+        const lng = Number(longitude);
+
+        if (isNaN(lat) || isNaN(lng)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Tọa độ phải là số'
+            });
+        }
+
+        // Vietnam bounding box approximately: 8.2-23.4 lat, 102.1-109.5 lng
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            return res.status(400).json({
+                success: false,
+                error: 'Tọa độ không hợp lệ'
+            });
+        }
+
+        const result = await shippingFeeService.getAddressFromCoordinates(lat, lng);
 
         if (!result.success) {
             return res.status(400).json(result);
@@ -196,18 +232,45 @@ export const calculateDistance = async (req, res) => {
     try {
         const { fromLat, fromLng, toLat, toLng } = req.body;
 
-        if (fromLat === undefined || fromLng === undefined || 
+        if (fromLat === undefined || fromLng === undefined ||
             toLat === undefined || toLng === undefined) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Vui lòng cung cấp đầy đủ tọa độ (fromLat, fromLng, toLat, toLng)' 
+            return res.status(400).json({
+                success: false,
+                error: 'Vui lòng cung cấp đầy đủ tọa độ (fromLat, fromLng, toLat, toLng)'
             });
         }
 
-        const result = await shippingFeeService.calculateDistanceBetweenPoints(
-            Number(fromLat), Number(fromLng),
-            Number(toLat), Number(toLng)
-        );
+        // ✅ FIX: Validate all coordinates
+        const coords = [
+            { name: 'fromLat', value: Number(fromLat) },
+            { name: 'fromLng', value: Number(fromLng) },
+            { name: 'toLat', value: Number(toLat) },
+            { name: 'toLng', value: Number(toLng) }
+        ];
+
+        for (const coord of coords) {
+            if (isNaN(coord.value)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `${coord.name} phải là số`
+                });
+            }
+        }
+
+        const fLat = coords[0].value;
+        const fLng = coords[1].value;
+        const tLat = coords[2].value;
+        const tLng = coords[3].value;
+
+        if (fLat < -90 || fLat > 90 || tLat < -90 || tLat > 90 ||
+            fLng < -180 || fLng > 180 || tLng < -180 || tLng > 180) {
+            return res.status(400).json({
+                success: false,
+                error: 'Tọa độ không hợp lệ'
+            });
+        }
+
+        const result = await shippingFeeService.calculateDistanceBetweenPoints(fLat, fLng, tLat, tLng);
 
         if (!result.success) {
             return res.status(400).json(result);

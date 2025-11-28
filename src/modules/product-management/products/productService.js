@@ -169,7 +169,9 @@ export const getAllProducts = async ({
       const { branchinventory, ...productData } = product;
       return {
         ...productData,
-        in_stock: availableStock > 0 ? 1 : 0
+        stock: availableStock,           // ✅ Trả về số lượng thực cho Admin/Staff
+        in_stock: availableStock > 0 ? 1 : 0,
+        branchinventory                  // ✅ Giữ lại để Admin/Staff xem chi tiết theo branch
       };
     });
 
@@ -206,6 +208,20 @@ export const getProductById = async (id) => {
         },
         productunits: {
           select: { id: true, unit_name: true, conversion_factor: true, price: true }
+        },
+        branchinventory: {
+          select: {
+            id: true,
+            branch_id: true,
+            stock: true,
+            min_stock: true,
+            max_stock: true
+          },
+          include: {
+            branches: {
+              select: { id: true, name: true }
+            }
+          }
         }
       }
     });
@@ -230,6 +246,7 @@ export const getProductById = async (id) => {
       success: true,
       data: {
         ...product,
+        stock: availableStock,           // ✅ Trả về số lượng thực
         in_stock: availableStock > 0 ? 1 : 0
       }
     };
@@ -508,7 +525,7 @@ export const searchProducts = async ({ keyword, page = 1, limit = 10 }) => {
         take: limit,
         include: {
           categories: {
-            select: { id: true, name: true } // Tối ưu: chỉ lấy cần thiết
+            select: { id: true, name: true }
           },
           suppliers: {
             select: { id: true, name: true }
@@ -531,7 +548,9 @@ export const searchProducts = async ({ keyword, page = 1, limit = 10 }) => {
       const { branchinventory, ...productData } = product;
       return {
         ...productData,
-        in_stock: availableStock > 0 ? 1 : 0
+        stock: availableStock,           // ✅ Trả về số lượng thực cho Admin/Staff
+        in_stock: availableStock > 0 ? 1 : 0,
+        branchinventory                  // ✅ Giữ lại để Admin/Staff xem chi tiết
       };
     });
 
@@ -600,7 +619,9 @@ export const getProductsByCategory = async (categoryName, { page = 1, limit = 10
       const { branchinventory, ...productData } = product;
       return {
         ...productData,
-        in_stock: availableStock > 0 ? 1 : 0
+        stock: availableStock,           // ✅ Trả về số lượng thực cho Admin/Staff
+        in_stock: availableStock > 0 ? 1 : 0,
+        branchinventory                  // ✅ Giữ lại để Admin/Staff xem chi tiết
       };
     });
 
