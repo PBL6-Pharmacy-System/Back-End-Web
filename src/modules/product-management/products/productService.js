@@ -210,13 +210,6 @@ export const getProductById = async (id) => {
           select: { id: true, unit_name: true, conversion_factor: true, price: true }
         },
         branchinventory: {
-          select: {
-            id: true,
-            branch_id: true,
-            stock: true,
-            min_stock: true,
-            max_stock: true
-          },
           include: {
             branches: {
               select: { id: true, name: true }
