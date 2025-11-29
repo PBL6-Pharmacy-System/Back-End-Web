@@ -34,6 +34,41 @@ export const createPayPalPayment = async (orderId) => {
       };
     }
 
+    // Check or create payment record in database
+    let payment = await prisma.payments.findFirst({
+      where: {
+        order_id: Number(orderId),
+        payment_method: 'paypal'
+      }
+    });
+
+    if (!payment) {
+      payment = await prisma.payments.create({
+        data: {
+          order_id: Number(orderId),
+          payment_method: 'paypal',
+          amount: order.final_amount,
+          status: 'pending',
+          created_at: new Date(),
+          updated_at: new Date()
+        }
+      });
+
+      await prisma.payment_logs.create({
+        data: {
+          payment_id: payment.id,
+          action: 'paypal_payment_initiated',
+          old_status: null,
+          new_status: 'pending',
+          metadata: {
+            orderId: order.id,
+            amount: order.final_amount
+          },
+          created_at: new Date()
+        }
+      });
+    }
+
     // Get PayPal access token
     const accessToken = await getPayPalAccessToken();
 

@@ -410,11 +410,24 @@ export const getOrdersStatistics = async (filters = {}) => {
 };
 
 export const getCustomersStatistics = async (filters = {}) => {
-    const { period, startDate, endDate, limit = 10 } = filters;
+    const { period, startDate, endDate, limit = 10, branchId } = filters;
     const now = new Date();
     const dateRange = parseDateRange(startDate, endDate, period);
 
-    // New customers
+    // Build order where clause for branch filter
+    const buildOrderWhere = (baseWhere) => {
+      if (branchId) {
+        return {
+          ...baseWhere,
+          shipments: {
+            some: { branch_id: Number(branchId) }
+          }
+        };
+      }
+      return baseWhere;
+    };
+
+    // New customers (all branches - no filter)
     const [totalCustomers, newToday, newThisWeek, newThisMonth] = await Promise.all([
       prisma.customers.count(),
       prisma.customers.count({
@@ -440,13 +453,13 @@ export const getCustomersStatistics = async (filters = {}) => {
       })
     ]);
 
-    // Top customers by spending
+    // Top customers by spending (filtered by branch if provided)
     const customerOrders = await prisma.orders.groupBy({
       by: ['customer_id'],
-      where: {
+      where: buildOrderWhere({
         status: 'completed',
         order_date: { gte: dateRange.startDate, lte: dateRange.endDate }
-      },
+      }),
       _sum: { final_amount: true },
       _count: { id: true }
     });
@@ -466,7 +479,10 @@ export const getCustomersStatistics = async (filters = {}) => {
           });
 
           const lastOrder = await prisma.orders.findFirst({
-            where: { customer_id: item.customer_id, status: 'completed' },
+            where: buildOrderWhere({ 
+              customer_id: item.customer_id, 
+              status: 'completed' 
+            }),
             orderBy: { order_date: 'desc' },
             select: { order_date: true }
           });
@@ -497,7 +513,8 @@ export const getCustomersStatistics = async (filters = {}) => {
           thisMonth: newThisMonth
         },
         topCustomers: topCustomersData,
-        retentionRate: `${retentionRate.toFixed(1)}%`
+        retentionRate: `${retentionRate.toFixed(1)}%`,
+        ...(branchId && { filteredByBranch: Number(branchId) })
       }
     };
 };
@@ -718,11 +735,24 @@ export const getBranchesPerformance = async (filters = {}) => {
 };
 
 export const getPromotionsStatistics = async (filters = {}) => {
-    const { period, startDate, endDate } = filters;
+    const { period, startDate, endDate, branchId } = filters;
     const now = new Date();
     const dateRange = parseDateRange(startDate, endDate, period);
 
-    // Vouchers stats
+    // Build order where clause for branch filter
+    const buildOrderWhere = (baseWhere) => {
+      if (branchId) {
+        return {
+          ...baseWhere,
+          shipments: {
+            some: { branch_id: Number(branchId) }
+          }
+        };
+      }
+      return baseWhere;
+    };
+
+    // Vouchers stats (all branches)
     const [totalVouchers, usedVouchers, voucherOrders] = await Promise.all([
       prisma.vouchers.count({
         where: {
@@ -734,18 +764,18 @@ export const getPromotionsStatistics = async (filters = {}) => {
         where: { is_used: true }
       }),
       prisma.orders.findMany({
-        where: {
+        where: buildOrderWhere({
           order_date: { gte: dateRange.startDate, lte: dateRange.endDate },
           voucher_id: { not: null },
           status: 'completed'
-        },
+        }),
         include: {
           vouchers: true
         }
       })
     ]);
 
-    // Flashsales stats
+    // Flashsales stats (all branches - flashsales không phân theo branch)
     const [activeFlashsales, upcomingFlashsales] = await Promise.all([
       prisma.flashsales.count({
         where: {
@@ -802,13 +832,14 @@ export const getPromotionsStatistics = async (filters = {}) => {
           usageRate: `${usageRate.toFixed(1)}%`
         },
         topVouchers,
-        totalDiscount
+        totalDiscount,
+        ...(branchId && { filteredByBranch: Number(branchId) })
       }
     };
 };
 
 export const getReviewsStatistics = async (filters = {}) => {
-    const { period, startDate, endDate, productId } = filters;
+    const { period, startDate, endDate, productId, branchId } = filters;
     const dateRange = parseDateRange(startDate, endDate, period);
 
     const where = {
@@ -817,6 +848,33 @@ export const getReviewsStatistics = async (filters = {}) => {
 
     if (productId) {
       where.product_id = Number(productId);
+    }
+
+    // If branchId is provided, filter reviews by products available in that branch
+    if (branchId) {
+      const branchProducts = await prisma.branchinventory.findMany({
+        where: { branch_id: Number(branchId) },
+        select: { product_id: true }
+      });
+      
+      const productIds = branchProducts.map(bp => bp.product_id);
+      
+      if (productIds.length > 0) {
+        where.product_id = { in: productIds };
+      } else {
+        // If no products in branch, return empty result
+        return {
+          success: true,
+          data: {
+            averageRating: '0.0',
+            totalReviews: 0,
+            ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+            recentReviews: [],
+            pendingModeration: 0,
+            filteredByBranch: Number(branchId)
+          }
+        };
+      }
     }
 
     const reviews = await prisma.reviews.findMany({
@@ -858,7 +916,8 @@ export const getReviewsStatistics = async (filters = {}) => {
         totalReviews: reviews.length,
         ratingDistribution,
         recentReviews,
-        pendingModeration
+        pendingModeration,
+        ...(branchId && { filteredByBranch: Number(branchId) })
       }
     };
 };

@@ -5,6 +5,7 @@ import {
   handlePayPalWebhook
 } from './paypalService.js';
 import { getCacheInfo, clearExchangeRateCache, getUSDtoVNDRate } from './exchangeRateService.js';
+import prisma from '../../../../../config/db.js';
 
 /**
  * Create PayPal payment
@@ -12,12 +13,57 @@ import { getCacheInfo, clearExchangeRateCache, getUSDtoVNDRate } from './exchang
  */
 export const createPayment = async (req, res) => {
   try {
+    console.log('🟡 [PayPal] Create payment request:', {
+      user: req.user,
+      body: req.body,
+      url: req.originalUrl
+    });
+
     const { orderId } = req.body;
 
     if (!orderId) {
       return res.status(400).json({
         success: false,
         error: 'Thiếu thông tin đơn hàng'
+      });
+    }
+
+    // Get order with payment info to check payment method
+    const order = await prisma.orders.findUnique({
+      where: { id: Number(orderId) },
+      include: {
+        payments: {
+          select: {
+            payment_method: true,
+            status: true
+          },
+          take: 1
+        }
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Không tìm thấy đơn hàng'
+      });
+    }
+
+    // Check if order already has a completed payment
+    const completedPayment = order.payments?.find(p => p.status === 'completed');
+    if (completedPayment) {
+      return res.status(400).json({
+        success: false,
+        error: 'Đơn hàng đã được thanh toán'
+      });
+    }
+
+    // Check if order's payment method is PayPal (if payment exists)
+    const orderPaymentMethod = order.payments?.[0]?.payment_method;
+    if (orderPaymentMethod && orderPaymentMethod !== 'paypal') {
+      return res.status(400).json({
+        success: false,
+        error: `Đơn hàng này sử dụng phương thức thanh toán ${orderPaymentMethod.toUpperCase()}, không thể thanh toán bằng PayPal`
       });
     }
 

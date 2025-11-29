@@ -47,7 +47,7 @@ export const authLimiter = rateLimit({
     const username = req.body?.username || req.body?.email || req.body?.phone || 'unknown';
     return `${req.ip}-${username}`;
   },
-  validate: false
+  validate: { trustProxy: false, xForwardedForHeader: false, limit: false, default: false }
 });
 
 /**
@@ -185,7 +185,8 @@ export const checkoutLimiter = rateLimit({
     // Rate limit theo user ID nếu có, fallback to IP
     const userId = req.user?.id || req.body?.customerId;
     return userId ? `checkout-user-${userId}` : `checkout-ip-${req.ip}`;
-  }
+  },
+  validate: { trustProxy: false, xForwardedForHeader: false, limit: false, default: false }
 });
 
 /**
@@ -207,7 +208,8 @@ export const cancelOrderLimiter = rateLimit({
   keyGenerator: (req) => {
     const userId = req.user?.id;
     return userId ? `cancel-user-${userId}` : `cancel-ip-${req.ip}`;
-  }
+  },
+  validate: { trustProxy: false, xForwardedForHeader: false, limit: false, default: false }
 });
 
 /**

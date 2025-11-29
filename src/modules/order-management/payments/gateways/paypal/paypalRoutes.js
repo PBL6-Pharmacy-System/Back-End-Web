@@ -7,7 +7,7 @@ const router = express.Router();
 /**
  * @route   POST /api/payments/paypal/create
  * @desc    Create PayPal payment
- * @access  Private (Customer)
+ * @access  Private
  */
 router.post('/create', authenticateToken, createPayment);
 

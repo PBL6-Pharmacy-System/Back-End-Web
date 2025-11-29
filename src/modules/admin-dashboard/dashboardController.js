@@ -66,13 +66,14 @@ export const getOrdersStatistics = async (req, res, next) => {
 
 export const getCustomersStatistics = async (req, res, next) => {
   try {
-    const { period, startDate, endDate, limit } = req.query;
+    const { period, startDate, endDate, limit, branchId } = req.query;
     
     const result = await dashboardService.getCustomersStatistics({
       period,
       startDate,
       endDate,
-      limit
+      limit,
+      branchId
     });
 
     res.json(result);
@@ -110,12 +111,13 @@ export const getBranchesPerformance = async (req, res, next) => {
 
 export const getPromotionsStatistics = async (req, res, next) => {
   try {
-    const { period, startDate, endDate } = req.query;
+    const { period, startDate, endDate, branchId } = req.query;
     
     const result = await dashboardService.getPromotionsStatistics({
       period,
       startDate,
-      endDate
+      endDate,
+      branchId
     });
 
     res.json(result);
@@ -126,13 +128,14 @@ export const getPromotionsStatistics = async (req, res, next) => {
 
 export const getReviewsStatistics = async (req, res, next) => {
   try {
-    const { period, startDate, endDate, productId } = req.query;
+    const { period, startDate, endDate, productId, branchId } = req.query;
     
     const result = await dashboardService.getReviewsStatistics({
       period,
       startDate,
       endDate,
-      productId
+      productId,
+      branchId
     });
 
     res.json(result);
