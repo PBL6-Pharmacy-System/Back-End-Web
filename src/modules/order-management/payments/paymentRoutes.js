@@ -1,26 +1,57 @@
 import express from 'express';
-import * as paymentController from './paymentController.js';
-import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
+import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
+import * as paymentController from './paymentController.js';
+import prisma from '../../../config/db.js';
 
 const router = express.Router();
 
 /**
- * POST /api/payments
- * Create a new payment for an order
- * Access: Admin, Staff, or Customer who owns the order
- * Body: {
- *   orderId: number,
- *   paymentMethod: string,
- *   amount: number,
- *   transactionId: string (optional)
- * }
+ * ✅ Middleware to validate payment ownership
+ * Admin/Staff: Access all payments
+ * Customer: Access only their own payments (via order ownership)
  */
-router.post(
-  '/payments',
-  authenticateToken,
-  paymentController.createPayment
-);
+const validatePaymentOwnership = async (req, res, next) => {
+  try {
+    // Admin và Staff có quyền truy cập tất cả
+    if (req.user.role_name === 'admin' || req.user.role_name === 'staff') {
+      return next();
+    }
+
+    // Customer: Kiểm tra payment thuộc về order của họ
+    const paymentId = req.params.id;
+    const payment = await prisma.payments.findUnique({
+      where: { id: Number(paymentId) },
+      select: {
+        orders: {
+          select: { customer_id: true }
+        }
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        error: 'Không tìm thấy thông tin thanh toán'
+      });
+    }
+
+    if (payment.orders?.customer_id !== req.user.customer_id) {
+      return res.status(403).json({
+        success: false,
+        error: 'Bạn không có quyền xem thông tin thanh toán này'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Error in validatePaymentOwnership:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Lỗi kiểm tra quyền truy cập'
+    });
+  }
+};
 
 /**
  * GET /api/payments/statistics
@@ -38,25 +69,14 @@ router.get(
 /**
  * GET /api/payments/:id
  * Get payment details by ID
- * Access: Admin, Staff, or Customer who owns the order
+ * ✅ FIXED: Access: Admin, Staff, or Customer who owns the order
  */
 router.get(
   '/payments/:id',
   authenticateToken,
   validateId(),
+  validatePaymentOwnership, // ✅ Added ownership validation
   paymentController.getPaymentById
-);
-
-/**
- * GET /api/orders/:orderId/payments
- * Get all payments for a specific order
- * Access: Admin, Staff, or Customer who owns the order
- */
-router.get(
-  '/orders/:orderId/payments',
-  authenticateToken,
-  validateId('orderId'),
-  paymentController.getOrderPayments
 );
 
 /**

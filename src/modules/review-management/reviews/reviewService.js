@@ -46,9 +46,9 @@ const validateReview = (data) => {
 const hasCustomerPurchasedProduct = async (customerId, productId) => {
   const order = await prisma.orders.findFirst({
     where: {
-      user_id: Number(customerId),
+      customer_id: Number(customerId),
       status: 'completed',
-      orderItems: {
+      orderitems: {
         some: {
           product_id: Number(productId)
         }
@@ -99,8 +99,24 @@ export const getAllReviews = async ({
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          customer: true,
-          product: true
+          customers: {
+            select: {
+              id: true,
+              users: {
+                select: {
+                  full_name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          products: {
+            select: {
+              id: true,
+              name: true,
+              image_url: true
+            }
+          }
         },
         orderBy: {
           [sortBy]: sortOrder
@@ -131,8 +147,23 @@ export const getReviewById = async (id) => {
     const review = await prisma.reviews.findUnique({
       where: { id: Number(id) },
       include: {
-        customer: true,
-        product: true
+        customers: {
+          select: {
+            id: true,
+            users: {
+              select: {
+                full_name: true
+              }
+            }
+          }
+        },
+        products: {
+          select: {
+            id: true,
+            name: true,
+            image_url: true
+          }
+        }
       }
     });
 
@@ -228,8 +259,8 @@ export const createReview = async (data) => {
         created_at: new Date()
       },
       include: {
-        customer: true,
-        product: true
+        customers: true,
+        products: true
       }
     });
 
@@ -285,8 +316,8 @@ export const updateReview = async (id, data) => {
         updated_at: new Date()
       },
       include: {
-        customer: true,
-        product: true
+        customers: true,
+        products: true
       }
     });
 
@@ -304,8 +335,8 @@ export const deleteReview = async (id) => {
     const review = await prisma.reviews.delete({
       where: { id: Number(id) },
       include: {
-        customer: true,
-        product: true
+        customers: true,
+        products: true
       }
     });
 
@@ -333,6 +364,9 @@ export const getProductReviews = async (productId, {
   sortOrder = 'desc'
 }) => {
   try {
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 10;
+
     // Check if product exists
     const product = await prisma.products.findUnique({
       where: { id: Number(productId) }
@@ -354,11 +388,27 @@ export const getProductReviews = async (productId, {
     const [reviews, total] = await Promise.all([
       prisma.reviews.findMany({
         where,
-        skip: (page - 1) * limit,
-        take: limit,
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum,
         include: {
-          customer: true,
-          product: true
+          customers: {
+            select: {
+              id: true,
+              users: {
+                select: {
+                  full_name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          products: {
+            select: {
+              id: true,
+              name: true,
+              image_url: true
+            }
+          }
         },
         orderBy: {
           [sortBy]: sortOrder
@@ -373,9 +423,9 @@ export const getProductReviews = async (productId, {
         product,
         reviews,
         pagination: {
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum),
           totalRecords: total
         }
       }

@@ -49,7 +49,7 @@ const canDeleteUser = async (id) => {
     prisma.orders.count({ where: { user_id: Number(id) } }),
     prisma.logs.count({ where: { user_id: Number(id) } })
   ]);
-  
+
   return orders === 0 && logs === 0;
 };
 
@@ -70,8 +70,8 @@ export const getAllUsers = async ({
           { full_name: { contains: search, mode: 'insensitive' } }
         ]
       }),
-      ...(role && { 
-        role: { name: { equals: role, mode: 'insensitive' } }
+      ...(role && {
+        roles: { role_name: { equals: role, mode: 'insensitive' } }
       })
     };
 
@@ -81,8 +81,18 @@ export const getAllUsers = async ({
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          role: true,
-          customers: true
+          roles: {
+            select: { id: true, role_name: true }
+          },
+          customers: {
+            select: { id: true }
+          },
+          staff: {
+            select: { id: true, position: true, branch_id: true }
+          },
+          admin: {
+            select: { id: true, is_super_admin: true }
+          }
         },
         orderBy: {
           [sortBy]: sortOrder
@@ -91,10 +101,13 @@ export const getAllUsers = async ({
       prisma.users.count({ where })
     ]);
 
+    // Remove password_hash from response
+    const usersWithoutPassword = users.map(({ password_hash, ...user }) => user);
+
     return {
       success: true,
       data: {
-        users,
+        users: usersWithoutPassword,
         pagination: {
           page,
           limit,
@@ -104,6 +117,7 @@ export const getAllUsers = async ({
       }
     };
   } catch (error) {
+    console.error('getAllUsers error:', error);
     return {
       success: false,
       error: 'Lỗi khi lấy danh sách người dùng',
@@ -117,8 +131,26 @@ export const getUserById = async (id) => {
     const user = await prisma.users.findUnique({
       where: { id: Number(id) },
       include: {
-        role: true,
-        customers: true
+        roles: {
+          select: { id: true, role_name: true }
+        },
+        customers: {
+          select: { id: true, dob: true, gender: true, address: true, city: true }
+        },
+        staff: {
+          select: {
+            id: true,
+            position: true,
+            department: true,
+            branch_id: true,
+            branches: {
+              select: { id: true, name: true }
+            }
+          }
+        },
+        admin: {
+          select: { id: true, is_super_admin: true, admin_level: true }
+        }
       }
     });
 
@@ -130,11 +162,15 @@ export const getUserById = async (id) => {
       };
     }
 
+    // Remove password_hash from response
+    const { password_hash, ...userWithoutPassword } = user;
+
     return {
       success: true,
-      data: user
+      data: userWithoutPassword
     };
   } catch (error) {
+    console.error('getUserById error:', error);
     return {
       success: false,
       error: 'Lỗi khi lấy thông tin người dùng',

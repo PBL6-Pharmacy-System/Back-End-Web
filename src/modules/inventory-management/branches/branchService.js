@@ -65,7 +65,7 @@ export const getAllBranches = async ({
 }) => {
   try {
     const where = {};
-    
+
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -342,24 +342,24 @@ export const deleteBranch = async (id) => {
 
 // Find branch by name
 export const findBranchByName = async (name) => {
-  return prisma.branches.findFirst({ 
-    where: { 
+  return prisma.branches.findFirst({
+    where: {
       name: {
         equals: name.trim(),
         mode: 'insensitive'
       }
-    } 
+    }
   });
 };
 
 // Check if branch can be deleted
 export const canDeleteBranch = async (id) => {
   const [hasInventory, hasShipments, hasOrders] = await Promise.all([
-    prisma.branchInventory.findFirst({ 
-      where: { branch_id: Number(id) } 
+    prisma.branchInventory.findFirst({
+      where: { branch_id: Number(id) }
     }),
-    prisma.shipments.findFirst({ 
-      where: { branch_id: Number(id) } 
+    prisma.shipments.findFirst({
+      where: { branch_id: Number(id) }
     }),
     prisma.orders.findFirst({
       where: { branch_id: Number(id) }
@@ -367,4 +367,213 @@ export const canDeleteBranch = async (id) => {
   ]);
 
   return !hasInventory && !hasShipments && !hasOrders;
+};
+
+/**
+ * Get branch inventory details with batches
+ * Theo IMPLEMENT_PLAN.md: GET /branches/:branchId/inventory/details?productId=xyz
+ * Use Case: Kiểm tra sản phẩm X tại chi nhánh có những lô nào, số lượng mỗi lô
+ */
+export const getBranchInventoryDetails = async (branchId, productId) => {
+  try {
+    // Kiểm tra chi nhánh và sản phẩm có tồn tại không
+    const [branch, product] = await Promise.all([
+      prisma.branches.findUnique({
+        where: { id: Number(branchId) }
+      }),
+      prisma.products.findUnique({
+        where: { id: Number(productId) }
+      })
+    ]);
+
+    if (!branch) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy chi nhánh'
+      };
+    }
+
+    if (!product) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy sản phẩm'
+      };
+    }
+
+    // Lấy tổng tồn kho từ branchinventory
+    const inventory = await prisma.branchinventory.findFirst({
+      where: {
+        branch_id: Number(branchId),
+        product_id: Number(productId)
+      }
+    });
+
+    // Lấy chi tiết các lô hàng (FEFO - First Expired First Out)
+    const batches = await prisma.productBatch.findMany({
+      where: {
+        branch_id: Number(branchId),
+        product_id: Number(productId),
+        status: 'active'
+      },
+      orderBy: {
+        expiry_date: 'asc' // ✅ FEFO: Lô hết hạn trước lên đầu
+      },
+      include: {
+        suppliers: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    return {
+      success: true,
+      data: {
+        branch: {
+          id: branch.id,
+          name: branch.name,
+          address: branch.address
+        },
+        product: {
+          id: product.id,
+          name: product.name,
+          price: product.price,
+          image_url: product.image_url
+        },
+        total_stock: inventory?.stock || 0,
+        last_updated: inventory?.last_updated,
+        batches: batches.map(batch => ({
+          id: batch.id,
+          batch_number: batch.batch_number,
+          quantity: batch.quantity,
+          manufacture_date: batch.manufacture_date,
+          expiry_date: batch.expiry_date,
+          cost_price: batch.cost_price,
+          selling_price: batch.selling_price,
+          status: batch.status,
+          supplier: batch.suppliers,
+          note: batch.note,
+          created_at: batch.created_at
+        })),
+        summary: {
+          total_batches: batches.length,
+          total_stock: inventory?.stock || 0,
+          expiring_soon: batches.filter(b => {
+            if (!b.expiry_date) return false;
+            const thirtyDaysFromNow = new Date();
+            thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+            return new Date(b.expiry_date) <= thirtyDaysFromNow;
+          }).length
+        }
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Get batches expiring soon for a specific branch
+ * Use Case: Chi nhánh xem các lô hàng sắp hết hạn của mình để xử lý
+ */
+export const getBranchExpiringSoonBatches = async (branchId, days = 30) => {
+  try {
+    // Kiểm tra chi nhánh có tồn tại không
+    const branch = await prisma.branches.findUnique({
+      where: { id: Number(branchId) }
+    });
+
+    if (!branch) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy chi nhánh'
+      };
+    }
+
+    // Calculate date range
+    const now = new Date();
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + Number(days));
+
+    // Lấy các lô hàng sắp hết hạn
+    const batches = await prisma.productBatch.findMany({
+      where: {
+        branch_id: Number(branchId),
+        status: 'active',
+        expiry_date: {
+          gte: now,        // Chưa hết hạn
+          lte: futureDate  // Sẽ hết hạn trong X ngày
+        }
+      },
+      orderBy: {
+        expiry_date: 'asc' // Sắp hết hạn nhất lên đầu
+      },
+      include: {
+        products: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            image_url: true
+          }
+        },
+        suppliers: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    // Tính số ngày còn lại cho mỗi lô
+    const batchesWithDaysLeft = batches.map(batch => {
+      const daysLeft = Math.ceil(
+        (new Date(batch.expiry_date) - now) / (1000 * 60 * 60 * 24)
+      );
+
+      return {
+        id: batch.id,
+        batch_number: batch.batch_number,
+        product_id: batch.product_id,
+        product: batch.products,
+        quantity: batch.quantity,
+        expiry_date: batch.expiry_date,
+        days_until_expiry: daysLeft,
+        urgency: daysLeft <= 7 ? 'critical' : daysLeft <= 15 ? 'high' : 'medium',
+        cost_price: batch.cost_price,
+        supplier: batch.suppliers,
+        note: batch.note
+      };
+    });
+
+    // Group by urgency
+    const summary = {
+      critical: batchesWithDaysLeft.filter(b => b.urgency === 'critical').length,
+      high: batchesWithDaysLeft.filter(b => b.urgency === 'high').length,
+      medium: batchesWithDaysLeft.filter(b => b.urgency === 'medium').length,
+      total: batchesWithDaysLeft.length
+    };
+
+    return {
+      success: true,
+      data: {
+        branch: {
+          id: branch.id,
+          name: branch.name,
+          address: branch.address
+        },
+        expiring_within_days: days,
+        batches: batchesWithDaysLeft,
+        summary
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
 };

@@ -102,3 +102,20 @@ export const getCustomerStats = async (req, res) => {
     res.status(500).json({ error: 'Lỗi khi lấy thống kê khách hàng' });
   }
 };
+
+export const getCustomerReviews = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const result = await customerService.getCustomerReviews(req.params.id, {
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+    if (!result.success) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result.data);
+  } catch (err) {
+    console.error('Error in getCustomerReviews:', err);
+    res.status(500).json({ error: 'Lỗi khi lấy danh sách đánh giá' });
+  }
+};

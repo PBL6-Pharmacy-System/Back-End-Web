@@ -1,5 +1,101 @@
 import * as voucherService from './voucherService.js';
 
+// ========================================
+// PUBLIC APIs - User
+// ========================================
+
+/**
+ * GET /vouchers/available
+ * Lấy danh sách vouchers đang active (user có thể dùng)
+ */
+export const getAvailableVouchers = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      sortBy = 'created_at',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const result = await voucherService.getAvailableVouchers({
+      page: parseInt(page),
+      limit: parseInt(limit),
+      search: search?.trim(),
+      sortBy,
+      sortOrder
+    });
+
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error in getAvailableVouchers:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi lấy danh sách voucher'
+    });
+  }
+};
+
+/**
+ * GET /vouchers/check/:code
+ * Validate voucher code trước khi checkout
+ */
+export const validateVoucherCode = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { orderAmount } = req.query;
+
+    if (!code) {
+      return res.status(400).json({
+        success: false,
+        error: 'Vui lòng cung cấp mã voucher'
+      });
+    }
+
+    const result = await voucherService.validateVoucherForUse(
+      code,
+      orderAmount ? parseFloat(orderAmount) : 0
+    );
+
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error in validateVoucherCode:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi kiểm tra voucher'
+    });
+  }
+};
+
+export const getVoucherById = async (req, res) => {
+  try {
+    const result = await voucherService.getVoucherById(req.params.id);
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error in getVoucherById:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi lấy thông tin voucher'
+    });
+  }
+};
+
+// ========================================
+// ADMIN APIs
+// ========================================
+
 export const getAllVouchers = async (req, res) => {
   try {
     const {
@@ -30,23 +126,6 @@ export const getAllVouchers = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Lỗi khi lấy danh sách voucher'
-    });
-  }
-};
-
-export const getVoucherById = async (req, res) => {
-  try {
-    const result = await voucherService.getVoucherById(req.params.id);
-    if (!result.success) {
-      return res.status(result.status).json(result);
-    }
-
-    res.json(result);
-  } catch (err) {
-    console.error('Error in getVoucherById:', err);
-    res.status(500).json({
-      success: false,
-      error: 'Lỗi khi lấy thông tin voucher'
     });
   }
 };
@@ -98,36 +177,6 @@ export const deleteVoucher = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Lỗi khi xóa voucher'
-    });
-  }
-};
-
-export const applyVoucher = async (req, res) => {
-  try {
-    const { orderId, voucherCode } = req.body;
-    
-    if (!orderId || !voucherCode) {
-      return res.status(400).json({
-        success: false,
-        error: 'Vui lòng cung cấp đầy đủ mã đơn hàng và mã voucher'
-      });
-    }
-
-    const result = await voucherService.applyVoucher(orderId, voucherCode);
-    if (!result.success) {
-      return res.status(result.status).json(result);
-    }
-
-    res.json({
-      success: true,
-      message: 'Áp dụng voucher thành công',
-      data: result.data
-    });
-  } catch (err) {
-    console.error('Error in applyVoucher:', err);
-    res.status(500).json({
-      success: false,
-      error: 'Lỗi khi áp dụng voucher'
     });
   }
 };

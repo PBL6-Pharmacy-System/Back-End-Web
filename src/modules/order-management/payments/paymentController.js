@@ -1,29 +1,8 @@
 import * as paymentService from './paymentService.js';
 
 /**
- * Create payment for an order
- */
-export const createPayment = async (req, res, next) => {
-  try {
-    const paymentData = req.body;
-
-    const result = await paymentService.createPayment(paymentData);
-
-    if (!result.success) {
-      return res.status(result.status || 400).json({
-        success: false,
-        error: result.error
-      });
-    }
-
-    res.status(201).json(result);
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
  * Get payment by ID
+ * ✅ FIXED: Add ownership validation
  */
 export const getPaymentById = async (req, res, next) => {
   try {
@@ -38,26 +17,15 @@ export const getPaymentById = async (req, res, next) => {
       });
     }
 
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Get payments for an order
- */
-export const getOrderPayments = async (req, res, next) => {
-  try {
-    const { orderId } = req.params;
-
-    const result = await paymentService.getOrderPayments(orderId);
-
-    if (!result.success) {
-      return res.status(result.status || 400).json({
-        success: false,
-        error: result.error
-      });
+    // ✅ FIX: Kiểm tra ownership nếu là customer
+    if (req.user.role_name === 'customer') {
+      // Payment phải có order, và order phải thuộc về customer
+      if (!result.data.order || result.data.order.customer_id !== req.user.customer_id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn không có quyền xem thông tin thanh toán này'
+        });
+      }
     }
 
     res.json(result);
@@ -73,7 +41,7 @@ export const updatePaymentStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const userId = req.user?.id;
+    const userId = req.user?.userId; // From auth middleware
 
     if (!status) {
       return res.status(400).json({
@@ -103,7 +71,7 @@ export const updatePaymentStatus = async (req, res, next) => {
 export const processCODPayment = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.userId; // From auth middleware
 
     const result = await paymentService.processCODPayment(id, userId);
 

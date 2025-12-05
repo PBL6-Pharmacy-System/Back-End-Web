@@ -54,18 +54,16 @@ export const getAllCustomers = async ({ search, membership, status, page = 1, li
               email: true,
               phone: true,
               full_name: true,
-              avatar_url: true,
               is_active: true,
-              is_verified: true,
-              last_login: true
+              is_verified: true
             }
           },
-          orders: {
-            include: {
-              orderitems: true
+          cities: {
+            select: {
+              id: true,
+              name: true
             }
-          },
-          reviews: true
+          }
         }
       }),
       prisma.customers.count({ where })
@@ -213,7 +211,8 @@ export const createCustomer = async (data) => {
         user_id: user.id,
         dob: dob ? new Date(dob) : null,
         gender,
-        address
+        address,
+        city_id: data.city_id ? Number(data.city_id) : null
       },
       include: {
         users: {
@@ -226,6 +225,12 @@ export const createCustomer = async (data) => {
             avatar_url: true,
             is_active: true,
             is_verified: true
+          }
+        },
+        cities: {
+          select: {
+            id: true,
+            name: true
           }
         },
         orders: true,
@@ -310,11 +315,12 @@ export const updateCustomer = async (id, data) => {
       }
     }
 
-    // Update customer info (dob, gender, address)
+    // Update customer info (dob, gender, address, city_id)
     const customerUpdateData = {};
     if (dob !== undefined) customerUpdateData.dob = dob ? new Date(dob) : null;
     if (gender !== undefined) customerUpdateData.gender = gender;
     if (address !== undefined) customerUpdateData.address = address;
+    if (data.city_id !== undefined) customerUpdateData.city_id = data.city_id ? Number(data.city_id) : null;
 
     const updatedCustomer = await prisma.customers.update({
       where: { id: Number(id) },
@@ -330,6 +336,12 @@ export const updateCustomer = async (id, data) => {
             avatar_url: true,
             is_active: true,
             is_verified: true
+          }
+        },
+        cities: {
+          select: {
+            id: true,
+            name: true
           }
         },
         orders: true,
@@ -356,7 +368,7 @@ export const updateCustomer = async (id, data) => {
 // Check if customer can be deleted
 const canDeleteCustomer = async (id) => {
   const orderCount = await prisma.orders.count({
-    where: { user_id: Number(id) }
+    where: { customer_id: Number(id) }
   });
   return orderCount === 0;
 };
@@ -417,7 +429,7 @@ export const getCustomerOrders = async (customerId, { page, limit, status }) => 
       };
     }
 
-    const where = { user_id: Number(customerId) };
+    const where = { customer_id: Number(customerId) };
     if (status) {
       where.status = status;
     }
@@ -429,13 +441,13 @@ export const getCustomerOrders = async (customerId, { page, limit, status }) => 
         take: limit,
         orderBy: { order_date: 'desc' },
         include: {
-          orderItems: {
+          orderitems: {
             include: {
-              product: true,
-              productUnit: true
+              products: true,
+              productunits: true
             }
           },
-          voucher: true
+          vouchers: true
         }
       }),
       prisma.orders.count({ where })
@@ -468,7 +480,7 @@ export const getCustomerReviews = async (customerId, { page = 1, limit = 10 }) =
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          product: true
+          products: true
         },
         orderBy: {
           created_at: 'desc'
@@ -512,7 +524,7 @@ export const getCustomerStats = async (customerId) => {
     const [orders, reviews] = await Promise.all([
       prisma.orders.findMany({
         where: {
-          user_id: Number(customerId),
+          customer_id: Number(customerId),
           status: 'completed'
         }
       }),

@@ -1,4 +1,3 @@
-
 import prisma from '../../../config/db.js';
 
 // Validate product unit data
@@ -41,7 +40,7 @@ const validateProductUnitData = async (data, unitId = null, checkRequired = true
     };
   }
 
-  // Check if product exists and is active (for create or when changing product)
+  // Check if product exists (for create or when changing product)
   if (data.product_id) {
     const product = await validateProduct(data.product_id);
     if (!product) {
@@ -51,13 +50,7 @@ const validateProductUnitData = async (data, unitId = null, checkRequired = true
         error: 'Không tìm thấy sản phẩm'
       };
     }
-    if (!product.is_active) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Sản phẩm đã bị vô hiệu hóa'
-      };
-    }
+    // Note: products table doesn't have is_active field, removed that check
   }
 
   if (data.unit_name && data.product_id) {
@@ -79,7 +72,6 @@ const validateProductUnitData = async (data, unitId = null, checkRequired = true
 
 export const getAllProductUnits = async ({
   productId,
-  active,
   search,
   page = 1,
   limit = 10,
@@ -87,25 +79,30 @@ export const getAllProductUnits = async ({
   sortOrder = 'asc'
 }) => {
   try {
-    const where = {
-      AND: [
-        productId ? { product_id: Number(productId) } : {},
-        active !== undefined ? { is_active: active } : {},
-        search ? {
-          OR: [
-            { unit_name: { contains: search, mode: 'insensitive' } },
-            { product: { name: { contains: search, mode: 'insensitive' } } }
-          ]
-        } : {}
-      ]
-    };
+    const where = {};
+
+    if (productId) {
+      where.product_id = Number(productId);
+    }
+
+    if (search) {
+      where.OR = [
+        { unit_name: { contains: search, mode: 'insensitive' } }
+      ];
+    }
 
     const [total, units] = await Promise.all([
-      prisma.productUnits.count({ where }),
-      prisma.productUnits.findMany({
+      prisma.productunits.count({ where }),
+      prisma.productunits.findMany({
         where,
         include: {
-          product: true
+          products: {
+            select: {
+              id: true,
+              name: true,
+              price: true
+            }
+          }
         },
         orderBy: { [sortBy]: sortOrder.toLowerCase() },
         skip: (page - 1) * limit,
@@ -137,10 +134,16 @@ export const getAllProductUnits = async ({
 
 export const getProductUnitById = async (id) => {
   try {
-    const unit = await prisma.productUnits.findUnique({
+    const unit = await prisma.productunits.findUnique({
       where: { id: Number(id) },
       include: {
-        product: true
+        products: {
+          select: {
+            id: true,
+            name: true,
+            price: true
+          }
+        }
       }
     });
 
@@ -166,8 +169,42 @@ export const getProductUnitById = async (id) => {
   }
 };
 
+export const getProductUnitsByProduct = async (productId) => {
+  try {
+    const units = await prisma.productunits.findMany({
+      where: {
+        product_id: Number(productId)
+      },
+      include: {
+        products: {
+          select: {
+            id: true,
+            name: true,
+            price: true
+          }
+        }
+      },
+      orderBy: {
+        conversion_factor: 'asc'
+      }
+    });
+
+    return {
+      success: true,
+      data: units
+    };
+  } catch (error) {
+    console.error('Error in getProductUnitsByProduct service:', error);
+    return {
+      success: false,
+      status: 500,
+      error: 'Lỗi khi lấy đơn vị sản phẩm'
+    };
+  }
+};
+
 export const findProductUnitByName = async (productId, unitName) => {
-  return prisma.productUnits.findFirst({
+  return prisma.productunits.findFirst({
     where: {
       product_id: Number(productId),
       unit_name: {
@@ -184,37 +221,44 @@ export const validateProduct = async (productId) => {
   });
 };
 
-export const hasBaseUnit = async (productId) => {
-  const count = await prisma.productUnits.count({
-    where: {
-      product_id: Number(productId),
-      is_base_unit: true
-    }
-  });
-  return count > 0;
-};
-
+/**
+ * Check if unit has active orders (not cancelled)
+ * Uses orderitems table with correct relation
+ */
 export const hasActiveOrders = async (unitId) => {
-  const count = await prisma.orderDetails.count({
-    where: {
-      product_unit_id: Number(unitId),
-      order: {
-        status: {
-          not: 'cancelled'
+  try {
+    const count = await prisma.orderitems.count({
+      where: {
+        unit_id: Number(unitId),
+        orders: {
+          status: {
+            not: 'cancelled'
+          }
         }
       }
-    }
-  });
-  return count > 0;
+    });
+    return count > 0;
+  } catch (error) {
+    console.error('Error checking active orders:', error);
+    return false;
+  }
 };
 
+/**
+ * Check if unit has any orders
+ */
 export const hasOrders = async (unitId) => {
-  const count = await prisma.orderDetails.count({
-    where: {
-      product_unit_id: Number(unitId)
-    }
-  });
-  return count > 0;
+  try {
+    const count = await prisma.orderitems.count({
+      where: {
+        unit_id: Number(unitId)
+      }
+    });
+    return count > 0;
+  } catch (error) {
+    console.error('Error checking orders:', error);
+    return false;
+  }
 };
 
 export const createProductUnit = async (data) => {
@@ -225,29 +269,21 @@ export const createProductUnit = async (data) => {
       return validation;
     }
 
-    // Check base unit constraint
-    if (data.is_base_unit) {
-      const hasBase = await hasBaseUnit(data.product_id);
-      if (hasBase) {
-        return {
-          success: false,
-          status: 400,
-          error: 'Sản phẩm đã có đơn vị cơ sở'
-        };
-      }
-    }
-
-    const unit = await prisma.productUnits.create({
+    const unit = await prisma.productunits.create({
       data: {
         product_id: Number(data.product_id),
         unit_name: data.unit_name.trim(),
         conversion_factor: Number(data.conversion_factor),
-        price: Number(data.price),
-        is_base_unit: data.is_base_unit || false,
-        is_active: true
+        price: Number(data.price)
       },
       include: {
-        product: true
+        products: {
+          select: {
+            id: true,
+            name: true,
+            price: true
+          }
+        }
       }
     });
 
@@ -281,57 +317,22 @@ export const updateProductUnit = async (id, data) => {
       return validation;
     }
 
-    // Handle base unit changes
-    if (data.is_base_unit !== undefined && data.is_base_unit !== currentUnit.data.is_base_unit) {
-      if (data.is_base_unit) {
-        const hasBase = await hasBaseUnit(currentUnit.data.product_id);
-        if (hasBase) {
-          return {
-            success: false,
-            status: 400,
-            error: 'Sản phẩm đã có đơn vị cơ sở'
-          };
-        }
-      } else if (currentUnit.data.is_base_unit) {
-        return {
-          success: false,
-          status: 400,
-          error: 'Không thể hủy đơn vị cơ sở. Hãy chọn đơn vị cơ sở khác trước.'
-        };
-      }
-    }
-
-    // Handle deactivation
-    if (data.is_active === false && currentUnit.data.is_active) {
-      if (currentUnit.data.is_base_unit) {
-        return {
-          success: false,
-          status: 400,
-          error: 'Không thể vô hiệu hóa đơn vị cơ sở'
-        };
-      }
-
-      const hasActiveOrdersCheck = await hasActiveOrders(id);
-      if (hasActiveOrdersCheck) {
-        return {
-          success: false,
-          status: 400,
-          error: 'Không thể vô hiệu hóa đơn vị đang có trong đơn hàng'
-        };
-      }
-    }
-
-    const updatedUnit = await prisma.productUnits.update({
+    const updatedUnit = await prisma.productunits.update({
       where: { id: Number(id) },
       data: {
         unit_name: data.unit_name?.trim(),
         conversion_factor: data.conversion_factor ? Number(data.conversion_factor) : undefined,
         price: data.price !== undefined ? Number(data.price) : undefined,
-        is_base_unit: data.is_base_unit,
-        is_active: data.is_active
+        updated_at: new Date()
       },
       include: {
-        product: true
+        products: {
+          select: {
+            id: true,
+            name: true,
+            price: true
+          }
+        }
       }
     });
 
@@ -358,15 +359,6 @@ export const deleteProductUnit = async (id) => {
       return unit;
     }
 
-    // Check if unit is base unit
-    if (unit.data.is_base_unit) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Không thể xóa đơn vị cơ sở'
-      };
-    }
-
     // Check if unit has orders
     const hasOrdersCheck = await hasOrders(id);
     if (hasOrdersCheck) {
@@ -377,10 +369,15 @@ export const deleteProductUnit = async (id) => {
       };
     }
 
-    const deletedUnit = await prisma.productUnits.delete({
+    const deletedUnit = await prisma.productunits.delete({
       where: { id: Number(id) },
       include: {
-        product: true
+        products: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
       }
     });
 

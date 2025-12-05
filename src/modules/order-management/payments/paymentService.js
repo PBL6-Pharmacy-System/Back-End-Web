@@ -7,6 +7,7 @@ export const PAYMENT_METHODS = {
   BANK_TRANSFER: 'bank_transfer',
   VNPAY: 'vnpay',
   MOMO: 'momo',
+  PAYPAL: 'paypal',
   CREDIT_CARD: 'credit_card'
 };
 
@@ -21,151 +22,23 @@ export const PAYMENT_STATUS = {
 };
 
 /**
- * Create payment for an order
+ * Log payment action for audit trail
  */
-export const createPayment = async (paymentData) => {
+const logPaymentAction = async (paymentId, action, oldStatus = null, newStatus = null, userId = null, metadata = {}) => {
   try {
-    const {
-      orderId,
-      paymentMethod,
-      amount,
-      transactionId = null
-    } = paymentData;
-
-    // Validate required fields
-    if (!orderId || !paymentMethod || !amount) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Order ID, phương thức thanh toán và số tiền là bắt buộc'
-      };
-    }
-
-    // Validate payment method
-    const validMethods = Object.values(PAYMENT_METHODS);
-    if (!validMethods.includes(paymentMethod)) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Phương thức thanh toán không hợp lệ'
-      };
-    }
-
-    // Check if order exists
-    const order = await prisma.orders.findUnique({
-      where: { id: Number(orderId) },
-      include: {
-        customers: {
-          select: {
-            id: true,
-            full_name: true,
-            email: true,
-            phone: true
-          }
-        }
-      }
-    });
-
-    if (!order) {
-      return {
-        success: false,
-        status: 404,
-        error: 'Không tìm thấy đơn hàng'
-      };
-    }
-
-    // Validate order status
-    if (order.status === ORDER_STATUS.CANCELLED) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Không thể tạo thanh toán cho đơn hàng đã hủy'
-      };
-    }
-
-    // Check if payment already exists for this order
-    const existingPayment = await prisma.payments.findFirst({
-      where: {
-        order_id: Number(orderId),
-        status: {
-          in: [PAYMENT_STATUS.COMPLETED, PAYMENT_STATUS.PROCESSING]
-        }
-      }
-    });
-
-    if (existingPayment) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Đơn hàng đã có thanh toán'
-      };
-    }
-
-    // Validate amount matches order total
-    const orderTotal = Number(order.final_amount);
-    const paymentAmount = Number(amount);
-
-    if (paymentAmount !== orderTotal) {
-      return {
-        success: false,
-        status: 400,
-        error: `Số tiền thanh toán (${paymentAmount}) không khớp với tổng đơn hàng (${orderTotal})`
-      };
-    }
-
-    // Determine initial payment status based on payment method
-    let initialStatus = PAYMENT_STATUS.PENDING;
-
-    if (paymentMethod === PAYMENT_METHODS.COD) {
-      // COD is pending until delivery
-      initialStatus = PAYMENT_STATUS.PENDING;
-    } else {
-      // Other methods start as processing
-      initialStatus = PAYMENT_STATUS.PROCESSING;
-    }
-
-    // Create payment record
-    const payment = await prisma.payments.create({
+    await prisma.payment_logs.create({
       data: {
-        order_id: Number(orderId),
-        payment_method: paymentMethod,
-        amount: paymentAmount,
-        status: initialStatus,
-        transaction_id: transactionId,
-        payment_date: new Date(),
-        created_at: new Date(),
-        updated_at: new Date()
-      },
-      include: {
-        orders: {
-          include: {
-            customers: {
-              select: {
-                id: true,
-                full_name: true,
-                email: true
-              }
-            }
-          }
-        }
+        payment_id: Number(paymentId),
+        action,
+        old_status: oldStatus,
+        new_status: newStatus,
+        metadata,
+        created_by: userId,
+        created_at: new Date()
       }
     });
-
-    return {
-      success: true,
-      data: payment,
-      message: 'Tạo thanh toán thành công'
-    };
   } catch (error) {
-    // Handle unique transaction_id constraint
-    if (error.code === 'P2002' && error.meta?.target?.includes('transaction_id')) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Mã giao dịch đã tồn tại'
-      };
-    }
-    throw error;
+    console.error('Failed to log payment action:', error);
   }
 };
 
@@ -178,22 +51,33 @@ export const getPaymentById = async (paymentId) => {
       where: { id: Number(paymentId) },
       include: {
         orders: {
-          include: {
+          select: {
+            id: true,
+            order_date: true,
+            total_amount: true,
+            final_amount: true,
+            status: true,
             customers: {
               select: {
                 id: true,
-                full_name: true,
-                email: true,
-                phone: true
+                users: {
+                  select: {
+                    full_name: true,
+                    phone: true
+                  }
+                }
               }
             },
             orderitems: {
-              include: {
+              select: {
+                id: true,
+                quantity: true,
+                price: true,
+                subtotal: true,
                 products: {
                   select: {
                     id: true,
-                    name: true,
-                    price: true
+                    name: true
                   }
                 }
               }
@@ -214,43 +98,6 @@ export const getPaymentById = async (paymentId) => {
     return {
       success: true,
       data: payment
-    };
-  } catch (error) {
-    throw error;
-  }
-};
-
-/**
- * Get payments for an order
- */
-export const getOrderPayments = async (orderId) => {
-  try {
-    // Check if order exists
-    const order = await prisma.orders.findUnique({
-      where: { id: Number(orderId) }
-    });
-
-    if (!order) {
-      return {
-        success: false,
-        status: 404,
-        error: 'Không tìm thấy đơn hàng'
-      };
-    }
-
-    // Get all payments for this order
-    const payments = await prisma.payments.findMany({
-      where: {
-        order_id: Number(orderId)
-      },
-      orderBy: {
-        created_at: 'desc'
-      }
-    });
-
-    return {
-      success: true,
-      data: payments
     };
   } catch (error) {
     throw error;
@@ -309,6 +156,16 @@ export const updatePaymentStatus = async (paymentId, status, userId = null) => {
       }
     });
 
+    // Log status change
+    await logPaymentAction(
+      paymentId,
+      'status_changed',
+      currentPayment.status,
+      status,
+      userId,
+      { reason: 'Manual update by admin/staff' }
+    );
+
     // If payment is completed, update order status if needed
     if (status === PAYMENT_STATUS.COMPLETED) {
       const order = updatedPayment.orders;
@@ -349,13 +206,24 @@ export const updatePaymentStatus = async (paymentId, status, userId = null) => {
 
 /**
  * Process COD payment (mark as completed when delivered)
+ * ✅ FIX #7: Xóa đoạn update sold_count vì đã được xử lý trong orderService.updateOrderStatus()
+ * ✅ FIX #20: Thêm idempotency check mạnh trong transaction
  */
 export const processCODPayment = async (paymentId, userId = null) => {
   try {
+    // Initial validation outside transaction
     const payment = await prisma.payments.findUnique({
       where: { id: Number(paymentId) },
       include: {
-        orders: true
+        orders: {
+          include: {
+            orderitems: {
+              include: {
+                products: true
+              }
+            }
+          }
+        }
       }
     });
 
@@ -375,14 +243,6 @@ export const processCODPayment = async (paymentId, userId = null) => {
       };
     }
 
-    if (payment.status === PAYMENT_STATUS.COMPLETED) {
-      return {
-        success: false,
-        status: 400,
-        error: 'Thanh toán đã được xử lý'
-      };
-    }
-
     // Check if order is delivered
     if (payment.orders.status !== ORDER_STATUS.DELIVERED) {
       return {
@@ -392,15 +252,79 @@ export const processCODPayment = async (paymentId, userId = null) => {
       };
     }
 
-    // Update payment status to completed
-    const result = await updatePaymentStatus(
-      paymentId,
-      PAYMENT_STATUS.COMPLETED,
-      userId
-    );
+    // ✅ FIX #20: Process COD payment in transaction với idempotency check
+    const result = await prisma.$transaction(async (tx) => {
+      // Re-check payment status TRONG transaction để tránh race condition
+      const currentPayment = await tx.payments.findUnique({
+        where: { id: Number(paymentId) },
+        select: { id: true, status: true }
+      });
 
-    return result;
+      // Idempotency check: Nếu đã completed thì return success (không throw error)
+      if (currentPayment.status === PAYMENT_STATUS.COMPLETED) {
+        console.log(`[PaymentService] Payment #${paymentId} already completed, skipping (idempotent)`);
+        return { alreadyProcessed: true };
+      }
+
+      // Nếu đã cancelled hoặc refunded thì không cho process
+      if ([PAYMENT_STATUS.CANCELLED, PAYMENT_STATUS.REFUNDED].includes(currentPayment.status)) {
+        throw new Error(`Không thể xử lý thanh toán có trạng thái "${currentPayment.status}"`);
+      }
+
+      // Update payment status
+      await tx.payments.update({
+        where: { id: Number(paymentId) },
+        data: {
+          status: PAYMENT_STATUS.COMPLETED,
+          payment_date: new Date(),
+          updated_at: new Date()
+        }
+      });
+
+      // Log payment action
+      await tx.payment_logs.create({
+        data: {
+          payment_id: Number(paymentId),
+          action: 'cod_confirmed',
+          old_status: currentPayment.status,
+          new_status: PAYMENT_STATUS.COMPLETED,
+          metadata: {
+            confirmed_by: userId,
+            confirmed_at: new Date().toISOString(),
+            idempotency_check: true
+          },
+          created_by: userId,
+          created_at: new Date()
+        }
+      });
+
+      return { alreadyProcessed: false };
+    }, {
+      timeout: 10000 // 10 second timeout
+    });
+
+    // Return appropriate message based on whether it was already processed
+    if (result.alreadyProcessed) {
+      return {
+        success: true,
+        message: 'Thanh toán COD đã được xác nhận trước đó',
+        data: { alreadyProcessed: true }
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Xác nhận thanh toán COD thành công'
+    };
   } catch (error) {
+    // Handle specific errors
+    if (error.message?.includes('Không thể xử lý thanh toán')) {
+      return {
+        success: false,
+        status: 400,
+        error: error.message
+      };
+    }
     throw error;
   }
 };

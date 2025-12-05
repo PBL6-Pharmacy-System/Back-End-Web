@@ -61,17 +61,12 @@ export const getAllSuppliers = async ({
   try {
     const where = {
       AND: [
-        isActive !== undefined ? { is_active: isActive } : {},
         search ? {
           OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { address: { contains: search, mode: 'insensitive' } },
-            { phone: { contains: search } },
-            { email: { contains: search, mode: 'insensitive' } },
-            { contact_person: { contains: search, mode: 'insensitive' } }
+            { name: { contains: search, mode: 'insensitive' } }
           ]
         } : {}
-      ]
+      ].filter(obj => Object.keys(obj).length > 0)
     };
 
     const [total, suppliers] = await Promise.all([
@@ -81,8 +76,7 @@ export const getAllSuppliers = async ({
         include: {
           _count: {
             select: {
-              products: true,
-              import_orders: true
+              products: true
             }
           }
         },
@@ -122,7 +116,7 @@ export const getSupplierById = async (id) => {
         _count: {
           select: {
             products: true,
-            import_orders: true
+            supplierOrder: true
           }
         }
       }
@@ -161,18 +155,19 @@ export const createSupplier = async (data) => {
     const supplier = await prisma.suppliers.create({
       data: {
         name: data.name.trim(),
-        address: data.address.trim(),
-        phone: data.phone,
-        email: data.email?.trim(),
-        tax_number: data.tax_number,
-        contact_person: data.contact_person?.trim(),
-        is_active: true
+        contact_info: {
+          address: data.address?.trim(),
+          phone: data.phone,
+          email: data.email?.trim(),
+          tax_number: data.tax_number,
+          contact_person: data.contact_person?.trim()
+        }
       },
       include: {
         _count: {
           select: {
             products: true,
-            import_orders: true
+            supplierOrder: true
           }
         }
       }
@@ -187,20 +182,11 @@ export const createSupplier = async (data) => {
   } catch (error) {
     console.error('Error in createSupplier service:', error);
     if (error.code === 'P2002') {
-      if (error.meta?.target?.includes('tax_number')) {
-        return {
-          success: false,
-          status: 409,
-          error: 'Mã số thuế đã tồn tại'
-        };
-      }
-      if (error.meta?.target?.includes('name')) {
-        return {
-          success: false,
-          status: 409,
-          error: 'Tên nhà cung cấp đã tồn tại'
-        };
-      }
+      return {
+        success: false,
+        status: 409,
+        error: 'Tên nhà cung cấp đã tồn tại'
+      };
     }
     return {
       success: false,
@@ -228,18 +214,19 @@ export const updateSupplier = async (id, data) => {
       where: { id: Number(id) },
       data: {
         name: data.name?.trim(),
-        address: data.address?.trim(),
-        phone: data.phone,
-        email: data.email?.trim(),
-        tax_number: data.tax_number,
-        contact_person: data.contact_person?.trim(),
-        is_active: data.is_active
+        contact_info: {
+          address: data.address?.trim(),
+          phone: data.phone,
+          email: data.email?.trim(),
+          tax_number: data.tax_number,
+          contact_person: data.contact_person?.trim()
+        }
       },
       include: {
         _count: {
           select: {
             products: true,
-            import_orders: true
+            supplierOrder: true
           }
         }
       }
@@ -253,20 +240,11 @@ export const updateSupplier = async (id, data) => {
   } catch (error) {
     console.error('Error in updateSupplier service:', error);
     if (error.code === 'P2002') {
-      if (error.meta?.target?.includes('tax_number')) {
-        return {
-          success: false,
-          status: 409,
-          error: 'Mã số thuế đã tồn tại'
-        };
-      }
-      if (error.meta?.target?.includes('name')) {
-        return {
-          success: false,
-          status: 409,
-          error: 'Tên nhà cung cấp đã tồn tại'
-        };
-      }
+      return {
+        success: false,
+        status: 409,
+        error: 'Tên nhà cung cấp đã tồn tại'
+      };
     }
     return {
       success: false,
@@ -300,7 +278,7 @@ export const deleteSupplier = async (id) => {
         _count: {
           select: {
             products: true,
-            import_orders: true
+            supplierOrder: true
           }
         }
       }
@@ -322,16 +300,16 @@ export const deleteSupplier = async (id) => {
 };
 
 export const canDeleteSupplier = async (id) => {
-  const [productsCount, importOrdersCount] = await Promise.all([
+  const [productsCount, supplierOrdersCount] = await Promise.all([
     prisma.products.count({
       where: { supplier_id: Number(id) }
     }),
-    prisma.importOrders.count({
+    prisma.supplierOrder.count({
       where: { supplier_id: Number(id) }
     })
   ]);
 
-  return productsCount === 0 && importOrdersCount === 0;
+  return productsCount === 0 && supplierOrdersCount === 0;
 };
 
 export const getSupplierProducts = async (id) => {

@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 /**
  * Tạo JWT access token
  */
-export const generateToken = (payload, expiresIn = '15m') => {
+export const generateToken = (payload, expiresIn = process.env.JWT_EXPIRES_IN || '15m') => {
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn });
 };
 
@@ -12,9 +12,9 @@ export const generateToken = (payload, expiresIn = '15m') => {
  */
 export const generateRefreshToken = (payload) => {
   return jwt.sign(
-    payload, 
-    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, 
-    { expiresIn: '7d' }
+    payload,
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' }
   );
 };
 

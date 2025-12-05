@@ -43,21 +43,32 @@ export const getBestSellers = async (limit = 10) => {
     // Map products với sold_count và rank
     const productsMap = new Map(products.map(p => [p.id, p]));
     
-    const bestSellers = productSales.map((sale, index) => {
-      const product = productsMap.get(sale.product_id);
-      
-      const averageRating = product.reviews.length > 0
-        ? product.reviews.reduce((sum, r) => sum + r.rating, 0) / product.reviews.length
-        : 0;
+    const bestSellers = await Promise.all(
+      productSales.map(async (sale, index) => {
+        const product = productsMap.get(sale.product_id);
+        
+        const averageRating = product.reviews.length > 0
+          ? product.reviews.reduce((sum, r) => sum + r.rating, 0) / product.reviews.length
+          : 0;
 
-      return {
-        ...product,
-        rank: index + 1,
-        sold_count: sale._sum.quantity || 0,
-        average_rating: Math.round(averageRating * 10) / 10,
-        review_count: product.reviews.length
-      };
-    });
+        // Check stock availability
+        const totalStock = await prisma.branchinventory.aggregate({
+          where: { product_id: product.id },
+          _sum: { stock: true }
+        });
+        
+        const availableStock = totalStock._sum.stock || 0;
+
+        return {
+          ...product,
+          rank: index + 1,
+          sold_count: sale._sum.quantity || 0,
+          average_rating: Math.round(averageRating * 10) / 10,
+          review_count: product.reviews.length,
+          in_stock: availableStock > 0 ? 1 : 0
+        };
+      })
+    );
 
     return {
       success: true,

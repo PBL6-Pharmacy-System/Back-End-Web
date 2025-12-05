@@ -117,9 +117,13 @@ export const uploadPrescription = async (prescriptionData) => {
         customers: {
           select: {
             id: true,
-            full_name: true,
-            email: true,
-            phone: true
+            users: {
+              select: {
+                full_name: true,
+                email: true,
+                phone: true
+              }
+            }
           }
         },
         orders: {
@@ -153,9 +157,13 @@ export const getPrescriptionById = async (prescriptionId) => {
         customers: {
           select: {
             id: true,
-            full_name: true,
-            email: true,
-            phone: true
+            users: {
+              select: {
+                full_name: true,
+                email: true,
+                phone: true
+              }
+            }
           }
         },
         orders: {
@@ -165,7 +173,7 @@ export const getPrescriptionById = async (prescriptionId) => {
             order_date: true
           }
         },
-        verified_by_user: {
+        users: {
           select: {
             id: true,
             username: true,
@@ -241,11 +249,15 @@ export const getAllPrescriptions = async (filters = {}) => {
           customers: {
             select: {
               id: true,
-              full_name: true,
-              phone: true
+              users: {
+                select: {
+                  full_name: true,
+                  phone: true
+                }
+              }
             }
           },
-          verified_by_user: {
+          users: {
             select: {
               id: true,
               full_name: true
@@ -325,7 +337,7 @@ export const getCustomerPrescriptions = async (customerId, filters = {}) => {
               status: true
             }
           },
-          verified_by_user: {
+          users: {
             select: {
               full_name: true
             }
@@ -405,11 +417,15 @@ export const verifyPrescription = async (prescriptionId, verificationData, userI
         customers: {
           select: {
             id: true,
-            full_name: true,
-            email: true
+            users: {
+              select: {
+                full_name: true,
+                email: true
+              }
+            }
           }
         },
-        verified_by_user: {
+        users: {
           select: {
             full_name: true
           }

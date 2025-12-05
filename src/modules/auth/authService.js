@@ -5,17 +5,45 @@ import { isValidEmail } from '../../utils/validation.js';
 
 /**
  * Đăng ký user mới
- * ✅ Refactored: Không cần validate permissions
+ * ✅ Chỉ cho Admin và Staff (role_id = 1 hoặc 2)
+ * ❌ Customer phải đăng ký qua OTP (customerLoginWithOTP)
  */
 export const register = async (data) => {
   try {
-    const { username, email, password, phone, full_name, role_id = 3 } = data;
+    const { username, email, password, phone, full_name, role_id } = data;
 
     // Validate input
     if (!username || !email || !password) {
       return {
         success: false,
         error: 'Username, email và password là bắt buộc',
+        status: 400
+      };
+    }
+
+    // Validate role_id
+    if (!role_id) {
+      return {
+        success: false,
+        error: 'Role ID là bắt buộc',
+        status: 400
+      };
+    }
+
+    // ❌ KHÔNG CHO PHÉP ĐĂNG KÝ CUSTOMER
+    if (Number(role_id) === 3) {
+      return {
+        success: false,
+        error: 'Không thể đăng ký tài khoản Customer. Vui lòng sử dụng chức năng đăng nhập OTP',
+        status: 403
+      };
+    }
+
+    // Validate role_id (chỉ cho phép 1=admin, 2=staff)
+    if (![1, 2].includes(Number(role_id))) {
+      return {
+        success: false,
+        error: 'Role ID phải là 1 (admin) hoặc 2 (staff)',
         status: 400
       };
     }
@@ -37,7 +65,7 @@ export const register = async (data) => {
     }
 
     // Verify role exists
-    const role = await prisma.rolepermissions.findUnique({
+    const role = await prisma.roles.findUnique({
       where: { id: Number(role_id) }
     });
 
@@ -87,32 +115,79 @@ export const register = async (data) => {
     // Hash password
     const password_hash = await hashPassword(password);
 
-    // Create user
-    const user = await prisma.users.create({
-      data: {
-        username: username.trim(),
-        email: email.trim(),
-        password_hash,
-        phone,
-        full_name: full_name?.trim(),
-        role_id: Number(role_id)
-      },
-      include: {
-        rolepermissions: true
+    // Create user with transaction to ensure role-specific record is created
+    const user = await prisma.$transaction(async (tx) => {
+      // Create base user
+      const newUser = await tx.users.create({
+        data: {
+          username: username.trim(),
+          email: email.trim(),
+          password_hash,
+          phone,
+          full_name: full_name?.trim(),
+          role_id: Number(role_id)
+        },
+        include: {
+          roles: true
+        }
+      });
+
+      // Create role-specific record based on role_id
+      if (Number(role_id) === 2) {
+        // Staff role
+        await tx.staff.create({
+          data: {
+            user_id: newUser.id
+          }
+        });
+      } else if (Number(role_id) === 1) {
+        // Admin role
+        await tx.admin.create({
+          data: {
+            user_id: newUser.id
+          }
+        });
       }
+      // Customer không được tạo qua register
+
+      // Return user with all relations
+      return tx.users.findUnique({
+        where: { id: newUser.id },
+        include: {
+          roles: true,
+          customers: true,
+          staff: {
+            include: {
+              branches: true
+            }
+          },
+          admin: true
+        }
+      });
     });
 
-    // ✅ Generate tokens - chỉ cần role_name
-    const token = generateToken({
-      userId: user.id,
+    // Generate tokens with role and profile info
+    const tokenData = {
+      userId: user.id,  // ✅ REVERTED: Use 'userId' to match middleware
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
-    });
+      role_name: user.roles.role_name
+    };
+
+    // Add role-specific ID to token (chỉ staff hoặc admin cho register)
+    if (user.staff) {
+      tokenData.staff_id = user.staff.id;
+      tokenData.branch_id = user.staff.branch_id;
+    } else if (user.admin) {
+      tokenData.admin_id = user.admin.id;
+      tokenData.is_super_admin = user.admin.is_super_admin;
+    }
+
+    const token = generateToken(tokenData);
 
     const refreshToken = generateRefreshToken({
-      userId: user.id
+      userId: user.id  // ✅ REVERTED: Use 'userId' to match middleware
     });
 
     // Remove password from response
@@ -153,7 +228,7 @@ export const login = async (data) => {
       };
     }
 
-    // Find user by username or email
+    // Find user by username or email with all role relations
     const user = await prisma.users.findFirst({
       where: {
         OR: [
@@ -162,7 +237,14 @@ export const login = async (data) => {
         ]
       },
       include: {
-        rolepermissions: true
+        roles: true,
+        customers: true,
+        staff: {
+          include: {
+            branches: true
+          }
+        },
+        admin: true
       }
     });
 
@@ -185,17 +267,36 @@ export const login = async (data) => {
       };
     }
 
-    // Generate tokens
-    const token = generateToken({
-      userId: user.id,
+    // Update last_login
+    await prisma.users.update({
+      where: { id: user.id },
+      data: { last_login: new Date() }
+    });
+
+    // Generate tokens with role and profile info
+    const tokenData = {
+      userId: user.id,  // ✅ REVERTED: Use 'userId' to match middleware
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
-    });
+      role_name: user.roles.role_name
+    };
+
+    // Add role-specific ID to token
+    if (user.customers) {
+      tokenData.customer_id = user.customers.id;
+    } else if (user.staff) {
+      tokenData.staff_id = user.staff.id;
+      tokenData.branch_id = user.staff.branch_id;
+    } else if (user.admin) {
+      tokenData.admin_id = user.admin.id;
+      tokenData.is_super_admin = user.admin.is_super_admin;
+    }
+
+    const token = generateToken(tokenData);
 
     const refreshToken = generateRefreshToken({
-      userId: user.id
+      userId: user.id  // ✅ REVERTED: Use 'userId' to match middleware
     });
 
     // Remove password from response
@@ -227,8 +328,14 @@ export const getCurrentUser = async (userId) => {
     const user = await prisma.users.findUnique({
       where: { id: Number(userId) },
       include: {
-        rolepermissions: true,
-        customers: true
+        roles: true,
+        customers: true,
+        staff: {
+          include: {
+            branches: true
+          }
+        },
+        admin: true
       }
     });
 
@@ -342,11 +449,14 @@ export const refreshAccessToken = async (refreshToken) => {
     // Verify refresh token
     const decoded = verifyRefreshToken(refreshToken);
 
-    // Get user
+    // Get user with role info
     const user = await prisma.users.findUnique({
-      where: { id: decoded.userId },
+      where: { id: decoded.userId },  // ✅ REVERTED: Use 'userId' to match middleware
       include: {
-        rolepermissions: true
+        roles: true,
+        customers: true,
+        staff: true,
+        admin: true
       }
     });
 
@@ -358,14 +468,27 @@ export const refreshAccessToken = async (refreshToken) => {
       };
     }
 
-    // Generate new access token
-    const token = generateToken({
-      userId: user.id,
+    // Generate new access token with role and profile info
+    const tokenData = {
+      userId: user.id,  // ✅ REVERTED: Use 'userId' to match middleware
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
-    });
+      role_name: user.roles.role_name
+    };
+
+    // Add role-specific ID
+    if (user.customers) {
+      tokenData.customer_id = user.customers.id;
+    } else if (user.staff) {
+      tokenData.staff_id = user.staff.id;
+      tokenData.branch_id = user.staff.branch_id;
+    } else if (user.admin) {
+      tokenData.admin_id = user.admin.id;
+      tokenData.is_super_admin = user.admin.is_super_admin;
+    }
+
+    const token = generateToken(tokenData);
 
     return {
       success: true,
@@ -384,34 +507,47 @@ export const refreshAccessToken = async (refreshToken) => {
 };
 
 /**
- * Customer login with OTP (Phone verification)
+ * Customer login with OTP (Phone hoặc Email verification)
  */
-export const customerLoginWithOTP = async (phone, otpCode) => {
+export const customerLoginWithOTP = async (phone = null, email = null, otpCode) => {
   try {
     // Validate
-    if (!phone || !otpCode) {
+    if ((!phone && !email) || !otpCode) {
       return {
         success: false,
-        error: 'Số điện thoại và mã OTP là bắt buộc',
+        error: 'Số điện thoại/email và mã OTP là bắt buộc',
         status: 400
       };
     }
 
-    // Normalize phone
-    const normalizedPhone = phone.startsWith('+84') 
-      ? phone 
-      : phone.replace(/^0/, '+84');
+    let normalizedPhone = null;
+    let normalizedEmail = null;
+
+    // Normalize phone nếu có
+    if (phone) {
+      normalizedPhone = phone.startsWith('+84') ? phone : phone.replace(/^0/, '+84');
+    }
+
+    // Normalize email nếu có
+    if (email) {
+      normalizedEmail = email.toLowerCase().trim();
+    }
 
     // Verify OTP first
+    const whereClause = {
+      OR: [
+        ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : [])
+      ],
+      otp_code: otpCode,
+      verified: false,
+      expires_at: {
+        gte: new Date()
+      }
+    };
+
     const otpRecord = await prisma.otp_verifications.findFirst({
-      where: {
-        phone: normalizedPhone,
-        otp_code: otpCode,
-        verified: true,
-        created_at: {
-          gte: new Date(Date.now() - 10 * 60000) // Within last 10 minutes
-        }
-      },
+      where: whereClause,
       orderBy: {
         created_at: 'desc'
       }
@@ -425,49 +561,62 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
       };
     }
 
+    // Mark OTP as verified
+    await prisma.otp_verifications.update({
+      where: { id: otpRecord.id },
+      data: { verified: true }
+    });
+
     // Find or create customer
+    const userWhereClause = {
+      OR: [
+        ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : [])
+      ]
+    };
+
     let user = await prisma.users.findFirst({
-      where: {
-        phone: normalizedPhone
-      },
+      where: userWhereClause,
       include: {
-        rolepermissions: true,
+        roles: true,
         customers: true
       }
     });
 
+    let isNewAccount = false;
+
     // If user doesn't exist, create new customer account
     if (!user) {
-      // Create user with customer role (role_id = 3)
-      user = await prisma.users.create({
-        data: {
-          username: normalizedPhone,
-          phone: normalizedPhone,
-          email: `${normalizedPhone.replace('+', '')}@temp.com`, // Temporary email
-          password_hash: await hashPassword(crypto.randomBytes(32).toString('hex')), // Random password
-          role_id: 3, // Customer role
-          full_name: null,
-          is_verified: true // Auto-verified via OTP
-        },
-        include: {
-          rolepermissions: true
-        }
-      });
+      isNewAccount = true;
+      // Create user with customer role (role_id = 3) in transaction
+      user = await prisma.$transaction(async (tx) => {
+        const newUser = await tx.users.create({
+          data: {
+            username: normalizedEmail || normalizedPhone,
+            phone: normalizedPhone,
+            email: normalizedEmail || `${normalizedPhone?.replace('+', '')}@temp.com`,
+            password_hash: await hashPassword(crypto.randomBytes(32).toString('hex')), // Random password
+            role_id: 3, // Customer role
+            full_name: null,
+            is_verified: true // Auto-verified via OTP
+          }
+        });
 
-      // Create customer record (without duplicate fields)
-      await prisma.customers.create({
-        data: {
-          user_id: user.id
-        }
-      });
+        // Create customer record
+        await tx.customers.create({
+          data: {
+            user_id: newUser.id
+          }
+        });
 
-      // Reload user with customer data
-      user = await prisma.users.findUnique({
-        where: { id: user.id },
-        include: {
-          rolepermissions: true,
-          customers: true
-        }
+        // ✅ FIX: Return user with all relations including roles
+        return tx.users.findUnique({
+          where: { id: newUser.id },
+          include: {
+            roles: true,
+            customers: true
+          }
+        });
       });
     }
 
@@ -486,15 +635,40 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
       data: { last_login: new Date() }
     });
 
-    // Generate tokens
+    // ✅ FIX: Ensure role_name is always 'customer' for customer accounts
+    // và customer_id luôn có giá trị
+    const roleName = user.roles?.role_name || 'customer';
+    const customerId = user.customers?.id;
+
+    // ✅ FIX: Nếu không có customer record, tạo một cái
+    let finalCustomerId = customerId;
+    if (!finalCustomerId) {
+      const newCustomer = await prisma.customers.create({
+        data: {
+          user_id: user.id
+        }
+      });
+      finalCustomerId = newCustomer.id;
+
+      // Reload user để có customer data
+      user = await prisma.users.findUnique({
+        where: { id: user.id },
+        include: {
+          roles: true,
+          customers: true
+        }
+      });
+    }
+
+    // Generate tokens với đầy đủ thông tin
     const token = generateToken({
       userId: user.id,
       username: user.username,
       email: user.email,
       phone: user.phone,
       role_id: user.role_id,
-      role_name: user.rolepermissions?.role_name,
-      customer_id: user.customers?.id
+      role_name: roleName,           // ✅ Luôn có giá trị 'customer'
+      customer_id: finalCustomerId   // ✅ Luôn có giá trị
     });
 
     const refreshToken = generateRefreshToken({
@@ -504,20 +678,18 @@ export const customerLoginWithOTP = async (phone, otpCode) => {
     // Remove password from response
     const { password_hash: _, ...userWithoutPassword } = user;
 
-    // Delete used OTP
-    await prisma.otp_verifications.delete({
-      where: {
-        id: otpRecord.id
-      }
-    });
-
     return {
       success: true,
-      message: user.customers ? 'Đăng nhập thành công' : 'Tài khoản mới đã được tạo',
+      message: 'Đăng nhập thành công',
       data: {
-        user: userWithoutPassword,
+        user: {
+          ...userWithoutPassword,
+          role_name: roleName,        // ✅ Thêm role_name vào response
+          customer_id: finalCustomerId // ✅ Thêm customer_id vào response
+        },
         token,
-        refreshToken
+        refreshToken,
+        isNewAccount
       }
     };
   } catch (error) {
