@@ -71,7 +71,7 @@ export const getAllUsers = async ({
         ]
       }),
       ...(role && {
-        roles: { role_name: { equals: role, mode: 'insensitive' } }
+        rolepermissions: { role_name: { equals: role, mode: 'insensitive' } }
       })
     };
 
@@ -81,7 +81,7 @@ export const getAllUsers = async ({
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          roles: {
+          rolepermissions: {
             select: { id: true, role_name: true }
           },
           customers: {
@@ -131,7 +131,7 @@ export const getUserById = async (id) => {
     const user = await prisma.users.findUnique({
       where: { id: Number(id) },
       include: {
-        roles: {
+        rolepermissions: {
           select: { id: true, role_name: true }
         },
         customers: {

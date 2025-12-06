@@ -47,7 +47,7 @@ export const getAllAdmins = async ({ page = 1, limit = 10 }) => {
               phone: true,
               full_name: true,
               is_active: true,
-              roles: {
+              rolepermissions: {
                 select: {
                   id: true,
                   role_name: true
@@ -99,7 +99,7 @@ export const getAdminById = async (id) => {
             is_active: true,
             created_at: true,
             last_login: true,
-            roles: {
+            rolepermissions: {
               select: {
                 id: true,
                 role_name: true
@@ -210,7 +210,7 @@ export const createAdmin = async (data) => {
               phone: true,
               full_name: true,
               avatar_url: true,
-              roles: {
+              rolepermissions: {
                 select: {
                   id: true,
                   role_name: true
@@ -307,7 +307,7 @@ export const updateAdmin = async (id, data) => {
               full_name: true,
               avatar_url: true,
               is_active: true,
-              roles: {
+              rolepermissions: {
                 select: {
                   id: true,
                   role_name: true

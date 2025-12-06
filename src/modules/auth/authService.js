@@ -128,7 +128,7 @@ export const register = async (data) => {
           role_id: Number(role_id)
         },
         include: {
-          roles: true
+          rolepermissions: true
         }
       });
 
@@ -154,7 +154,7 @@ export const register = async (data) => {
       return tx.users.findUnique({
         where: { id: newUser.id },
         include: {
-          roles: true,
+          rolepermissions: true,
           customers: true,
           staff: {
             include: {
@@ -172,7 +172,7 @@ export const register = async (data) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.roles.role_name
+      role_name: user.rolepermissions.role_name
     };
 
     // Add role-specific ID to token (chỉ staff hoặc admin cho register)
@@ -237,7 +237,7 @@ export const login = async (data) => {
         ]
       },
       include: {
-        roles: true,
+        rolepermissions: true,
         customers: true,
         staff: {
           include: {
@@ -279,7 +279,7 @@ export const login = async (data) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.roles.role_name
+      role_name: user.rolepermissions.role_name
     };
 
     // Add role-specific ID to token
@@ -328,7 +328,7 @@ export const getCurrentUser = async (userId) => {
     const user = await prisma.users.findUnique({
       where: { id: Number(userId) },
       include: {
-        roles: true,
+        rolepermissions: true,
         customers: true,
         staff: {
           include: {
@@ -453,7 +453,7 @@ export const refreshAccessToken = async (refreshToken) => {
     const user = await prisma.users.findUnique({
       where: { id: decoded.userId },  // ✅ REVERTED: Use 'userId' to match middleware
       include: {
-        roles: true,
+        rolepermissions: true,
         customers: true,
         staff: true,
         admin: true
@@ -474,7 +474,7 @@ export const refreshAccessToken = async (refreshToken) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.roles.role_name
+      role_name: user.rolepermissions.role_name
     };
 
     // Add role-specific ID
@@ -568,17 +568,20 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
     });
 
     // Find or create customer
+    // Tìm user bằng phone, email HOẶC username (vì username có thể = email hoặc phone)
+    const potentialUsername = normalizedEmail || normalizedPhone;
     const userWhereClause = {
       OR: [
         ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
-        ...(normalizedEmail ? [{ email: normalizedEmail }] : [])
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+        ...(potentialUsername ? [{ username: potentialUsername }] : [])
       ]
     };
 
     let user = await prisma.users.findFirst({
       where: userWhereClause,
       include: {
-        roles: true,
+        rolepermissions: true,
         customers: true
       }
     });
@@ -613,7 +616,7 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
         return tx.users.findUnique({
           where: { id: newUser.id },
           include: {
-            roles: true,
+            rolepermissions: true,
             customers: true
           }
         });
@@ -637,7 +640,7 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
 
     // ✅ FIX: Ensure role_name is always 'customer' for customer accounts
     // và customer_id luôn có giá trị
-    const roleName = user.roles?.role_name || 'customer';
+    const roleName = user.rolepermissions?.role_name || 'customer';
     const customerId = user.customers?.id;
 
     // ✅ FIX: Nếu không có customer record, tạo một cái
@@ -654,7 +657,7 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
       user = await prisma.users.findUnique({
         where: { id: user.id },
         include: {
-          roles: true,
+          rolepermissions: true,
           customers: true
         }
       });
