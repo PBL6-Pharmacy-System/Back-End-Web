@@ -287,7 +287,7 @@ export const createProduct = async (data) => {
       return {
         success: false,
         status: 400,
-        error: 'Nhà cung cấp không tồn tại'
+        error: `Nhà cung cấp không tồn tại (ID: ${data.supplier_id})`
       };
     }
 
@@ -392,7 +392,7 @@ export const updateProduct = async (id, data) => {
         return {
           success: false,
           status: 400,
-          error: 'Nhà cung cấp không tồn tại'
+          error: `Nhà cung cấp không tồn tại (ID: ${data.supplier_id})`
         };
       }
     }

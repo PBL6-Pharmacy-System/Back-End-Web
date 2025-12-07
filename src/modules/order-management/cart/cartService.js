@@ -1,8 +1,7 @@
 import prisma from '../../../config/db.js';
 import { findOptimalBranchesForOrder, getCustomerLocation } from '../../../utils/branchSelection.js';
-import { CART_LIMITS, ORDER_STATUS, INVENTORY_LOG_TYPE } from '../../../utils/constants.js';
+import { CART_LIMITS, INVENTORY_LOG_TYPE, ORDER_STATUS } from '../../../utils/constants.js';
 import { validateNumericFields } from '../../../utils/validation.js';
-import { allocateBatchesFEFO } from '../../inventory-management/product-batch/productBatchService.js';
 
 const validateOrderItem = (item) => {
   // Required fields
@@ -546,23 +545,29 @@ export const addToCart = async (customerId, orderData) => {
           error: `Sản phẩm không đủ số lượng tại chi nhánh (còn ${branchInventory.stock} ${product.base_unit_id ? 'đơn vị cơ bản' : ''})`
         };
       }
+    } else {
+      // ✅ OPTIMIZED: Chỉ check stock khi không có branchId (tránh query thừa)
+      const conversionFactor = Number(productUnit.conversion_factor);
+      const baseQuantityNeeded = Number(quantity) * conversionFactor;
+      
+      const availableBranch = await prisma.branchinventory.findFirst({
+        where: {
+          product_id: Number(productId),
+          stock: { gte: baseQuantityNeeded }
+        },
+        select: { stock: true }
+      });
+
+      if (!availableBranch) {
+        return {
+          success: false,
+          status: 400,
+          error: `Sản phẩm ${product.name} không đủ số lượng trong kho (cần ${baseQuantityNeeded} đơn vị)`
+        };
+      }
     }
 
-    // Check stock availability (general stock check)
-    const stockValidation = await validateStockAvailability([{
-      productId,
-      productUnitId,
-      quantity,
-      branchId
-    }]);
-
-    if (!stockValidation.isValid) {
-      return {
-        success: false,
-        status: 400,
-        error: stockValidation.error
-      };
-    }
+    // ✅ REMOVED: validateStockAvailability call - already checked above
 
     // Get or create cart
     let cart = await prisma.orders.findFirst({
