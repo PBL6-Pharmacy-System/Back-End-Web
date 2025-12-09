@@ -16,7 +16,7 @@ const DEV_MULTIPLIER = IS_DEVELOPMENT ? 100 : 1; // Tăng 100x trong development
  */
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 * DEV_MULTIPLIER, // 10000 in dev, 100 in prod
+  max: 1000 * DEV_MULTIPLIER, // 10000 in dev, 100 in prod
   message: {
     success: false,
     error: 'Quá nhiều request từ IP này, vui lòng thử lại sau 15 phút'
@@ -35,7 +35,7 @@ export const apiLimiter = rateLimit({
  */
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10 * DEV_MULTIPLIER,
+  max: 100 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều lần đăng nhập/đăng ký từ IP này, vui lòng thử lại sau 15 phút'
@@ -57,7 +57,7 @@ export const authLimiter = rateLimit({
  */
 export const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30 * DEV_MULTIPLIER,
+  max: 300 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều request tạo/sửa/xóa từ IP này, vui lòng thử lại sau'
