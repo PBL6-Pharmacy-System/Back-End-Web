@@ -166,7 +166,7 @@ export const requestOTP = async (phone = null, email = null) => {
         ...(normalizedEmail ? [{ email: normalizedEmail }] : [])
       ],
       created_at: {
-        gte: new Date(Date.now() - 60000) // 1 minute ago (60000ms = 1 phút)
+        gte: new Date(Date.now() ) // 1 minute ago (60000ms = 1 phút)
       }
     };
 
