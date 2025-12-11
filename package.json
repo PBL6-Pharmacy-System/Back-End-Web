@@ -5,7 +5,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "chmod -R +x node_modules && npx prisma generate && node app.js",
+    "start": "npx prisma generate && node app.js",
     "dev": "nodemon app.js",
     "ngrok": "ngrok http 3000"
   },
