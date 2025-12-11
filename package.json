@@ -5,10 +5,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "npx prisma generate && node app.js",
+    "start": "node app.js",
     "dev": "nodemon app.js",
-    "ngrok": "ngrok http 3000",
-    "postinstall": "prisma generate"
+    "ngrok": "ngrok http 3000"
   },
   "repository": {
     "type": "git",
@@ -23,7 +22,7 @@
   "homepage": "https://github.com/PBL6-Pharmacy-System/Back-End-Web#readme",
   "dependencies": {
     "@prisma/client": "^6.16.2",
-    "prisma": "^6.16.2"
+    "prisma": "^6.16.2",
     "@supabase/supabase-js": "^2.57.4",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
@@ -43,6 +42,6 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10",
+    "nodemon": "^3.1.10"
   }
 }
