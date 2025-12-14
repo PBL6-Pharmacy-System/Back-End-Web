@@ -90,6 +90,45 @@ export const getActiveFlashsale = async () => {
   }
 };
 
+// Lấy flashsale theo ID
+export const getFlashsaleById = async (id) => {
+  try {
+    const flashsale = await prisma.flashsales.findUnique({
+      where: { id },
+      include: {
+        flashsale_products: {
+          include: {
+            products: {
+              select: {
+                id: true,
+                name: true,
+                price: true,
+                stock: true,
+                image_url: true,
+                sku: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!flashsale) {
+      return {
+        success: false,
+        error: 'Không tìm thấy flashsale'
+      };
+    }
+
+    return {
+      success: true,
+      data: flashsale
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
 // Tạo flashsale mới
 // ✅ FIX #9: Set initial status dựa trên thời gian
 export const createFlashsale = async (data) => {

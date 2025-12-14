@@ -32,6 +32,24 @@ export const getActiveFlashsale = async (req, res) => {
     }
 };
 
+// Lấy flashsale theo ID
+export const getFlashsaleById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await flashsaleService.getFlashsaleById(Number(id));
+        if (!result.success) {
+            return res.status(404).json(result);
+        }
+        res.json(result);
+    } catch (error) {
+        console.error('[FLASHSALE GET BY ID ERROR]', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message || 'Lỗi khi lấy chi tiết flashsale' 
+        });
+    }
+};
+
 // Tạo flashsale mới
 export const createFlashsale = async (req, res) => {
     try {
