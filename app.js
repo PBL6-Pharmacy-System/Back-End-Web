@@ -126,7 +126,7 @@ app.use('/api', shippingAddressRoutes);
 app.use('/api', voucherRoutes);
 app.use('/api', flashsaleRoutes);
 
-// Auth routes
+// Auth routes - MUST be early for login/register to work
 app.use('/api', authRoutes);
 
 // User management
@@ -149,7 +149,7 @@ app.use('/api', inventoryTransferRoutes);
 app.use('/api', productBatchRoutes);
 app.use('/api', stockTakeRoutes);
 app.use('/api', stockOperationsRoutes);
-app.use('/api', supplierOrderRoutes);
+app.use('/api/supplier-orders', supplierOrderRoutes);
 
 
 

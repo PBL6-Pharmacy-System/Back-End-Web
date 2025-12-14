@@ -61,7 +61,12 @@ export const startPaymentExpirationJob = () => {
         console.log(`✅ Auto-cancelled ${updatedCount} expired payments (older than ${PAYMENT_TIMEOUT_MINUTES} minutes)`);
       }
     } catch (error) {
-      console.error('❌ Payment expiration job error:', error);
+      // ✅ Handle database connection errors gracefully
+      if (error.code === 'P1001' || error.code === 'P1002') {
+        console.warn('[PaymentExpiration] Database connection timeout, will retry next cycle');
+      } else {
+        console.error('❌ Payment expiration job error:', error.message || error);
+      }
     }
   });
 

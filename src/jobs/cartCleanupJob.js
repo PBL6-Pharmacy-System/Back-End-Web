@@ -11,7 +11,7 @@
 
 import cron from 'node-cron';
 import prisma from '../config/db.js';
-import { ORDER_STATUS, CART_LIMITS } from '../utils/constants.js';
+import { CART_LIMITS, ORDER_STATUS } from '../utils/constants.js';
 
 // Configuration - Lấy từ constants để đồng bộ
 const CART_EXPIRY_DAYS = CART_LIMITS.CART_EXPIRATION_DAYS || 30;
@@ -134,7 +134,12 @@ export const cleanupAbandonedCarts = async (expiryDays = CART_EXPIRY_DAYS, useBa
             duration
         };
     } catch (error) {
-        console.error('[CartCleanup] Error:', error);
+        // ✅ Handle database connection errors gracefully
+        if (error.code === 'P1001' || error.code === 'P1002') {
+            console.warn('[CartCleanup] Database connection timeout, will retry next cycle');
+        } else {
+            console.error('[CartCleanup] Error:', error.message || error);
+        }
         return {
             success: false,
             error: error.message,

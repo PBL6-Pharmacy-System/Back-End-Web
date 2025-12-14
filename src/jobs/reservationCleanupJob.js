@@ -58,7 +58,12 @@ const cleanupExpiredReservations = async () => {
 
         return result.count;
     } catch (error) {
-        console.error('[ReservationCleanup] Error cleaning up expired reservations:', error);
+        // ✅ Handle database connection errors gracefully
+        if (error.code === 'P1001' || error.code === 'P1002') {
+            console.warn('[ReservationCleanup] Database connection timeout, will retry next cycle');
+            return 0;
+        }
+        console.error('[ReservationCleanup] Error cleaning up expired reservations:', error.message || error);
         throw error;
     }
 };
@@ -85,7 +90,12 @@ const getReservationStats = async () => {
             expired: statsMap.expired || 0
         };
     } catch (error) {
-        console.error('[ReservationCleanup] Error getting stats:', error);
+        // ✅ Handle database connection errors gracefully
+        if (error.code === 'P1001' || error.code === 'P1002') {
+            console.warn('[ReservationCleanup] Database connection timeout while getting stats');
+            return null;
+        }
+        console.error('[ReservationCleanup] Error getting stats:', error.message || error);
         return null;
     }
 };
@@ -112,7 +122,12 @@ export const startReservationCleanupJob = () => {
                 }
             }
         } catch (error) {
-            console.error('[ReservationCleanup] Scheduled cleanup failed:', error);
+            // ✅ Handle database connection errors gracefully
+            if (error.code === 'P1001' || error.code === 'P1002') {
+                console.warn('[ReservationCleanup] Database connection timeout, will retry next cycle');
+            } else {
+                console.error('[ReservationCleanup] Scheduled cleanup failed:', error.message || error);
+            }
         }
     });
 
