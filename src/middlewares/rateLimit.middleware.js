@@ -16,7 +16,7 @@ const DEV_MULTIPLIER = IS_DEVELOPMENT ? 100 : 1; // Tăng 100x trong development
  */
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 * DEV_MULTIPLIER, // 10000 in dev, 100 in prod
+  max: 10000 * DEV_MULTIPLIER, // 10000 in dev, 100 in prod
   message: {
     success: false,
     error: 'Quá nhiều request từ IP này, vui lòng thử lại sau 15 phút'
@@ -35,7 +35,7 @@ export const apiLimiter = rateLimit({
  */
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10 * DEV_MULTIPLIER,
+  max: 10000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều lần đăng nhập/đăng ký từ IP này, vui lòng thử lại sau 15 phút'
@@ -57,7 +57,7 @@ export const authLimiter = rateLimit({
  */
 export const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30 * DEV_MULTIPLIER,
+  max: 30000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều request tạo/sửa/xóa từ IP này, vui lòng thử lại sau'
@@ -76,7 +76,7 @@ export const writeLimiter = rateLimit({
  */
 export const passwordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 3 * DEV_MULTIPLIER,
+  max: 30000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều lần đổi password, vui lòng thử lại sau 1 giờ'
@@ -92,7 +92,7 @@ export const passwordLimiter = rateLimit({
  */
 export const cartLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50 * DEV_MULTIPLIER,
+  max: 50000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều thao tác giỏ hàng, vui lòng thử lại sau'
@@ -108,7 +108,7 @@ export const cartLimiter = rateLimit({
  */
 export const searchLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60 * DEV_MULTIPLIER,
+  max: 60000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều request tìm kiếm, vui lòng thử lại sau'
@@ -124,7 +124,7 @@ export const searchLimiter = rateLimit({
  */
 export const reviewLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 10 * DEV_MULTIPLIER,
+  max: 10000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều đánh giá, vui lòng thử lại sau 1 giờ'
@@ -140,7 +140,7 @@ export const reviewLimiter = rateLimit({
  */
 export const notificationLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20 * DEV_MULTIPLIER,
+  max: 20000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều thông báo được tạo, vui lòng thử lại sau'
@@ -156,7 +156,7 @@ export const notificationLimiter = rateLimit({
  */
 export const orderStatusLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30 * DEV_MULTIPLIER,
+  max: 30000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều cập nhật trạng thái đơn hàng, vui lòng thử lại sau'
@@ -173,7 +173,7 @@ export const orderStatusLimiter = rateLimit({
  */
 export const checkoutLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5 * DEV_MULTIPLIER,
+  max: 5000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Bạn đã thực hiện quá nhiều lần thanh toán. Vui lòng thử lại sau 15 phút.',
@@ -197,7 +197,7 @@ export const checkoutLimiter = rateLimit({
  */
 export const cancelOrderLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10 * DEV_MULTIPLIER,
+  max: 10000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Bạn đã hủy quá nhiều đơn hàng. Vui lòng thử lại sau 1 giờ.',
@@ -220,7 +220,7 @@ export const cancelOrderLimiter = rateLimit({
  */
 export const inventoryLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50 * DEV_MULTIPLIER,
+  max: 50000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều thao tác kho, vui lòng thử lại sau',
@@ -238,7 +238,7 @@ export const inventoryLimiter = rateLimit({
  */
 export const productStatsLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30 * DEV_MULTIPLIER,
+  max: 30000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều request thống kê sản phẩm, vui lòng thử lại sau 1 phút',
@@ -256,7 +256,7 @@ export const productStatsLimiter = rateLimit({
  */
 export const bestSellersLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 20 * DEV_MULTIPLIER,
+  max: 20000 * DEV_MULTIPLIER,
   message: {
     success: false,
     error: 'Quá nhiều request best sellers, vui lòng thử lại sau 1 phút',

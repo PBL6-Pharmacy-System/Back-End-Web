@@ -88,7 +88,7 @@ const app = express();
 // Global middlewares
 // ✅ SECURITY: Improved CORS configuration
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: process.env.CORS_ORIGIN || ['http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID']
@@ -108,6 +108,19 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Order management
+app.use('/api', cartRoutes);
+app.use('/api', orderRoutes);
+app.use('/api', paymentRoutes);
+app.use('/api/payments/vnpay', vnpayRoutes);
+app.use('/api/payments/momo', momoRoutes);
+app.use('/api/payments/paypal', paypalRoutes);
+app.use('/api/payments/payos', payosRoutes);
+
+// Shipping management
+app.use('/api/shipping', shippingFeeRoutes);
+app.use('/api', shipmentRoutes);
+app.use('/api', shippingAddressRoutes);
 // API routes
 // Promotion management routes - MUST be early to avoid middleware conflicts
 app.use('/api', voucherRoutes);
@@ -138,19 +151,8 @@ app.use('/api', stockTakeRoutes);
 app.use('/api', stockOperationsRoutes);
 app.use('/api', supplierOrderRoutes);
 
-// Order management
-app.use('/api', cartRoutes);
-app.use('/api', orderRoutes);
-app.use('/api', paymentRoutes);
-app.use('/api/payments/vnpay', vnpayRoutes);
-app.use('/api/payments/momo', momoRoutes);
-app.use('/api/payments/paypal', paypalRoutes);
-app.use('/api/payments/payos', payosRoutes);
 
-// Shipping management
-app.use('/api/shipping', shippingFeeRoutes);
-app.use('/api', shipmentRoutes);
-app.use('/api', shippingAddressRoutes);
+
 
 // Notification management
 app.use('/api', notificationRoutes);
