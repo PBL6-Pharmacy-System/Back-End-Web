@@ -1,0 +1,4 @@
+{
+  "appService.defaultWebAppToDeploy": "/subscriptions/10bee7f9-f8b9-44f8-8c91-7b5cdc639d02/resourceGroups/rg-node-demo/providers/Microsoft.Web/sites/PBL6-Hospital",
+  "appService.deploySubpath": "."
+}

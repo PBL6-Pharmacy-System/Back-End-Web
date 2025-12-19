@@ -21,7 +21,6 @@
   "homepage": "https://github.com/PBL6-Pharmacy-System/Back-End-Web#readme",
   "dependencies": {
     "@prisma/client": "^6.16.2",
-    "prisma": "^6.16.2",
     "@supabase/supabase-js": "^2.57.4",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
@@ -33,10 +32,12 @@
     "express-rate-limit": "^8.2.1",
     "ioredis": "^5.8.2",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.11",
     "pg": "^8.16.3",
     "postgres": "^3.4.7",
+    "prisma": "^6.16.2",
     "querystring": "^0.2.1",
     "uuid": "^13.0.0"
   },

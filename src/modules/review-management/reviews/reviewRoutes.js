@@ -1,8 +1,9 @@
 import express from 'express';
-import * as reviewController from './reviewController.js';
-import { authenticateToken, authorizeAdmin } from '../../auth/auth.middleware.js';
-import { validateId } from '../../../middlewares/validate.middleware.js';
 import { reviewLimiter } from '../../../middlewares/rateLimit.middleware.js'; // ✅ Added
+import { reviewUpload } from '../../../middlewares/upload.middleware.js';
+import { validateId } from '../../../middlewares/validate.middleware.js';
+import { authenticateToken, authorizeAdmin } from '../../auth/auth.middleware.js';
+import * as reviewController from './reviewController.js';
 
 const router = express.Router();
 
@@ -31,6 +32,7 @@ router.get('/products/:productId/rating-stats', validateId('productId'), reviewC
 router.post('/reviews',
     authenticateToken,
     reviewLimiter, // ✅ Added rate limiting
+    reviewUpload.array('media', 5), // Nhận tối đa 5 file với field name 'media'
     reviewController.createReview // ✅ Controller will check if customer purchased product
 );
 

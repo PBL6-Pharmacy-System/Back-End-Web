@@ -55,12 +55,19 @@ export const createReview = async (req, res) => {
       });
     }
 
+    // Xử lý file upload (media)
+    let media = [];
+    if (req.files && req.files.length > 0) {
+      media = req.files.map(f => `/uploads/reviews/${f.filename}`);
+    }
+
     // Map productId to product_id if needed
     const reviewData = {
       customer_id,
       product_id: req.body.productId || req.body.product_id,
       rating: req.body.rating,
-      comment: req.body.comment
+      comment: req.body.comment,
+      media
     };
 
     const result = await reviewService.createReview(reviewData);
