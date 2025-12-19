@@ -1,3 +1,8 @@
+import 'dotenv/config';
+
+console.log('🔥 INDEX.JS LOADED');
+console.log('DB_URL:', process.env.DATABASE_URL ? 'OK' : 'MISSING');
+
 import app from './src/app.js';
 import prisma from './src/config/db.js';
 
@@ -9,7 +14,7 @@ import { startCartCleanupJob } from './src/jobs/cartCleanupJob.js';
 import { startPaymentExpirationJob } from './src/jobs/paymentExpirationJob.js';
 import { startReservationCleanupJob } from './src/jobs/reservationCleanupJob.js';
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
@@ -25,4 +30,3 @@ app.listen(PORT, '0.0.0.0', async () => {
   startReservationCleanupJob();
   startCartCleanupJob();
 });
-
