@@ -4,8 +4,11 @@
   "type": "module",
   "description": "",
   "main": "index.js",
+  "engines": {
+  "node": "20.x"
+},
   "scripts": {
-    "postinstall": "prisma generate",
+    "build": "prisma generate",
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
@@ -38,11 +41,11 @@
     "nodemailer": "^7.0.11",
     "pg": "^8.16.3",
     "postgres": "^3.4.7",
-    "prisma": "^6.16.2",
     "querystring": "^0.2.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "prisma": "^6.16.2",
     "nodemon": "^3.1.10"
   }
 }
