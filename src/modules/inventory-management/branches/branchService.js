@@ -128,7 +128,7 @@ export const getBranchById = async (id, includeInventory = false) => {
       where: { id: Number(id) },
       include: includeInventory ? {
         branchinventory: {
-          include: { product: true }
+          include: { products: true }
         }
       } : undefined
     });
@@ -138,6 +138,21 @@ export const getBranchById = async (id, includeInventory = false) => {
         success: false,
         status: 404,
         error: 'Không tìm thấy chi nhánh'
+      };
+    }
+
+    // Nếu include inventory, thêm các thống kê
+    if (includeInventory && branch.branchinventory) {
+      const totalProducts = branch.branchinventory.length;
+      const totalStock = branch.branchinventory.reduce((sum, item) => sum + (item.stock || 0), 0);
+      const lowStockCount = branch.branchinventory.filter(item => 
+        item.min_stock && item.stock !== null && item.stock < item.min_stock
+      ).length;
+
+      branch.stats = {
+        totalProducts,
+        totalStock,
+        lowStockCount
       };
     }
 

@@ -169,7 +169,8 @@ export const getAllProducts = async ({
       const { branchinventory, ...productData } = product;
       return {
         ...productData,
-        stock: availableStock,           // ✅ Trả về số lượng thực cho Admin/Staff
+        total_stock: availableStock,     // ✅ Tổng tồn kho từ tất cả chi nhánh
+        stock: availableStock,           // ⚠️ Deprecated - Giữ lại để backward compatible
         in_stock: availableStock > 0 ? 1 : 0,
         branchinventory                  // ✅ Giữ lại để Admin/Staff xem chi tiết theo branch
       };
@@ -239,7 +240,8 @@ export const getProductById = async (id) => {
       success: true,
       data: {
         ...product,
-        stock: availableStock,           // ✅ Trả về số lượng thực
+        total_stock: availableStock,     // ✅ Tổng tồn kho từ tất cả chi nhánh
+        stock: availableStock,           // ⚠️ Deprecated - Giữ lại để backward compatible
         in_stock: availableStock > 0 ? 1 : 0
       }
     };
