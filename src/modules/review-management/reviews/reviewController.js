@@ -180,3 +180,40 @@ export const getProductRatingStats = async (req, res) => {
     });
   }
 };
+
+// Get customer's own reviews
+export const getCustomerOwnReviews = async (req, res) => {
+  try {
+    const customer_id = req.user?.customer_id;
+
+    if (!customer_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Chỉ khách hàng mới có thể xem đánh giá của mình'
+      });
+    }
+
+    const { page, limit, rating, sortBy, sortOrder } = req.query;
+    const result = await reviewService.getCustomerReviews(
+      customer_id,
+      {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        rating,
+        sortBy,
+        sortOrder
+      }
+    );
+
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+    res.json(result);
+  } catch (err) {
+    console.error('Error in getCustomerOwnReviews:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi lấy danh sách đánh giá của bạn'
+    });
+  }
+};

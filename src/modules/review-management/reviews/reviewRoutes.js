@@ -27,6 +27,12 @@ router.get('/reviews/:id', validateId(), reviewController.getReviewById);
 router.get('/products/:productId/reviews', validateId('productId'), reviewController.getProductReviews);
 router.get('/products/:productId/rating-stats', validateId('productId'), reviewController.getProductRatingStats);
 
+// Protected routes - Customer's own reviews
+router.get('/customers/me/reviews', 
+  authenticateToken, 
+  reviewController.getCustomerOwnReviews
+);
+
 // Protected routes - Cần đăng nhập để tạo/sửa review
 // ✅ FIXED: Add validation to check if customer purchased the product
 router.post('/reviews',
@@ -44,7 +50,12 @@ router.put('/reviews/:id',
     reviewController.updateReview
 );
 
-// Admin only - Xóa review
-router.delete('/reviews/:id', authenticateToken, authorizeAdmin, validateId(), reviewController.deleteReview);
+// ✅ FIXED: Allow customer to delete their own review OR admin
+router.delete('/reviews/:id', 
+  authenticateToken, 
+  validateId(), 
+  validateReviewOwnership, // ✅ Customer can delete own review, admin can delete any
+  reviewController.deleteReview
+);
 
 export default router;

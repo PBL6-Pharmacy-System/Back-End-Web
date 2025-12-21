@@ -1,0 +1,52 @@
+version: '3.1'
+services:
+  web:
+    image: odoo:19.0
+    depends_on:
+      - db
+    ports:
+      - "8069:8069"
+    volumes:
+      # Nơi lưu trữ code tùy chỉnh (Custom Addons)
+      - ./addons:/mnt/extra-addons
+      # Nơi Odoo lưu trữ các file (Filestore)
+      - odoo-web-data:/var/lib/odoo
+    environment:
+      # Thay USER và PASSWORD bằng user/pass riêng, KHÔNG dùng 'postgres'
+      - HOST=db
+      - USER=odoo_user
+      - PASSWORD=admin123
+
+      # Master Password cho màn hình tạo DB (sử dụng plaintext để dễ tạo DB)
+      - ODOO_MASTER_PASSWORD=admin
+
+      # Thiết lập Timezone Vietnam (Khắc phục lỗi giờ giấc)
+      - TZ=Asia/Ho_Chi_Minh
+    restart: always
+
+  db:
+    image: postgres:18
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_PASSWORD=admin123
+      - POSTGRES_USER=odoo_user
+      - PGUSER=odoo_user
+      # Thiết lập Collation chuẩn "C" để tránh lỗi FATAL trên Windows
+      - LC_ALL=C
+    volumes:
+      # Nơi lưu trữ dữ liệu Database (Sẽ tồn tại ngay cả khi xóa Container)
+      - odoo-db-data:/var/lib/postgresql/data
+    restart: always
+volumes:
+  odoo-web-data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /mnt/docker/volumes/odoo-project_odoo-web-data/_data
+      o: bind
+  odoo-db-data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /mnt/docker/volumes/odoo-project_odoo-db-data/_data
+      o: bind
