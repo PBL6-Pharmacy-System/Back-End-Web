@@ -47,7 +47,7 @@ const hasCustomerPurchasedProduct = async (customerId, productId) => {
   const order = await prisma.orders.findFirst({
     where: {
       customer_id: Number(customerId),
-      status: 'completed',
+      status: 'confirmed',
       orderitems: {
         some: {
           product_id: Number(productId)
