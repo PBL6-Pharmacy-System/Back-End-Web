@@ -68,6 +68,7 @@ const generateBatchNumber = (supplierOrderNo, productId) => {
  */
 export const getAllSupplierOrders = async (filters = {}) => {
     try {
+        console.log('📋 [getAllSupplierOrders] Called with filters:', filters);
         const {
             page = 1,
             limit = 20,
@@ -95,18 +96,38 @@ export const getAllSupplierOrders = async (filters = {}) => {
         const [orders, total] = await Promise.all([
             prisma.supplierOrder.findMany({
                 where,
-                include: {
+                select: {
+                    id: true,
+                    order_number: true,
+                    status: true,
+                    total_amount: true,
+                    tax_amount: true,
+                    discount_amount: true,
+                    final_amount: true,
+                    order_date: true,
+                    expected_date: true,
+                    received_date: true,
+                    payment_status: true,
+                    note: true,
+                    created_at: true,
+                    updated_at: true,
                     suppliers: { select: { id: true, name: true } },
                     branches: { select: { id: true, name: true } },
                     users_supplierOrder_ordered_byTousers: { select: { id: true, full_name: true } },
                     users_supplierOrder_approved_byTousers: { select: { id: true, full_name: true } },
                     users_supplierOrder_received_byTousers: { select: { id: true, full_name: true } },
                     supplierOrderItem: {
-                        include: {
+                        select: {
+                            id: true,
+                            quantity: true,
+                            received_qty: true,
+                            unit_price: true,
+                            tax_rate: true,
+                            discount: true,
+                            subtotal: true,
                             products: { select: { id: true, name: true, price: true, image_url: true } }
                         }
-                    },
-                    _count: { select: { supplierOrderItem: true } }
+                    }
                 },
                 orderBy: { [sortBy]: sortOrder },
                 skip: (Number(page) - 1) * Number(limit),
@@ -128,6 +149,8 @@ export const getAllSupplierOrders = async (filters = {}) => {
             }
         };
     } catch (error) {
+        console.error('❌ [getAllSupplierOrders] Error:', error.message);
+        console.error('Stack:', error.stack);
         throw error;
     }
 };
@@ -137,6 +160,18 @@ export const getAllSupplierOrders = async (filters = {}) => {
  */
 export const getSupplierOrderById = async (id) => {
     try {
+        console.log('🔍 [getSupplierOrderById] Called with id:', id, 'Type:', typeof id);
+        
+        // Validate id
+        if (!id || id === 'undefined' || id === 'null') {
+            console.error('❌ [getSupplierOrderById] Invalid id:', id);
+            return {
+                success: false,
+                status: 400,
+                error: 'ID không hợp lệ'
+            };
+        }
+        
         const order = await prisma.supplierOrder.findUnique({
             where: { id: Number(id) },
             include: {
@@ -148,11 +183,6 @@ export const getSupplierOrderById = async (id) => {
                 supplierOrderItem: {
                     include: {
                         products: { select: { id: true, name: true, price: true, image_url: true } }
-                    }
-                },
-                inventoryLog_SupplierOrder: {
-                    include: {
-                        inventoryLog: true
                     }
                 }
             }

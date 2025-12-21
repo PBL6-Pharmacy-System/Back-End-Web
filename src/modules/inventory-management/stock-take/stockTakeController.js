@@ -24,7 +24,17 @@ export const createStockTake = async (req, res) => {
 // Get all stock takes
 export const getAllStockTakes = async (req, res) => {
   try {
-    const result = await stockTakeService.getAllStockTakes(req.query);
+    // ✅ FIX: Normalize query params (branchId → branch_id)
+    const filters = {
+      branch_id: req.query.branchId || req.query.branch_id,
+      status: req.query.status,
+      start_date: req.query.startDate || req.query.start_date,
+      end_date: req.query.endDate || req.query.end_date,
+      page: req.query.page,
+      limit: req.query.limit
+    };
+    
+    const result = await stockTakeService.getAllStockTakes(filters);
     res.json(result);
   } catch (error) {
     console.error('Error getting stock takes:', error);

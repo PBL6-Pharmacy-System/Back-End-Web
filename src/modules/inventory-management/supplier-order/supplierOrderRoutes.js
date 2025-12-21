@@ -16,8 +16,9 @@ router.use(authenticateToken);
  * GET /api/supplier-orders
  * Get all supplier orders (Admin/Staff)
  */
-router.get('/', authorizeRoles('admin', 'staff'), async (req, res, next) => {
+router.get('/supplier-orders', authorizeRoles('admin', 'staff'), async (req, res, next) => {
     try {
+        console.log('🔵 [Route /supplier-orders] Called - Query params:', req.query);
         const result = await supplierOrderService.getAllSupplierOrders(req.query);
         res.json(result);
     } catch (error) {
@@ -29,8 +30,9 @@ router.get('/', authorizeRoles('admin', 'staff'), async (req, res, next) => {
  * GET /api/supplier-orders/statistics
  * Get supplier order statistics (Admin)
  */
-router.get('/statistics', authorizeRoles('admin'), async (req, res, next) => {
+router.get('/supplier-orders/statistics', authorizeRoles('admin'), async (req, res, next) => {
     try {
+        console.log('📊 [Route /supplier-orders/statistics] Called');
         const result = await supplierOrderService.getSupplierOrderStatistics(req.query);
         res.json(result);
     } catch (error) {
@@ -42,8 +44,9 @@ router.get('/statistics', authorizeRoles('admin'), async (req, res, next) => {
  * GET /api/supplier-orders/:id
  * Get supplier order by ID (Admin/Staff)
  */
-router.get('/:id', authorizeRoles('admin', 'staff'), async (req, res, next) => {
+router.get('/supplier-orders/:id', authorizeRoles('admin', 'staff'), async (req, res, next) => {
     try {
+        console.log('🔍 [Route /supplier-orders/:id] Called - ID:', req.params.id, 'Type:', typeof req.params.id);
         const result = await supplierOrderService.getSupplierOrderById(req.params.id);
         res.status(result.success ? 200 : result.status || 500).json(result);
     } catch (error) {
@@ -55,7 +58,7 @@ router.get('/:id', authorizeRoles('admin', 'staff'), async (req, res, next) => {
  * POST /api/supplier-orders
  * Create new supplier order (Admin/Staff)
  */
-router.post('/', authorizeRoles('admin', 'staff'), async (req, res, next) => {
+router.post('/supplier-orders', authorizeRoles('admin', 'staff'), async (req, res, next) => {
     try {
         const result = await supplierOrderService.createSupplierOrder(req.body, req.user.userId);
         res.status(result.success ? 201 : result.status || 500).json(result);
@@ -69,7 +72,7 @@ router.post('/', authorizeRoles('admin', 'staff'), async (req, res, next) => {
  * Update supplier order status (Admin/Staff)
  * Body: { status: 'pending' | 'approved' | 'shipped' | 'received' | 'cancelled', receivedItems?: [...] }
  */
-router.patch('/:id/status', authorizeRoles('admin', 'staff'), async (req, res, next) => {
+router.patch('/supplier-orders/:id/status', authorizeRoles('admin', 'staff'), async (req, res, next) => {
     try {
         const { status, receivedItems } = req.body;
 
@@ -97,7 +100,7 @@ router.patch('/:id/status', authorizeRoles('admin', 'staff'), async (req, res, n
  * Receive supplier order and auto-import to inventory (Admin/Staff)
  * Body: { receivedItems?: [{ product_id, received_qty }] }
  */
-router.post('/:id/receive', authorizeRoles('admin', 'staff'), async (req, res, next) => {
+router.post('/supplier-orders/:id/receive', authorizeRoles('admin', 'staff'), async (req, res, next) => {
     try {
         const { receivedItems } = req.body;
         const result = await supplierOrderService.receiveSupplierOrder(
@@ -116,7 +119,7 @@ router.post('/:id/receive', authorizeRoles('admin', 'staff'), async (req, res, n
  * Cancel supplier order (Admin/Staff)
  * Body: { reason?: string }
  */
-router.post('/:id/cancel', authorizeRoles('admin', 'staff'), async (req, res, next) => {
+router.post('/supplier-orders/:id/cancel', authorizeRoles('admin', 'staff'), async (req, res, next) => {
     try {
         const { reason } = req.body;
         const result = await supplierOrderService.cancelSupplierOrder(

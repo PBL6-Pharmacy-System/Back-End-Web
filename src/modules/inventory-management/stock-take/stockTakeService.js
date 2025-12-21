@@ -122,24 +122,25 @@ export const createStockTake = async (data, userId) => {
         }
       });
 
-      // Create stock take items for all products
-      const items = await Promise.all(
-        inventoryItems.map(item =>
-          tx.stockTakeItem.create({
-            data: {
-              stock_take_id: stockTake.id,
-              product_id: item.product_id,
-              branch_id: Number(branch_id),
-              system_qty: item.stock,
-              actual_qty: null,
-              variance: null,
-              variance_value: null
-            }
-          })
-        )
-      );
+      // ✅ FIX: Use createMany instead of individual creates to avoid timeout
+      // Create stock take items for all products in one batch operation
+      const itemsData = inventoryItems.map(item => ({
+        stock_take_id: stockTake.id,
+        product_id: item.product_id,
+        branch_id: Number(branch_id),
+        system_qty: item.stock,
+        actual_qty: null,
+        variance: null,
+        variance_value: null
+      }));
 
-      return { ...stockTake, itemCount: items.length };
+      const { count } = await tx.stockTakeItem.createMany({
+        data: itemsData
+      });
+
+      return { ...stockTake, itemCount: count };
+    }, {
+      timeout: 10000 // ✅ Increase timeout to 10 seconds for large datasets
     });
 
     return {
@@ -525,6 +526,36 @@ export const completeStockTake = async (id, userId) => {
         const targetTotal = item.actual_qty;
         let adjustmentNeeded = targetTotal - currentBatchTotal;
 
+        // ✅ FIX: Handle case when no batches exist - create adjustment batch
+        if (batches.length === 0 && adjustmentNeeded !== 0) {
+          console.warn(`[StockTake ${stockTake.stock_take_no}] No batches found for product ${item.product_id}. Creating adjustment batch.`);
+          
+          // Create an adjustment batch with today as manufacturing date and far future expiry
+          const adjustmentBatch = await tx.productBatch.create({
+            data: {
+              product_id: item.product_id,
+              branch_id: item.branch_id,
+              batch_number: `ADJ-${stockTake.stock_take_no}-${item.product_id}`,
+              quantity: item.actual_qty,
+              manufacturing_date: new Date(),
+              expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
+              status: 'active',
+              note: `Batch điều chỉnh từ kiểm kê ${stockTake.stock_take_no}`,
+              created_at: new Date(),
+              updated_at: new Date()
+            }
+          });
+
+          batchAdjustments.push({
+            batch_id: adjustmentBatch.id,
+            batch_number: adjustmentBatch.batch_number,
+            adjustment: item.actual_qty,
+            type: 'created'
+          });
+
+          adjustmentNeeded = 0; // Already handled
+        }
+
         // Adjust batch quantities
         if (adjustmentNeeded !== 0 && batches.length > 0) {
           if (adjustmentNeeded > 0) {
@@ -607,6 +638,8 @@ export const completeStockTake = async (id, userId) => {
       }
 
       return { stockTake: completedStockTake, batchAdjustments };
+    }, {
+      timeout: 15000 // ✅ Increase timeout to 15 seconds for complex batch adjustments
     });
 
     return {

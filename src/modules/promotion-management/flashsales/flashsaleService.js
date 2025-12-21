@@ -103,9 +103,8 @@ export const getFlashsaleById = async (id) => {
                 id: true,
                 name: true,
                 price: true,
-                stock: true,
                 image_url: true,
-                sku: true
+                sold_count: true
               }
             }
           }
