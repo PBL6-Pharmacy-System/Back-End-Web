@@ -182,7 +182,7 @@ export const createSupplierOrder = async (data, userId) => {
     try {
         console.log('📥 Backend received supplier order data:', JSON.stringify(data, null, 2));
         console.log('👤 User ID:', userId);
-        
+
         const { supplier_id, branch_id, items, note, expected_date } = data;
 
         // Validate required fields
@@ -217,22 +217,6 @@ export const createSupplierOrder = async (data, userId) => {
                 success: false,
                 status: 404,
                 error: 'Chi nhánh không tồn tại'
-            };
-        }
-        // Verify all products exist
-        const productIds = items.map(item => Number(item.product_id));
-        const existingProducts = await prisma.products.findMany({
-            where: { id: { in: productIds } },
-            select: { id: true, name: true }
-        });
-
-        if (existingProducts.length !== productIds.length) {
-            const existingIds = existingProducts.map(p => p.id);
-            const missingIds = productIds.filter(id => !existingIds.includes(id));
-            return {
-                success: false,
-                status: 404,
-                error: `Các sản phẩm không tồn tại: ${missingIds.join(', ')}`
             };
         }
 
@@ -440,7 +424,7 @@ export const receiveSupplierOrder = async (id, userId, receivedItems = null) => 
         if (receivedItems && Array.isArray(receivedItems)) {
             const orderProductIds = order.supplierOrderItem.map(i => i.product_id);
             const receivedProductIds = receivedItems.map(ri => Number(ri.product_id));
-            
+
             console.log('[receiveSupplierOrder] Validating receivedItems:', {
                 orderProductIds,
                 receivedProductIds
