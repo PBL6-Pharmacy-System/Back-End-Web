@@ -10,7 +10,15 @@ export const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
+    console.log('🔑 [authenticateToken] Request:', {
+      path: req.path,
+      method: req.method,
+      hasAuthHeader: !!authHeader,
+      tokenPreview: token?.substring(0, 20) + '...'
+    });
+
     if (!token) {
+      console.log('❌ [authenticateToken] No token provided');
       return res.status(401).json({
         success: false,
         error: 'Token không được cung cấp'
@@ -19,6 +27,12 @@ export const authenticateToken = async (req, res, next) => {
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    console.log('✅ [authenticateToken] Token decoded:', {
+      userId: decoded.userId,
+      customer_id: decoded.customer_id,
+      role_name: decoded.role_name
+    });
 
     // ✅ Attach user info từ JWT - STANDARDIZED property names
     req.user = {
@@ -35,6 +49,7 @@ export const authenticateToken = async (req, res, next) => {
 
     next();
   } catch (error) {
+    console.error('❌ [authenticateToken] Error:', error.name, error.message);
     if (error.name === 'JsonWebTokenError') {
       return res.status(403).json({
         success: false,
@@ -89,7 +104,11 @@ export const requireRoles = (...roles) => {
       });
     }
 
-    if (!roles.includes(req.user.role_name)) {
+    // Case-insensitive role comparison
+    const userRole = req.user.role_name?.toLowerCase();
+    const allowedRoles = roles.map(r => r.toLowerCase());
+    
+    if (!allowedRoles.includes(userRole)) {
       return res.status(403).json({
         success: false,
         error: `Không có quyền truy cập. Yêu cầu vai trò: ${roles.join(', ')}`

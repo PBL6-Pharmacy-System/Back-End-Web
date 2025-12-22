@@ -5,6 +5,47 @@ import * as voucherService from './voucherService.js';
 // ========================================
 
 /**
+ * GET /vouchers
+ * Lấy danh sách vouchers của customer hiện tại (đã được assign)
+ */
+export const getCustomerVouchers = async (req, res) => {
+  try {
+    const customerId = req.user?.customer_id;
+    
+    if (!customerId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Chỉ khách hàng mới có thể xem voucher của mình'
+      });
+    }
+
+    const {
+      page = 1,
+      limit = 10,
+      isUsed // 'true', 'false', or undefined
+    } = req.query;
+
+    const result = await voucherService.getCustomerVouchers(customerId, {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      isUsed: isUsed === 'true' ? true : isUsed === 'false' ? false : null
+    });
+
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error in getCustomerVouchers:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi lấy danh sách voucher của khách hàng'
+    });
+  }
+};
+
+/**
  * GET /vouchers/available
  * Lấy danh sách vouchers đang active (user có thể dùng)
  * ✅ FIX: Truyền customerId để lọc voucher đã sử dụng
@@ -54,6 +95,7 @@ export const validateVoucherCode = async (req, res) => {
   try {
     const { code } = req.params;
     const { orderAmount } = req.query;
+    const customerId = req.user?.customer_id;
 
     if (!code) {
       return res.status(400).json({
@@ -64,7 +106,8 @@ export const validateVoucherCode = async (req, res) => {
 
     const result = await voucherService.validateVoucherForUse(
       code,
-      orderAmount ? parseFloat(orderAmount) : 0
+      orderAmount ? parseFloat(orderAmount) : 0,
+      customerId // Pass customer_id để check đã dùng chưa
     );
 
     if (!result.success) {

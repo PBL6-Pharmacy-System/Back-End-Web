@@ -127,12 +127,10 @@ export const register = async (data) => {
           full_name: full_name?.trim(),
           role_id: Number(role_id)
         },
-        include: {
-          rolepermissions: true
-        }
-      });
-
-      // Create role-specific record based on role_id
+      include: {
+        roles: true
+      }
+    });      // Create role-specific record based on role_id
       if (Number(role_id) === 2) {
         // Staff role
         await tx.staff.create({
@@ -154,7 +152,7 @@ export const register = async (data) => {
       return tx.users.findUnique({
         where: { id: newUser.id },
         include: {
-          rolepermissions: true,
+          roles: true,
           customers: true,
           staff: {
             include: {
@@ -172,7 +170,7 @@ export const register = async (data) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
+      role_name: user.roles.role_name
     };
 
     // Add role-specific ID to token (chỉ staff hoặc admin cho register)
@@ -237,7 +235,7 @@ export const login = async (data) => {
         ]
       },
       include: {
-        rolepermissions: true,
+        roles: true,
         customers: true,
         staff: {
           include: {
@@ -279,7 +277,7 @@ export const login = async (data) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
+      role_name: user.roles.role_name
     };
 
     // Add role-specific ID to token
@@ -328,7 +326,7 @@ export const getCurrentUser = async (userId) => {
     const user = await prisma.users.findUnique({
       where: { id: Number(userId) },
       include: {
-        rolepermissions: true,
+        roles: true,
         customers: true,
         staff: {
           include: {
@@ -453,7 +451,7 @@ export const refreshAccessToken = async (refreshToken) => {
     const user = await prisma.users.findUnique({
       where: { id: decoded.userId },  // ✅ REVERTED: Use 'userId' to match middleware
       include: {
-        rolepermissions: true,
+        roles: true,
         customers: true,
         staff: true,
         admin: true
@@ -474,7 +472,7 @@ export const refreshAccessToken = async (refreshToken) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
+      role_name: user.roles.role_name
     };
 
     // Add role-specific ID
@@ -511,8 +509,11 @@ export const refreshAccessToken = async (refreshToken) => {
  */
 export const customerLoginWithOTP = async (phone = null, email = null, otpCode) => {
   try {
+    console.log('🔐 [customerLoginWithOTP] Starting with:', { phone, email, otpCode: otpCode?.substring(0, 2) + '****' });
+    
     // Validate
     if ((!phone && !email) || !otpCode) {
+      console.log('❌ [customerLoginWithOTP] Validation failed: missing phone/email or OTP');
       return {
         success: false,
         error: 'Số điện thoại/email và mã OTP là bắt buộc',
@@ -532,6 +533,10 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
     if (email) {
       normalizedEmail = email.toLowerCase().trim();
     }
+    
+    console.log('📞 [customerLoginWithOTP] Normalized:', { normalizedPhone, normalizedEmail });
+
+    console.log('📞 [customerLoginWithOTP] Normalized:', { normalizedPhone, normalizedEmail });
 
     // Verify OTP first
     const whereClause = {
@@ -545,6 +550,8 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
         gte: new Date()
       }
     };
+    
+    console.log('🔍 [customerLoginWithOTP] Searching for OTP with clause:', JSON.stringify(whereClause, null, 2));
 
     const otpRecord = await prisma.otp_verifications.findFirst({
       where: whereClause,
@@ -552,20 +559,29 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
         created_at: 'desc'
       }
     });
+    
+    console.log('📋 [customerLoginWithOTP] OTP record found:', !!otpRecord);
 
     if (!otpRecord) {
+      console.log('❌ [customerLoginWithOTP] OTP not found or expired');
       return {
         success: false,
         error: 'Mã OTP không hợp lệ hoặc đã hết hạn',
         status: 400
       };
     }
+    
+    console.log('✅ [customerLoginWithOTP] OTP verified, marking as used...');
+
+    console.log('✅ [customerLoginWithOTP] OTP verified, marking as used...');
 
     // Mark OTP as verified
     await prisma.otp_verifications.update({
       where: { id: otpRecord.id },
       data: { verified: true }
     });
+    
+    console.log('✅ [customerLoginWithOTP] OTP marked as verified');
 
     // Find or create customer
     // Tìm user bằng phone, email HOẶC username (vì username có thể = email hoặc phone)
@@ -577,22 +593,29 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
         ...(potentialUsername ? [{ username: potentialUsername }] : [])
       ]
     };
+    
+    console.log('🔍 [customerLoginWithOTP] Searching for user with clause:', JSON.stringify(userWhereClause, null, 2));
 
     let user = await prisma.users.findFirst({
       where: userWhereClause,
       include: {
-        rolepermissions: true,
+        roles: true,
         customers: true
       }
     });
+    
+    console.log('👤 [customerLoginWithOTP] User found:', !!user, user ? { id: user.id, role_id: user.role_id } : null);
 
     let isNewAccount = false;
 
     // If user doesn't exist, create new customer account
     if (!user) {
+      console.log('➕ [customerLoginWithOTP] Creating new customer account...');
+      console.log('➕ [customerLoginWithOTP] Creating new customer account...');
       isNewAccount = true;
       // Create user with customer role (role_id = 3) in transaction
       user = await prisma.$transaction(async (tx) => {
+        console.log('📝 [customerLoginWithOTP] Creating user record...');
         const newUser = await tx.users.create({
           data: {
             username: normalizedEmail || normalizedPhone,
@@ -604,6 +627,9 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
             is_verified: true // Auto-verified via OTP
           }
         });
+        
+        console.log('✅ [customerLoginWithOTP] User created with ID:', newUser.id);
+        console.log('📝 [customerLoginWithOTP] Creating customer record...');
 
         // Create customer record
         await tx.customers.create({
@@ -611,57 +637,85 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
             user_id: newUser.id
           }
         });
+        
+        console.log('✅ [customerLoginWithOTP] Customer record created');
 
         // ✅ FIX: Return user with all relations including roles
-        return tx.users.findUnique({
+        const userWithRelations = await tx.users.findUnique({
           where: { id: newUser.id },
           include: {
-            rolepermissions: true,
+            roles: true,
             customers: true
           }
         });
+        
+        console.log('✅ [customerLoginWithOTP] User loaded with relations:', {
+          id: userWithRelations.id,
+          has_role: !!userWithRelations.roles,
+          has_customer: !!userWithRelations.customers
+        });
+        
+        return userWithRelations;
       });
+      
+      console.log('✅ [customerLoginWithOTP] Transaction completed');
     }
+    
+    console.log('🔐 [customerLoginWithOTP] Checking user role...');
+
+    console.log('🔐 [customerLoginWithOTP] Checking user role...');
 
     // Check if user is customer role
     if (user.role_id !== 3) {
+      console.log('❌ [customerLoginWithOTP] User is not a customer, role_id:', user.role_id);
       return {
         success: false,
         error: 'Tài khoản này không phải là khách hàng. Vui lòng đăng nhập bằng username và password',
         status: 403
       };
     }
+    
+    console.log('✅ [customerLoginWithOTP] User is customer, updating last login...');
 
     // Update last_login
     await prisma.users.update({
       where: { id: user.id },
       data: { last_login: new Date() }
     });
+    
+    console.log('✅ [customerLoginWithOTP] Last login updated');
 
     // ✅ FIX: Ensure role_name is always 'customer' for customer accounts
     // và customer_id luôn có giá trị
-    const roleName = user.rolepermissions?.role_name || 'customer';
+    const roleName = user.roles?.role_name || 'customer';
     const customerId = user.customers?.id;
+    
+    console.log('🏷️ [customerLoginWithOTP] Role info:', { roleName, customerId, has_roles: !!user.roles });
 
     // ✅ FIX: Nếu không có customer record, tạo một cái
     let finalCustomerId = customerId;
     if (!finalCustomerId) {
+      console.log('➕ [customerLoginWithOTP] Creating missing customer record...');
       const newCustomer = await prisma.customers.create({
         data: {
           user_id: user.id
         }
       });
       finalCustomerId = newCustomer.id;
+      console.log('✅ [customerLoginWithOTP] Customer record created with ID:', finalCustomerId);
 
       // Reload user để có customer data
       user = await prisma.users.findUnique({
         where: { id: user.id },
         include: {
-          rolepermissions: true,
+          roles: true,
           customers: true
         }
       });
+      console.log('✅ [customerLoginWithOTP] User reloaded with customer data');
     }
+    
+    console.log('🎟️ [customerLoginWithOTP] Generating tokens...');
 
     // Generate tokens với đầy đủ thông tin
     const token = generateToken({
@@ -677,9 +731,13 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
     const refreshToken = generateRefreshToken({
       userId: user.id
     });
+    
+    console.log('✅ [customerLoginWithOTP] Tokens generated successfully');
 
     // Remove password from response
     const { password_hash: _, ...userWithoutPassword } = user;
+    
+    console.log('🎉 [customerLoginWithOTP] Login successful!');
 
     return {
       success: true,
@@ -696,7 +754,8 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
       }
     };
   } catch (error) {
-    console.error('Customer OTP login error:', error);
+    console.error('💥 [customerLoginWithOTP] Error:', error);
+    console.error('💥 [customerLoginWithOTP] Stack:', error.stack);
     return {
       success: false,
       error: 'Lỗi khi đăng nhập',

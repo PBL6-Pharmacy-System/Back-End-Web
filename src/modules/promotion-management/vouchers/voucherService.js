@@ -40,6 +40,89 @@ const validateVoucherData = (data) => {
 // ========================================
 
 /**
+ * Lấy danh sách vouchers của customer hiện tại (đã được assign)
+ * Bao gồm cả vouchers đã dùng và chưa dùng
+ */
+export const getCustomerVouchers = async (customerId, { 
+  page = 1,
+  limit = 10,
+  isUsed = null // null = all, true = used, false = unused
+}) => {
+  try {
+    const where = {
+      customer_id: Number(customerId),
+      ...(isUsed !== null && { is_used: isUsed })
+    };
+
+    const [userVouchers, total] = await Promise.all([
+      prisma.uservouchers.findMany({
+        where,
+        include: {
+          vouchers: {
+            select: {
+              id: true,
+              code: true,
+              discount_type: true,
+              discount_value: true,
+              min_order_value: true,
+              start_date: true,
+              end_date: true,
+              usage_limit: true,
+              used_count: true
+            }
+          }
+        },
+        orderBy: {
+          assigned_at: 'desc'
+        },
+        skip: (page - 1) * limit,
+        take: limit
+      }),
+      prisma.uservouchers.count({ where })
+    ]);
+
+    // Transform data to flatten voucher info
+    const vouchers = userVouchers.map(uv => ({
+      id: uv.vouchers.id,
+      code: uv.vouchers.code,
+      discount_type: uv.vouchers.discount_type,
+      discount_value: uv.vouchers.discount_value,
+      min_order_value: uv.vouchers.min_order_value,
+      start_date: uv.vouchers.start_date,
+      end_date: uv.vouchers.end_date,
+      usage_limit: uv.vouchers.usage_limit,
+      used_count: uv.vouchers.used_count,
+      is_used: uv.is_used,
+      assigned_at: uv.assigned_at,
+      order_id: uv.order_id,
+      // Check if voucher is still valid
+      is_expired: new Date() > new Date(uv.vouchers.end_date),
+      can_use: !uv.is_used && new Date() >= new Date(uv.vouchers.start_date) && new Date() <= new Date(uv.vouchers.end_date)
+    }));
+
+    return {
+      success: true,
+      data: {
+        vouchers,
+        pagination: {
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          totalRecords: total
+        }
+      }
+    };
+  } catch (error) {
+    console.error('Error in getCustomerVouchers:', error);
+    return {
+      success: false,
+      error: 'Lỗi khi lấy danh sách voucher của khách hàng',
+      status: 500
+    };
+  }
+};
+
+/**
  * Lấy danh sách vouchers đang active (cho user)
  * Chỉ trả về vouchers còn hạn và còn lượt dùng
  * ✅ FIX: Thêm customerId để lọc voucher đã sử dụng

@@ -8,29 +8,35 @@ const router = express.Router();
 // ========================================
 // PUBLIC ROUTES - User xem vouchers
 // ========================================
-// Lấy danh sách vouchers đang active (user có thể dùng)
+
+// 1. Lấy vouchers của customer hiện tại (đã được assign)
+// GET /vouchers - PHẢI ĐẶT TRƯỚC /vouchers/available
+router.get('/vouchers', authenticateToken, voucherController.getCustomerVouchers);
+
+// 2. Lấy danh sách vouchers đang active (user có thể dùng)
 router.get('/vouchers/available', authenticateToken, voucherController.getAvailableVouchers);
 
-// Validate voucher code (check có hợp lệ không trước khi checkout)
+// 3. Validate voucher code (check có hợp lệ không trước khi checkout)
 router.get('/vouchers/check/:code', authenticateToken, voucherController.validateVoucherCode);
 
-// Chi tiết voucher cụ thể
+// 4. Chi tiết voucher cụ thể bằng ID
 router.get('/vouchers/:id', authenticateToken, validateId(), voucherController.getVoucherById);
 
 // ========================================
 // ADMIN ROUTES - Quản lý vouchers
 // ========================================
-// Lấy tất cả vouchers (bao gồm cả expired)
-router.get('/vouchers', authenticateToken, authorizeAdmin, voucherController.getAllVouchers);
+
+// Lấy tất cả vouchers (bao gồm cả expired) - CHỈ ADMIN
+router.get('/admin/vouchers', authenticateToken, authorizeAdmin, voucherController.getAllVouchers);
 
 // Tạo voucher mới
-router.post('/vouchers', authenticateToken, authorizeAdmin, voucherController.createVoucher);
+router.post('/admin/vouchers', authenticateToken, authorizeAdmin, voucherController.createVoucher);
 
 // Sửa voucher
-router.put('/vouchers/:id', authenticateToken, authorizeAdmin, validateId(), voucherController.updateVoucher);
+router.put('/admin/vouchers/:id', authenticateToken, authorizeAdmin, validateId(), voucherController.updateVoucher);
 
 // Xóa voucher (chỉ xóa được nếu chưa dùng)
-router.delete('/vouchers/:id', authenticateToken, authorizeAdmin, validateId(), voucherController.deleteVoucher);
+router.delete('/admin/vouchers/:id', authenticateToken, authorizeAdmin, validateId(), voucherController.deleteVoucher);
 
 // ========================================
 // NOTE: KHÔNG CÓ API "applyVoucher"
