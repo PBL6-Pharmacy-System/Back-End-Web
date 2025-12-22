@@ -355,11 +355,14 @@ export const getCart = async (customerId) => {
       };
     }
 
-    // Get or create cart
+    // Get or create cart - ✅ FIX: Add orderBy to get the most recent cart
     let cart = await prisma.orders.findFirst({
       where: {
         customer_id: Number(customerId),
         status: ORDER_STATUS.CART
+      },
+      orderBy: {
+        order_date: 'desc' // Get the most recent cart
       },
       include: {
         orderitems: {
@@ -569,11 +572,14 @@ export const addToCart = async (customerId, orderData) => {
 
     // ✅ REMOVED: validateStockAvailability call - already checked above
 
-    // Get or create cart
+    // Get or create cart - ✅ FIX: Add orderBy to get the most recent cart
     let cart = await prisma.orders.findFirst({
       where: {
         customer_id: Number(customerId),
         status: ORDER_STATUS.CART
+      },
+      orderBy: {
+        order_date: 'desc' // Get the most recent cart
       },
       include: {
         orderitems: true
@@ -818,11 +824,14 @@ export const updateCartItem = async (itemId, quantity) => {
 
 export const removeCartItem = async (customerId, itemId) => {
   try {
-    // Get customer's cart first
+    // Get customer's cart first - ✅ FIX: Add orderBy to get the most recent cart
     const cart = await prisma.orders.findFirst({
       where: {
         customer_id: Number(customerId),
         status: ORDER_STATUS.CART
+      },
+      orderBy: {
+        order_date: 'desc'
       }
     });
 
@@ -1287,11 +1296,14 @@ export const createOrder = async (customerId, orderData) => {
  */
 export const clearCart = async (customerId) => {
   try {
-    // Get cart
+    // Get cart - ✅ FIX: Add orderBy to get the most recent cart
     const cart = await prisma.orders.findFirst({
       where: {
         customer_id: Number(customerId),
         status: ORDER_STATUS.CART
+      },
+      orderBy: {
+        order_date: 'desc'
       },
       include: {
         orderitems: true
@@ -1336,11 +1348,14 @@ export const clearCart = async (customerId) => {
  */
 export const getCartSummary = async (customerId) => {
   try {
-    // Get cart
+    // Get cart - ✅ FIX: Add orderBy to get the most recent cart
     const cart = await prisma.orders.findFirst({
       where: {
         customer_id: Number(customerId),
         status: ORDER_STATUS.CART
+      },
+      orderBy: {
+        order_date: 'desc'
       },
       include: {
         orderitems: {
@@ -1567,11 +1582,14 @@ export const mergeGuestCart = async (guestCartId, customerId) => {
       };
     }
 
-    // Get or create customer cart
+    // Get or create customer cart - ✅ FIX: Add orderBy to get the most recent cart
     let customerCart = await prisma.orders.findFirst({
       where: {
         customer_id: Number(customerId),
         status: ORDER_STATUS.CART
+      },
+      orderBy: {
+        order_date: 'desc'
       }
     });
 
@@ -1656,11 +1674,14 @@ export const mergeGuestCart = async (guestCartId, customerId) => {
  */
 export const validateCartBeforeCheckout = async (customerId) => {
   try {
-    // Get cart
+    // Get cart - ✅ FIX: Add orderBy to get the most recent cart
     const cart = await prisma.orders.findFirst({
       where: {
         customer_id: Number(customerId),
         status: ORDER_STATUS.CART
+      },
+      orderBy: {
+        order_date: 'desc'
       },
       include: {
         orderitems: {

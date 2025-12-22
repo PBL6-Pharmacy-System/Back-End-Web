@@ -37,28 +37,38 @@ const validateAddressOwnership = async (req, res, next) => {
         }
 
         const addressId = parseInt(req.params.id);
+        
+        console.log('🔍 [validateAddressOwnership] Checking address:', addressId);
+        console.log('🔍 [validateAddressOwnership] User:', req.user.username);
+        console.log('🔍 [validateAddressOwnership] Customer ID:', req.user.customer_id);
+        
         const address = await prisma.shipping_addresses.findUnique({
             where: { id: addressId },
             select: { customer_id: true }
         });
 
         if (!address) {
+            console.log('❌ [validateAddressOwnership] Address not found');
             return res.status(404).json({
                 success: false,
                 error: 'Không tìm thấy địa chỉ'
             });
         }
 
+        console.log('🔍 [validateAddressOwnership] Address customer_id:', address.customer_id);
+
         if (address.customer_id !== req.user.customer_id) {
+            console.log('❌ [validateAddressOwnership] Customer ID mismatch');
             return res.status(403).json({
                 success: false,
                 error: 'Bạn chỉ có thể truy cập địa chỉ của chính mình'
             });
         }
 
+        console.log('✅ [validateAddressOwnership] Validation passed');
         next();
     } catch (error) {
-        console.error('Error in validateAddressOwnership:', error);
+        console.error('❌ [validateAddressOwnership] Error:', error);
         return res.status(500).json({
             success: false,
             error: 'Lỗi kiểm tra quyền truy cập'

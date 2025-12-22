@@ -110,23 +110,29 @@ export const createPaymentDeeplink = async (req, res, next) => {
       });
     }
 
+    console.log('🔵 [MoMo Controller] Calling createMoMoPayment for order:', orderId);
     const result = await createMoMoPayment(orderId);
 
     if (result.success) {
+      console.log('✅ [MoMo Controller] Payment created successfully:', result.data);
       return res.status(200).json({
         success: true,
         message: 'Tạo thanh toán MoMo thành công',
         data: result.data
       });
     } else {
+      console.log('❌ [MoMo Controller] Payment creation failed:', result.error);
       return res.status(result.status || 400).json({
         success: false,
-        message: result.error
+        message: result.error || 'Không thể tạo thanh toán MoMo'
       });
     }
   } catch (error) {
-    console.error('Create MoMo payment error:', error);
-    next(error);
+    console.error('❌ [MoMo Controller] Create payment error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Lỗi hệ thống khi tạo thanh toán MoMo. Vui lòng thử lại sau.'
+    });
   }
 };
 

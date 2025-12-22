@@ -1,11 +1,13 @@
 import axios from 'axios';
 import crypto from 'crypto';
 import prisma from '../../../../../config/db.js';
-import { MOMO_CONFIG } from './momoConfig.js';
+import { MOMO_CONFIG, MOMO_RESULT_CODES } from './momoConfig.js';
 import { createMoMoSignature, generateRequestId } from './momoUtils.js';
 
 export const createMoMoPayment = async (orderId) => {
   try {
+    console.log('🔵 [MoMo] Creating payment for order:', orderId);
+    
     const order = await prisma.orders.findUnique({
       where: { id: Number(orderId) },
       include: {
@@ -20,6 +22,7 @@ export const createMoMoPayment = async (orderId) => {
     });
 
     if (!order) {
+      console.log('❌ [MoMo] Order not found:', orderId);
       return {
         success: false,
         status: 404,
@@ -30,6 +33,13 @@ export const createMoMoPayment = async (orderId) => {
     const requestId = generateRequestId();
     const momoOrderId = `MOMO_${order.id}_${Date.now()}`;
     const amount = String(Math.round(Number(order.final_amount)));
+
+    console.log('🔵 [MoMo] Order details:', {
+      orderId: order.id,
+      amount,
+      momoOrderId,
+      requestId
+    });
 
     const rawData = {
       partnerCode: MOMO_CONFIG.partnerCode,
@@ -68,11 +78,12 @@ export const createMoMoPayment = async (orderId) => {
       signature
     };
 
-    console.log('🔵 MoMo Payment Request:', {
-      orderId: order.id,
-      momoOrderId,
-      amount,
-      requestId
+    console.log('🔵 [MoMo] Sending request to:', MOMO_CONFIG.endpoint);
+    console.log('🔵 [MoMo] Request body:', {
+      partnerCode: rawData.partnerCode,
+      orderId: rawData.orderId,
+      amount: rawData.amount,
+      requestType: rawData.requestType
     });
 
     const response = await axios.post(MOMO_CONFIG.endpoint, requestBody, {
@@ -82,9 +93,11 @@ export const createMoMoPayment = async (orderId) => {
       timeout: 30000
     });
 
-    console.log('🔵 MoMo Response:', response.data);
+    console.log('🔵 [MoMo] Response status:', response.status);
+    console.log('🔵 [MoMo] Response data:', response.data);
 
     if (response.data.resultCode === 0) {
+      console.log('✅ [MoMo] Payment created successfully');
       return {
         success: true,
         data: {
@@ -98,16 +111,27 @@ export const createMoMoPayment = async (orderId) => {
         }
       };
     } else {
+      const errorMessage = MOMO_RESULT_CODES[response.data.resultCode] || response.data.message || 'Không thể tạo thanh toán MoMo';
+      console.log('❌ [MoMo] Payment creation failed:', {
+        resultCode: response.data.resultCode,
+        message: errorMessage
+      });
       return {
         success: false,
         status: 400,
-        error: response.data.message || 'Không thể tạo thanh toán MoMo',
+        error: errorMessage,
         resultCode: response.data.resultCode
       };
     }
   } catch (error) {
-    console.error('MoMo create payment error:', error.response?.data || error.message);
-    throw error;
+    console.error('❌ [MoMo] Create payment error:', error.response?.data || error.message);
+    
+    // Trả về lỗi thân thiện hơn thay vì throw
+    return {
+      success: false,
+      status: 500,
+      error: error.response?.data?.message || 'Lỗi kết nối đến MoMo. Vui lòng thử lại sau.'
+    };
   }
 };
 

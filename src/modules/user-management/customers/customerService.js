@@ -431,7 +431,13 @@ export const getCustomerOrders = async (customerId, { page, limit, status }) => 
 
     const where = { customer_id: Number(customerId) };
     if (status) {
-      where.status = status;
+      // Support multiple statuses separated by comma
+      const statusArray = status.split(',').map(s => s.trim());
+      if (statusArray.length === 1) {
+        where.status = statusArray[0];
+      } else {
+        where.status = { in: statusArray };
+      }
     }
 
     const [orders, total] = await Promise.all([
