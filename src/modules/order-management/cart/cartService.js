@@ -502,7 +502,35 @@ export const addToCart = async (customerId, orderData) => {
 
     // Get current price from product unit
     const productUnit = product.productunits[0];
-    const currentPrice = Number(productUnit.price);
+    let currentPrice = Number(productUnit.price);
+
+    // Check if product is in an active flash sale and use flash_price
+    const activeFlashSale = await prisma.flashsales.findFirst({
+      where: {
+        status: 'active',
+        start_time: { lte: new Date() },
+        end_time: { gte: new Date() },
+        flashsale_products: {
+          some: {
+            product_id: Number(productId)
+          }
+        }
+      },
+      include: {
+        flashsale_products: {
+          where: { product_id: Number(productId) }
+        }
+      }
+    });
+
+    if (activeFlashSale && activeFlashSale.flashsale_products.length > 0) {
+      const flashSaleItem = activeFlashSale.flashsale_products[0];
+      const flashPrice = Number(flashSaleItem.flash_price);
+      if (flashPrice > 0 && flashPrice < currentPrice) {
+        console.log(`🔥 Using Flash Sale price: ${flashPrice} (original: ${currentPrice})`);
+        currentPrice = flashPrice;
+      }
+    }
 
     // If unitPrice is provided, verify it matches current price
     if (unitPrice !== undefined && unitPrice !== null) {
@@ -770,24 +798,61 @@ export const updateCartItem = async (itemId, quantity) => {
       };
     }
 
-    // Verify current price hasn't changed significantly
-    const currentPrice = Number(currentItem.productunits.price);
-    const cartPrice = Number(currentItem.price);
+    // ✅ FIX FLASHSALE: Lấy giá hiện tại (ưu tiên flashsale nếu có)
+    let currentPrice = Number(currentItem.productunits.price);
+    const now = new Date();
 
-    if (Math.abs(currentPrice - cartPrice) > 0.01) {
-      return {
-        success: false,
-        status: 400,
-        error: `Giá sản phẩm đã thay đổi. Vui lòng xóa và thêm lại sản phẩm`,
-        data: {
-          oldPrice: cartPrice,
-          newPrice: currentPrice
+    // Kiểm tra flashsale đang active
+    const activeFlashsale = await prisma.flashsales.findFirst({
+      where: {
+        start_time: { lte: now },
+        end_time: { gte: now },
+        status: 'active',
+        flashsale_products: {
+          some: {
+            product_id: currentItem.product_id
+          }
         }
-      };
+      },
+      include: {
+        flashsale_products: {
+          where: {
+            product_id: currentItem.product_id
+          },
+          select: {
+            flash_price: true,
+            stock_limit: true,
+            sold_count: true
+          }
+        }
+      }
+    });
+
+    // Nếu có flashsale và còn hàng, dùng giá flashsale
+    if (activeFlashsale && activeFlashsale.flashsale_products.length > 0) {
+      const flashsaleProduct = activeFlashsale.flashsale_products[0];
+      const remainingStock = flashsaleProduct.stock_limit - flashsaleProduct.sold_count;
+      
+      if (remainingStock >= Number(quantity)) {
+        const flashPrice = Number(flashsaleProduct.flash_price);
+        if (flashPrice > 0 && flashPrice < currentPrice) {
+          currentPrice = flashPrice;
+          console.log(`🔥 [UPDATE_CART] Using flashsale price: ${flashPrice} (original: ${currentItem.productunits.price})`);
+        }
+      }
     }
 
-    // Calculate new subtotal
-    const newSubtotal = Number(quantity) * cartPrice;
+    const cartPrice = Number(currentItem.price);
+    let priceUpdated = false;
+
+    // Nếu giá thay đổi, cập nhật giá mới thay vì báo lỗi
+    if (Math.abs(currentPrice - cartPrice) > 0.01) {
+      console.log(`[UPDATE_CART] Price changed for item ${itemId}: ${cartPrice} → ${currentPrice}`);
+      priceUpdated = true;
+    }
+
+    // Calculate new subtotal với giá hiện tại
+    const newSubtotal = Number(quantity) * currentPrice;
     const oldSubtotal = Number(currentItem.subtotal);
     const subtotalDiff = newSubtotal - oldSubtotal;
 
@@ -797,7 +862,9 @@ export const updateCartItem = async (itemId, quantity) => {
         where: { id: Number(itemId) },
         data: {
           quantity: Number(quantity),
-          subtotal: newSubtotal
+          price: currentPrice, // ✅ Cập nhật giá mới (có thể là flashsale)
+          subtotal: newSubtotal,
+          updated_at: new Date()
         },
         include: {
           products: true,
@@ -808,7 +875,8 @@ export const updateCartItem = async (itemId, quantity) => {
         where: { id: currentItem.order_id },
         data: {
           total_amount: { increment: subtotalDiff },
-          final_amount: { increment: subtotalDiff }
+          final_amount: { increment: subtotalDiff },
+          updated_at: new Date()
         }
       })
     ]);
