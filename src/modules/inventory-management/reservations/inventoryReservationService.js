@@ -4,8 +4,8 @@
  */
 import prisma from '../../../config/db.js';
 
-// Thời gian giữ chỗ mặc định (15 phút)
-const DEFAULT_RESERVATION_MINUTES = 15;
+// Thời gian giữ chỗ mặc định (15 phút) - có thể config qua env
+const DEFAULT_RESERVATION_MINUTES = parseInt(process.env.RESERVATION_TIMEOUT_MINUTES) || 15;
 
 /**
  * Tạo reservation cho order khi bắt đầu checkout

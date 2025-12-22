@@ -152,7 +152,8 @@ export const register = async (data) => {
       return tx.users.findUnique({
         where: { id: newUser.id },
         include: {
-          rolepermissionpermissions: true,
+          rolepermissions: true, // This is the relation name in schema
+          // rolepermissionpermissions: true,
           customers: true,
           staff: {
             include: {

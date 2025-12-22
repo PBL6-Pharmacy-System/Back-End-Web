@@ -1,4 +1,5 @@
 import prisma from '../../../config/db.js';
+import { inventoryLogger } from '../../../utils/logger.js';
 
 // ============================================================
 // FEFO (First Expired First Out) INVENTORY MANAGEMENT
@@ -878,6 +879,8 @@ export const createProductBatch = async (data, userId) => {
       });
 
       return batch;
+    }, {
+      timeout: 15000
     });
 
     return {
@@ -1233,6 +1236,8 @@ export const disposeExpiredBatch = async (id, userId, disposalNote = 'Tiêu hủ
       });
 
       return updatedBatch;
+    }, {
+      timeout: 15000
     });
 
     return {

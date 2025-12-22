@@ -48,6 +48,7 @@ import productBatchRoutes from './modules/inventory-management/product-batch/pro
 import stockOperationsRoutes from './modules/inventory-management/stock-operations/stockOperationsRoutes.js';
 import stockTakeRoutes from './modules/inventory-management/stock-take/stockTakeRoutes.js';
 import supplierOrderRoutes from './modules/inventory-management/supplier-order/supplierOrderRoutes.js';
+import inventoryHealthCheckRoutes from './modules/inventory-management/inventoryHealthCheckRoutes.js';
 
 // Order Management
 import cartRoutes from './modules/order-management/cart/cartRoutes.js';
@@ -152,6 +153,7 @@ app.use('/api', productBatchRoutes);
 app.use('/api', stockTakeRoutes);
 app.use('/api', stockOperationsRoutes);
 app.use('/api/supplier-orders', supplierOrderRoutes);
+app.use('/api/inventory', inventoryHealthCheckRoutes);
 
 // Order
 app.use('/api', cartRoutes);

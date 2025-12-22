@@ -236,6 +236,23 @@ export const createSupplierOrder = async (data, userId) => {
             };
         }
 
+        // Verify all products exist
+        const productIds = items.map(item => Number(item.product_id));
+        const existingProducts = await prisma.products.findMany({
+            where: { id: { in: productIds } },
+            select: { id: true, name: true }
+        });
+
+        if (existingProducts.length !== productIds.length) {
+            const existingIds = existingProducts.map(p => p.id);
+            const missingIds = productIds.filter(id => !existingIds.includes(id));
+            return {
+                success: false,
+                status: 404,
+                error: `Các sản phẩm không tồn tại: ${missingIds.join(', ')}`
+            };
+        }
+
         // Generate order number
         const orderNumber = await generateOrderNumber();
 

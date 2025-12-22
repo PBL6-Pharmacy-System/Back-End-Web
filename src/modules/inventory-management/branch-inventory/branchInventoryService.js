@@ -1,5 +1,6 @@
 import prisma from '../../../config/db.js';
 import { validateNumericFields, validateRequiredFields } from '../../../utils/validation.js';
+import { inventoryLogger } from '../../../utils/logger.js';
 
 // Validate inventory data
 const validateInventoryData = (data) => {
@@ -55,8 +56,8 @@ export const getAllBranchInventory = async ({
 }) => {
   try {
     const where = {};
-    if (branchId) where.branch_id = Number(branchId);
-    if (productId) where.product_id = Number(productId);
+    if (branchId !== undefined && branchId !== null) where.branch_id = Number(branchId);
+    if (productId !== undefined && productId !== null) where.product_id = Number(productId);
 
     const [inventory, total] = await Promise.all([
       prisma.branchinventory.findMany({
@@ -79,10 +80,13 @@ export const getAllBranchInventory = async ({
       prisma.branchinventory.count({ where })
     ]);
 
+    // Filter out orphaned records (where branch or product was deleted)
+    const validInventory = inventory.filter(inv => inv.branches && inv.products);
+
     return {
       success: true,
       data: {
-        inventory,
+        inventory: validInventory,
         pagination: {
           page,
           limit,
@@ -117,6 +121,24 @@ export const getBranchInventoryById = async (id) => {
         success: false,
         status: 404,
         error: 'Không tìm thấy tồn kho'
+      };
+    }
+
+    // Check for orphaned record (branch was deleted but inventory record remains)
+    if (!inventory.branches) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Chi nhánh không tồn tại (dữ liệu không đồng bộ)'
+      };
+    }
+
+    // Check for orphaned product
+    if (!inventory.products) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Sản phẩm không tồn tại (dữ liệu không đồng bộ)'
       };
     }
 
@@ -699,7 +721,7 @@ const exportWithFEFO = async ({ branch_id, product_id, quantity, unit_id, note, 
 
     // If no batches found but inventory has stock, use legacy method
     if (batches.length === 0) {
-      console.warn(`No batches found for product ${product_id} at branch ${branch_id}, using legacy export`);
+      inventoryLogger.warn(`No batches found for product ${product_id} at branch ${branch_id}, using legacy export`);
 
       const inventory = await prisma.branchinventory.findFirst({
         where: {

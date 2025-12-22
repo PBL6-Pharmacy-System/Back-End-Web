@@ -571,9 +571,9 @@ export const completeStockTake = async (id, userId) => {
               remainingDeduction -= deductFromThis;
             }
 
-            // If still has remaining deduction, log warning (should not happen normally)
+            // If still has remaining deduction, throw error to rollback transaction
             if (remainingDeduction > 0) {
-              console.warn(`[StockTake ${stockTake.stock_take_no}] Could not fully adjust batches. Remaining: ${remainingDeduction}`);
+              throw new Error(`Cannot fully adjust batches for product ${item.product_id}. Remaining deduction: ${remainingDeduction}. This indicates data inconsistency between inventory and batches.`);
             }
           }
         }

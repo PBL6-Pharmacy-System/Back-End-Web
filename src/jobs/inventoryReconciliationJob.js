@@ -7,6 +7,7 @@
 
 import cron from 'node-cron';
 import prisma from '../config/db.js';
+import { inventoryLogger } from '../utils/logger.js';
 
 const DISCREPANCY_THRESHOLD = 5; // Ngưỡng cảnh báo (số lượng lệch)
 
@@ -14,7 +15,7 @@ const DISCREPANCY_THRESHOLD = 5; // Ngưỡng cảnh báo (số lượng lệch)
  * Kiểm tra đồng bộ giữa branchinventory và productBatch
  */
 const reconcileInventory = async () => {
-    console.log('[InventoryReconciliation] Starting inventory reconciliation check...');
+    inventoryLogger.info('Starting inventory reconciliation check...');
 
     try {
         // Lấy tất cả branch inventory
@@ -29,12 +30,12 @@ const reconcileInventory = async () => {
         let checkedCount = 0;
 
         for (const inventory of inventories) {
-            // Tính tổng từ batches
+            // Tính tổng từ batches (include expired - they still have physical stock)
             const batchTotal = await prisma.productBatch.aggregate({
                 where: {
                     branch_id: inventory.branch_id,
                     product_id: inventory.product_id,
-                    status: 'active'
+                    status: { in: ['active', 'expired'] }
                 },
                 _sum: { quantity: true }
             });
@@ -76,30 +77,39 @@ const reconcileInventory = async () => {
         }
 
         // Log kết quả
-        console.log(`[InventoryReconciliation] Checked ${checkedCount} inventory records`);
+        inventoryLogger.info(`Checked ${checkedCount} inventory records`);
 
         if (discrepancies.length > 0) {
-            console.warn(`[InventoryReconciliation] ⚠️ Found ${discrepancies.length} discrepancies:`);
+            inventoryLogger.warn(`⚠️ Found ${discrepancies.length} discrepancies`);
 
             // Group by severity
             const highSeverity = discrepancies.filter(d => d.severity === 'HIGH');
             const mediumSeverity = discrepancies.filter(d => d.severity === 'MEDIUM');
 
             if (highSeverity.length > 0) {
-                console.error(`[InventoryReconciliation] 🔴 HIGH SEVERITY (${highSeverity.length}):`);
-                highSeverity.forEach(d => {
-                    console.error(`  - Branch "${d.branch_name}" (${d.branch_id}), Product "${d.product_name}" (${d.product_id}): inventory=${d.inventory_stock}, batches=${d.batch_total}, diff=${d.difference}`);
+                inventoryLogger.error(`🔴 HIGH SEVERITY (${highSeverity.length})`, {
+                    discrepancies: highSeverity.map(d => ({
+                        branch: `${d.branch_name} (${d.branch_id})`,
+                        product: `${d.product_name} (${d.product_id})`,
+                        inventory_stock: d.inventory_stock,
+                        batch_total: d.batch_total,
+                        difference: d.difference
+                    }))
                 });
             }
 
             if (mediumSeverity.length > 0) {
-                console.warn(`[InventoryReconciliation] 🟡 MEDIUM SEVERITY (${mediumSeverity.length}):`);
-                mediumSeverity.slice(0, 10).forEach(d => {
-                    console.warn(`  - Branch "${d.branch_name}", Product "${d.product_name}": inventory=${d.inventory_stock}, batches=${d.batch_total}, diff=${d.difference}`);
+                inventoryLogger.warn(`🟡 MEDIUM SEVERITY (${mediumSeverity.length})`, {
+                    discrepancies: mediumSeverity.slice(0, 10).map(d => ({
+                        branch: d.branch_name,
+                        product: d.product_name,
+                        inventory_stock: d.inventory_stock,
+                        batch_total: d.batch_total,
+                        difference: d.difference
+                    })),
+                    hasMore: mediumSeverity.length > 10,
+                    totalCount: mediumSeverity.length
                 });
-                if (mediumSeverity.length > 10) {
-                    console.warn(`  ... and ${mediumSeverity.length - 10} more`);
-                }
             }
 
             // TODO: Gửi notification/email cho admin nếu có HIGH severity
@@ -114,7 +124,7 @@ const reconcileInventory = async () => {
                 details: discrepancies
             };
         } else {
-            console.log('[InventoryReconciliation] ✅ All inventory records are in sync with batches');
+            inventoryLogger.info('✅ All inventory records are in sync with batches');
             return {
                 success: true,
                 checked: checkedCount,
@@ -122,7 +132,7 @@ const reconcileInventory = async () => {
             };
         }
     } catch (error) {
-        console.error('[InventoryReconciliation] Error during reconciliation:', error);
+        inventoryLogger.error('Error during reconciliation', { error: error.message, stack: error.stack });
         return {
             success: false,
             error: error.message
@@ -134,7 +144,7 @@ const reconcileInventory = async () => {
  * Cleanup expired inventory reservations
  */
 const cleanupExpiredReservations = async () => {
-    console.log('[InventoryReconciliation] Cleaning up expired reservations...');
+    inventoryLogger.info('Cleaning up expired reservations...');
 
     try {
         const result = await prisma.inventoryReservation.updateMany({
@@ -149,12 +159,12 @@ const cleanupExpiredReservations = async () => {
         });
 
         if (result.count > 0) {
-            console.log(`[InventoryReconciliation] Expired ${result.count} reservations`);
+            inventoryLogger.info(`Expired ${result.count} reservations`);
         }
 
         return result.count;
     } catch (error) {
-        console.error('[InventoryReconciliation] Error cleaning up reservations:', error);
+        inventoryLogger.error('Error cleaning up reservations', { error: error.message });
         return 0;
     }
 };
@@ -166,14 +176,14 @@ const cleanupExpiredReservations = async () => {
 export const startInventoryReconciliationJob = () => {
     // Chạy lúc 2:00 AM mỗi ngày
     cron.schedule('0 2 * * *', async () => {
-        console.log('[InventoryReconciliation] Running scheduled reconciliation...');
+        inventoryLogger.info('Running scheduled reconciliation...');
         await cleanupExpiredReservations();
         await reconcileInventory();
     }, {
         timezone: 'Asia/Ho_Chi_Minh'
     });
 
-    console.log('[InventoryReconciliation] Job scheduled to run at 2:00 AM daily');
+    inventoryLogger.info('Job scheduled to run at 2:00 AM daily');
 };
 
 /**

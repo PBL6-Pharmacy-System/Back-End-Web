@@ -112,9 +112,9 @@ export const createShipment = async (shipmentData) => {
             return { success: false, status: 404, error: 'Không tìm thấy đơn hàng' };
         }
 
-        const validStatuses = [ORDER_STATUS.CONFIRMED, ORDER_STATUS.PROCESSING];
+        const validStatuses = [ORDER_STATUS.CONFIRMED];
         if (!validStatuses.includes(order.status)) {
-            return { success: false, status: 400, error: 'Chỉ có thể tạo vận chuyển cho đơn hàng đã xác nhận hoặc đang xử lý' };
+            return { success: false, status: 400, error: 'Chỉ có thể tạo vận chuyển cho đơn hàng đã xác nhận' };
         }
 
         const branch = await prisma.branches.findUnique({ where: { id: Number(branchId) } });
@@ -439,12 +439,12 @@ export const updateShipmentStatus = async (shipmentId, status, userId = null) =>
             await prisma.$transaction([
                 prisma.orders.update({
                     where: { id: currentShipment.order_id },
-                    data: { status: ORDER_STATUS.PROCESSING, updated_at: new Date() }
+                    data: { status: ORDER_STATUS.CONFIRMED, updated_at: new Date() }
                 }),
                 prisma.order_status_history.create({
                     data: {
                         order_id: currentShipment.order_id,
-                        status: ORDER_STATUS.PROCESSING,
+                        status: ORDER_STATUS.CONFIRMED,
                         changed_by: userId,
                         changed_at: new Date()
                     }

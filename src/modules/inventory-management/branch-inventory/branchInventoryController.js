@@ -11,7 +11,21 @@ import {
 // Lấy tất cả tồn kho chi nhánh
 export const getAllBranchInventory = async (req, res) => {
 	try {
-		let { branchId, productId, page = 1, limit = 10, sortBy = 'id', sortOrder = 'asc' } = req.query;
+		// ✅ FIX: Support both camelCase and snake_case parameter names
+		let { 
+			branchId, 
+			branch_id, 
+			productId, 
+			product_id, 
+			page = 1, 
+			limit = 10, 
+			sortBy = 'id', 
+			sortOrder = 'asc' 
+		} = req.query;
+
+		// Use snake_case if camelCase not provided (backward compatibility)
+		branchId = branchId || branch_id;
+		productId = productId || product_id;
 
 		// NEW LOGIC: Staff có thể xem CROSS-BRANCH (để hỗ trợ khách hàng tìm hàng)
 		// Nhưng chỉ Admin/Staff mới được xem detailed inventory
@@ -73,6 +87,7 @@ export const getBranchInventoryById = async (req, res) => {
 };
 
 // Nhập hàng vào kho chi nhánh
+// ✅ FIX #2, #3: Fixed field naming (branch_id) and added userId parameter
 export const importToBranchInventory = async (req, res) => {
 	try {
 		// ✅ FIXED: Use branch_id from JWT token directly
@@ -86,19 +101,22 @@ export const importToBranchInventory = async (req, res) => {
 				});
 			}
 
-			// Verify the branchId in request matches staff's branch
-			if (req.body.branchId && Number(req.body.branchId) !== staffBranchId) {
+			// Verify the branch_id in request matches staff's branch
+			// ✅ FIX: Check both branchId (legacy) and branch_id (correct)
+			const requestBranchId = req.body.branch_id || req.body.branchId;
+			if (requestBranchId && Number(requestBranchId) !== staffBranchId) {
 				return res.status(403).json({
 					success: false,
 					error: 'Bạn chỉ có thể nhập hàng vào chi nhánh của mình'
 				});
 			}
 
-			// Set branchId to staff's branch
-			req.body.branchId = staffBranchId;
+			// ✅ FIX: Set branch_id (with underscore) to match service expectation
+			req.body.branch_id = staffBranchId;
 		}
 
-		const result = await branchInventoryService.importToBranchInventory(req.body);
+		// ✅ FIX #3: Pass userId for audit trail
+		const result = await branchInventoryService.importToBranchInventory(req.body, req.user.userId);
 		if (!result.success) {
 			return res.status(result.status).json(result);
 		}
@@ -113,6 +131,7 @@ export const importToBranchInventory = async (req, res) => {
 };
 
 // Xuất hàng khỏi kho chi nhánh
+// ✅ FIX #2, #4: Fixed field naming (branch_id) and added userId parameter
 export const exportFromBranchInventory = async (req, res) => {
 	try {
 		// ✅ FIXED: Use branch_id from JWT token directly
@@ -126,19 +145,22 @@ export const exportFromBranchInventory = async (req, res) => {
 				});
 			}
 
-			// Verify the branchId in request matches staff's branch
-			if (req.body.branchId && Number(req.body.branchId) !== staffBranchId) {
+			// Verify the branch_id in request matches staff's branch
+			// ✅ FIX: Check both branchId (legacy) and branch_id (correct)
+			const requestBranchId = req.body.branch_id || req.body.branchId;
+			if (requestBranchId && Number(requestBranchId) !== staffBranchId) {
 				return res.status(403).json({
 					success: false,
 					error: 'Bạn chỉ có thể xuất hàng từ chi nhánh của mình'
 				});
 			}
 
-			// Set branchId to staff's branch
-			req.body.branchId = staffBranchId;
+			// ✅ FIX: Set branch_id (with underscore) to match service expectation
+			req.body.branch_id = staffBranchId;
 		}
 
-		const result = await branchInventoryService.exportFromBranchInventory(req.body);
+		// ✅ FIX #4: Pass userId for audit trail
+		const result = await branchInventoryService.exportFromBranchInventory(req.body, req.user.userId);
 		if (!result.success) {
 			return res.status(result.status).json(result);
 		}

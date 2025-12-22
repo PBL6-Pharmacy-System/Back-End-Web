@@ -117,6 +117,20 @@ export const getAllTransfers = async ({ branchId, status, page = 1, limit = 20 }
               username: true,
               full_name: true
             }
+          },
+          branches_inventoryTransfer_from_branch_idTobranches: {
+            select: {
+              id: true,
+              name: true,
+              address: true
+            }
+          },
+          branches_inventoryTransfer_to_branch_idTobranches: {
+            select: {
+              id: true,
+              name: true,
+              address: true
+            }
           }
         },
         orderBy: {
@@ -128,27 +142,14 @@ export const getAllTransfers = async ({ branchId, status, page = 1, limit = 20 }
       prisma.inventoryTransfer.count({ where })
     ]);
 
-    // Get branch info
-    const transfersWithBranches = await Promise.all(
-      transfers.map(async (transfer) => {
-        const [fromBranch, toBranch] = await Promise.all([
-          prisma.branches.findUnique({
-            where: { id: transfer.from_branch_id },
-            select: { id: true, name: true, address: true }
-          }),
-          prisma.branches.findUnique({
-            where: { id: transfer.to_branch_id },
-            select: { id: true, name: true, address: true }
-          })
-        ]);
-
-        return {
-          ...transfer,
-          fromBranch,
-          toBranch
-        };
-      })
-    );
+    // Format response with cleaner branch names
+    const transfersWithBranches = transfers.map(transfer => ({
+      ...transfer,
+      fromBranch: transfer.branches_inventoryTransfer_from_branch_idTobranches,
+      toBranch: transfer.branches_inventoryTransfer_to_branch_idTobranches,
+      branches_inventoryTransfer_from_branch_idTobranches: undefined,
+      branches_inventoryTransfer_to_branch_idTobranches: undefined
+    }));
 
     return {
       success: true,

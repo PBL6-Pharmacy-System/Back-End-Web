@@ -6,8 +6,7 @@
  */
 
 import express from 'express';
-import { authenticateToken } from '../../middlewares/validate.middleware.js';
-import { adminOnly, staffOrAdmin } from '../../middlewares/adminOnly.middleware.js';
+import { authenticateToken, authorizeAdmin, authorizeAdminOrStaff } from '../auth/auth.middleware.js';
 import * as healthCheckService from './inventoryHealthCheck.js';
 
 const router = express.Router();
@@ -17,7 +16,7 @@ const router = express.Router();
  * @desc Get overall inventory health status
  * @access Admin/Staff
  */
-router.get('/health', authenticateToken, staffOrAdmin, async (req, res) => {
+router.get('/health', authenticateToken, authorizeAdminOrStaff, async (req, res) => {
     try {
         const result = await healthCheckService.getInventoryHealthStatus();
         res.json(result);
@@ -35,7 +34,7 @@ router.get('/health', authenticateToken, staffOrAdmin, async (req, res) => {
  * @desc Check inventory consistency for a specific branch
  * @access Admin/Staff
  */
-router.get('/health/branch/:branchId', authenticateToken, staffOrAdmin, async (req, res) => {
+router.get('/health/branch/:branchId', authenticateToken, authorizeAdminOrStaff, async (req, res) => {
     try {
         const { branchId } = req.params;
         const result = await healthCheckService.checkBranchInventoryConsistency(branchId);
@@ -54,7 +53,7 @@ router.get('/health/branch/:branchId', authenticateToken, staffOrAdmin, async (r
  * @desc Check inventory logs consistency for a specific product at a branch
  * @access Admin/Staff
  */
-router.get('/health/logs/:branchId/:productId', authenticateToken, staffOrAdmin, async (req, res) => {
+router.get('/health/logs/:branchId/:productId', authenticateToken, authorizeAdminOrStaff, async (req, res) => {
     try {
         const { branchId, productId } = req.params;
         const result = await healthCheckService.checkInventoryLogsConsistency(branchId, productId);
@@ -78,7 +77,7 @@ router.get('/health/logs/:branchId/:productId', authenticateToken, staffOrAdmin,
  * @desc Check stuck reservations
  * @access Admin/Staff
  */
-router.get('/health/reservations', authenticateToken, staffOrAdmin, async (req, res) => {
+router.get('/health/reservations', authenticateToken, authorizeAdminOrStaff, async (req, res) => {
     try {
         const result = await healthCheckService.checkStuckReservations();
         res.json(result);
@@ -96,7 +95,7 @@ router.get('/health/reservations', authenticateToken, staffOrAdmin, async (req, 
  * @desc Auto-fix stuck reservations
  * @access Admin only
  */
-router.post('/health/reservations/fix', authenticateToken, adminOnly, async (req, res) => {
+router.post('/health/reservations/fix', authenticateToken, authorizeAdmin, async (req, res) => {
     try {
         const result = await healthCheckService.fixStuckReservations();
         res.json(result);
