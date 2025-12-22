@@ -104,7 +104,11 @@ export const requireRoles = (...roles) => {
       });
     }
 
-    if (!roles.includes(req.user.role_name)) {
+    // Case-insensitive role comparison
+    const userRole = req.user.role_name?.toLowerCase();
+    const allowedRoles = roles.map(r => r.toLowerCase());
+    
+    if (!allowedRoles.includes(userRole)) {
       return res.status(403).json({
         success: false,
         error: `Không có quyền truy cập. Yêu cầu vai trò: ${roles.join(', ')}`
