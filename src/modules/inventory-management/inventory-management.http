@@ -1,0 +1,737 @@
+### ========================================
+### QUẢN LÝ TỒN KHO - INVENTORY MANAGEMENT API
+### ========================================
+### 
+### Hướng dẫn sử dụng:
+### 1. Chạy lệnh: npx prisma generate
+### 2. Đăng nhập và lấy accessToken từ auth.http
+### 3. Cập nhật @accessToken ở dưới (CHỈ CẦN 1 TOKEN)
+### 4. Cập nhật các ID test theo dữ liệu thực tế trong DB của bạn
+### 
+### ✅ TẤT CẢ endpoints đã sử dụng {{accessToken}} thống nhất
+### 
+### ========================================
+
+# Biến cấu hình
+@baseUrl = http://localhost:3000/api
+@contentType = application/json
+
+# Token xác thực
+# Chỉ cần 1 token duy nhất từ response của /auth/login
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjksInVzZXJuYW1lIjoiYWRtaW4xMjMiLCJlbWFpbCI6ImFkbWluMTIzQGdtYWlsLmNvbSIsInJvbGVfaWQiOjEsInJvbGVfbmFtZSI6ImFkbWluIiwiYWRtaW5faWQiOjIsImlzX3N1cGVyX2FkbWluIjpmYWxzZSwiaWF0IjoxNzY1ODc3NzY5LCJleHAiOjE3NjU5NjQxNjl9.NwKeoIpucpGzEpsNsAebcUvf7kx-Ku3LkJBzkZFpOvA
+
+# ID thử nghiệm (cập nhật theo database thực tế)
+@branchId = 2
+@productId = 100
+@batchId = 1
+@transferId = 1
+@stockTakeId = 1
+@supplierId = 1
+@supplierOrderId = 1
+
+### ========================================
+### TỒN KHO CHI NHÁNH - BRANCH INVENTORY
+### ========================================
+
+### Lấy tất cả tồn kho (Admin/Staff)
+# Mô tả: Xem danh sách tồn kho của tất cả chi nhánh
+# Quyền: Admin (tất cả), Staff (chỉ chi nhánh của mình)
+# Response: { success: true, data: [{ id, branch_id, product_id, stock, min_stock, max_stock, ... }] }
+GET {{baseUrl}}/branch-inventory
+Authorization: Bearer {{accessToken}}
+
+### Lấy tồn kho với bộ lọc
+# Mô tả: Lọc tồn kho theo chi nhánh và/hoặc sản phẩm
+# Query params: branch_id, product_id
+# Response: Danh sách tồn kho đã lọc
+GET {{baseUrl}}/branch-inventory?branch_id={{branchId}}&product_id={{productId}}
+Authorization: Bearer {{accessToken}}
+
+### Lấy cảnh báo tồn kho thấp
+# Mô tả: Xem các sản phẩm có tồn kho dưới ngưỡng tối thiểu
+# Response: { success: true, data: [{ product, branch, current_stock, min_stock, shortage }] }
+GET {{baseUrl}}/branch-inventory/alerts/low-stock
+Authorization: Bearer {{accessToken}}
+
+### Lấy chi tiết tồn kho theo ID
+# Mô tả: Xem chi tiết 1 bản ghi tồn kho cụ thể
+# Response: { success: true, data: { id, branch_id, product_id, stock, ... } }
+GET {{baseUrl}}/branch-inventory/{{branchId}}
+Authorization: Bearer {{accessToken}}
+
+### Tạo bản ghi tồn kho mới (Chỉ Admin)
+# Mô tả: Khởi tạo tồn kho cho sản phẩm tại chi nhánh
+# Body: { branch_id, product_id, stock, min_stock, max_stock }
+# Response: { success: true, data: { id, ... }, message: "Tạo tồn kho thành công" }
+POST {{baseUrl}}/branch-inventory
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": {{branchId}},
+  "product_id": {{productId}},
+  "stock": 100,
+  "min_stock": 20,
+  "max_stock": 500
+}
+
+### Xóa bản ghi tồn kho (Chỉ Admin)
+# Mô tả: Xóa hoàn toàn bản ghi tồn kho
+# Cảnh báo: Chỉ xóa khi chắc chắn, dữ liệu không thể khôi phục
+# Response: { success: true, message: "Xóa tồn kho thành công" }
+DELETE {{baseUrl}}/branch-inventory/{{branchId}}
+Authorization: Bearer {{accessToken}}
+
+### ========================================
+### CHI NHÁNH & TỒN KHO - BRANCHES & INVENTORY
+### ========================================
+
+### Lấy danh sách tất cả chi nhánh (Public)
+# Mô tả: Xem thông tin các chi nhánh (không cần đăng nhập)
+# Response: { success: true, data: [{ id, name, address, phone, city, is_active }] }
+GET {{baseUrl}}/branches
+
+### Lấy thông tin chi nhánh theo ID (Public)
+# Mô tả: Xem chi tiết 1 chi nhánh cụ thể
+# Response: { success: true, data: { id, name, address, phone, manager_id, ... } }
+GET {{baseUrl}}/branches/{{branchId}}
+
+### Tạo chi nhánh mới (Chỉ Admin)
+# Mô tả: Thêm chi nhánh mới vào hệ thống
+# Body: { name, address, phone, city, city_id, latitude, longitude }
+# Response: { success: true, data: { id, name, ... }, message: "Tạo chi nhánh thành công" }
+POST {{baseUrl}}/branches
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Chi nhánh Quận 1",
+  "address": "123 Nguyễn Huệ, Quận 1, TP.HCM",
+  "phone": "0901234567",
+  "city": "Hồ Chí Minh",
+  "city_id": 1
+}
+
+### Cập nhật thông tin chi nhánh (Chỉ Admin)
+# Mô tả: Sửa thông tin chi nhánh đã tồn tại
+# Body: Các trường cần cập nhật (name, address, phone, is_active, ...)
+# Response: { success: true, data: { updated_branch }, message: "Cập nhật thành công" }
+PUT {{baseUrl}}/branches/{{branchId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Chi nhánh Quận 1 - Updated",
+  "phone": "0901234568",
+  "is_active": true
+}
+
+### Xóa chi nhánh (Chỉ Admin)
+# Mô tả: Xóa chi nhánh khỏi hệ thống
+# Cảnh báo: Không thể xóa nếu còn tồn kho hoặc nhân viên
+# Response: { success: true, message: "Xóa chi nhánh thành công" }
+DELETE {{baseUrl}}/branches/{{branchId}}
+Authorization: Bearer {{accessToken}}
+
+### Xem tồn kho của chi nhánh (Public - dữ liệu bị che)
+# Mô tả: Khách hàng chỉ xem được trạng thái còn hàng (in_stock: true/false)
+# Response: { success: true, data: [{ product_id, in_stock, product_info }] }
+GET {{baseUrl}}/branches/{{branchId}}/inventory
+
+### Xem tồn kho của chi nhánh (Staff - đầy đủ thông tin)
+# Mô tả: Staff xem số lượng chính xác, giá nhập, nhà cung cấp
+# Response: { success: true, data: [{ product_id, stock, min_stock, max_stock, batches }] }
+GET {{baseUrl}}/branches/{{branchId}}/inventory
+Authorization: Bearer {{accessToken}}
+
+### Xem chi tiết tồn kho sản phẩm (Public - bị che)
+# Mô tả: Xem trạng thái còn hàng của 1 sản phẩm tại chi nhánh
+# Response: { success: true, data: { product_id, in_stock, expiry_date_info } }
+GET {{baseUrl}}/branches/{{branchId}}/inventory/{{productId}}
+
+### Xem chi tiết lô hàng sản phẩm (Staff - đầy đủ)
+# Mô tả: Xem tất cả lô hàng, giá nhập, HSD của sản phẩm
+# Response: { success: true, data: { product, batches: [{ batch_number, quantity, expiry_date, cost_price }] } }
+GET {{baseUrl}}/branches/{{branchId}}/inventory/{{productId}}
+Authorization: Bearer {{accessToken}}
+
+### Cảnh báo lô hàng sắp hết hạn (Staff/Admin)
+# Mô tả: Lấy danh sách lô hàng sắp hết hạn trong 30 ngày
+# Query: ?days=30 (tùy chỉnh số ngày)
+# Response: { success: true, data: [{ batch_number, product, expiry_date, days_until_expiry, quantity }] }
+GET {{baseUrl}}/branches/{{branchId}}/inventory/alerts/expiring-soon
+Authorization: Bearer {{accessToken}}
+
+### Cảnh báo tồn kho thấp tại chi nhánh (Staff/Admin)
+# Mô tả: Sản phẩm có số lượng dưới ngưỡng tối thiểu
+# Response: { success: true, data: [{ product, current_stock, min_stock, shortage }] }
+GET {{baseUrl}}/branches/{{branchId}}/inventory/alerts/low-stock
+Authorization: Bearer {{accessToken}}
+
+### Cập nhật tồn kho thủ công (Staff - chỉ chi nhánh của mình)
+# Mô tả: Điều chỉnh số lượng tồn kho và ngưỡng cảnh báo
+# Lưu ý: Staff chỉ được cập nhật chi nhánh mình làm việc
+# Body: { stock, min_stock, max_stock }
+# Response: { success: true, data: { updated_inventory }, message: "Cập nhật tồn kho thành công" }
+PUT {{baseUrl}}/branches/{{branchId}}/inventory/{{productId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "stock": 150,
+  "min_stock": 25,
+  "max_stock": 600
+}
+
+### ========================================
+### LÔ HÀNG & FEFO - PRODUCT BATCHES (FIRST EXPIRED FIRST OUT)
+### ========================================
+
+### Lấy tất cả lô hàng
+# Mô tả: Xem danh sách tất cả lô hàng trong hệ thống
+# Response: { success: true, data: [{ id, batch_number, product_id, branch_id, quantity, expiry_date, status }] }
+GET {{baseUrl}}/product-batches
+Authorization: Bearer {{accessToken}}
+
+### Lấy lô hàng với bộ lọc
+# Mô tả: Lọc theo chi nhánh, sản phẩm, trạng thái
+# Query: branch_id, product_id, status (available/expired/disposed)
+# Response: Danh sách lô hàng đã lọc
+GET {{baseUrl}}/product-batches?branch_id={{branchId}}&product_id={{productId}}&status=available
+Authorization: Bearer {{accessToken}}
+
+### Lấy lô hàng sắp hết hạn
+# Mô tả: Danh sách lô hàng hết hạn trong X ngày tới
+# Query: days=30 (mặc định 30 ngày)
+# Response: { success: true, data: [{ batch_number, product, expiry_date, days_remaining, quantity }] }
+GET {{baseUrl}}/product-batches/expiring-soon?days=30
+Authorization: Bearer {{accessToken}}
+
+### Lấy lô hàng sắp dụng theo FEFO
+# Mô tả: Danh sách lô hàng được sắp xếp theo HSD (hết hạn sớm nhất xuất trước)
+# Response: { success: true, data: [{ batch_number, quantity, expiry_date, cost_price }] }
+GET {{baseUrl}}/product-batches/fefo/{{branchId}}/{{productId}}
+Authorization: Bearer {{accessToken}}
+
+### Xem trước kế hoạch phân bổ FEFO
+# Mô tả: Mô phỏng xuất kho để xem lô nào sẽ được xuất (không thực hiện xuất)
+# Body: { branch_id, product_id, quantity }
+# Response: { success: true, allocation: [{ batch_number, allocated_quantity, remaining_in_batch }] }
+POST {{baseUrl}}/product-batches/fefo/allocate
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": {{branchId}},
+  "product_id": {{productId}},
+  "quantity": 50
+}
+
+### Xuất kho theo chiến lược FEFO
+# Mô tả: Xuất hàng tự động từ các lô sắp hết hạn trước
+# Body: { branch_id, product_id, quantity, reason, order_id }
+# Response: { success: true, exported_batches: [...], total_exported, message: "Xuất kho thành công" }
+POST {{baseUrl}}/product-batches/fefo/export
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": {{branchId}},
+  "product_id": {{productId}},
+  "quantity": 50,
+  "reason": "Bán hàng - Đơn #12345",
+  "order_id": 12345
+}
+
+### Nhập hàng vào lô
+# Mô tả: Tạo lô mới hoặc thêm vào lô hiện có khi nhập hàng
+# Body: { product_id, branch_id, batch_number, quantity, expiry_date, cost_price, supplier_id }
+# Response: { success: true, data: { batch, inventory_updated }, message: "Nhập hàng thành công" }
+POST {{baseUrl}}/product-batches/import
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "product_id": {{productId}},
+  "branch_id": {{branchId}},
+  "batch_number": "BATCH-2025-001",
+  "quantity": 100,
+  "expiry_date": "2027-12-31",
+  "cost_price": 50000,
+  "supplier_id": {{supplierId}}
+}
+
+### Thêm số lượng vào lô hiện có
+# Mô tả: Bổ sung hàng vào lô đã tồn tại
+# Body: { quantity, cost_price }
+# Response: { success: true, data: { updated_batch }, message: "Thêm số lượng thành công" }
+POST {{baseUrl}}/product-batches/{{batchId}}/add-stock
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "quantity": 50,
+  "cost_price": 52000
+}
+
+### Xem tổng quan lô hàng của sản phẩm
+# Mô tả: Thống kê tổng số lượng, số lô, giá trị tồn kho
+# Response: { success: true, data: { total_quantity, total_batches, total_value, batches_detail } }
+GET {{baseUrl}}/product-batches/summary/{{branchId}}/{{productId}}
+Authorization: Bearer {{accessToken}}
+
+### Kiểm tra tính nhất quán tồn kho
+# Mô tả: So sánh tổng lô hàng với số liệu tồn kho, phát hiện sai lệch
+# Response: { success: true, is_consistent: true/false, batch_total, inventory_total, discrepancy }
+GET {{baseUrl}}/product-batches/validate/{{branchId}}/{{productId}}
+Authorization: Bearer {{accessToken}}
+
+### Điều chỉnh sai lệch tồn kho (Chỉ Admin)
+# Mô tả: Đồng bộ số liệu tồn kho với tổng các lô hàng
+# Body: { reason }
+# Response: { success: true, adjusted_quantity, message: "Điều chỉnh tồn kho thành công" }
+POST {{baseUrl}}/product-batches/reconcile/{{branchId}}/{{productId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "reason": "Kiểm kê định kỳ - phát hiện sai lệch"
+}
+
+### Tự động đánh dấu lô hết hạn (Chỉ Admin)
+# Mô tả: Quét và đánh dấu tất cả lô đã hết hạn (chạy tự động hoặc thủ công)
+# Response: { success: true, expired_count, expired_batches: [...] }
+POST {{baseUrl}}/product-batches/auto-expire
+Authorization: Bearer {{accessToken}}
+
+### Tạo số lô tự động
+# Mô tả: Sinh mã lô hàng theo quy tắc (VD: PROD001-B001-20250101)
+# Response: { success: true, batch_number: "BATCH-XXXX-XXX" }
+GET {{baseUrl}}/product-batches/generate-number/{{productId}}/{{branchId}}
+Authorization: Bearer {{accessToken}}
+
+### Tạo lô hàng mới
+# Mô tả: Tạo lô hàng mới khi nhập hàng
+# Body: { product_id, branch_id, batch_number, quantity, expiry_date, cost_price, supplier_id }
+# Response: { success: true, data: { batch }, message: "Tạo lô hàng thành công" }
+POST {{baseUrl}}/product-batches
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "product_id": {{productId}},
+  "branch_id": {{branchId}},
+  "batch_number": "BATCH-2025-002",
+  "quantity": 200,
+  "expiry_date": "2026-12-31",
+  "cost_price": 48000,
+  "supplier_id": {{supplierId}}
+}
+
+### Lấy thông tin lô hàng theo ID
+# Mô tả: Xem chi tiết đầy đủ của 1 lô hàng
+# Response: { success: true, data: { id, batch_number, product, branch, quantity, expiry_date, status } }
+GET {{baseUrl}}/product-batches/{{batchId}}
+Authorization: Bearer {{accessToken}}
+
+### Cập nhật thông tin lô hàng
+# Mô tả: Sửa HSD, giá nhập của lô hàng
+# Body: { expiry_date, cost_price }
+# Response: { success: true, data: { updated_batch }, message: "Cập nhật lô hàng thành công" }
+PUT {{baseUrl}}/product-batches/{{batchId}}
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "expiry_date": "2027-06-30",
+  "cost_price": 49000
+}
+
+### Đánh dấu lô đã hết hạn
+# Mô tả: Chuyển trạng thái lô sang "expired"
+# Response: { success: true, message: "Đã đánh dấu lô hết hạn" }
+POST {{baseUrl}}/product-batches/{{batchId}}/expire
+Authorization: Bearer {{accessToken}}
+
+### Tiêu hủy lô hàng hết hạn
+# Mô tả: Ghi nhận việc tiêu hủy hàng hết hạn, trừ số lượng thực tế
+# Body: { disposed_quantity, reason }
+# Response: { success: true, disposed_quantity, remaining_quantity, message: "Tiêu hủy thành công" }
+POST {{baseUrl}}/product-batches/{{batchId}}/dispose
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "disposed_quantity": 50,
+  "reason": "Hết hạn sử dụng - Tiêu hủy theo quy định"
+}
+
+### Xóa lô hàng (Chỉ Admin)
+# Mô tả: Xóa hoàn toàn lô hàng khỏi hệ thống
+# Cảnh báo: Chỉ xóa lô rỗng hoặc đã tiêu hủy
+# Response: { success: true, message: "Xóa lô hàng thành công" }
+DELETE {{baseUrl}}/product-batches/{{batchId}}
+Authorization: Bearer {{accessToken}}
+
+### ========================================
+### THAO TÁC KHO - STOCK OPERATIONS (HUB)
+### ========================================
+
+### Xem tài liệu hướng dẫn các thao tác kho
+# Mô tả: Trả về danh sách tất cả endpoint và workflow cho các thao tác kho
+# Response: { success: true, endpoints: { import, transfer, stockTake }, version }
+GET {{baseUrl}}/stock-operations
+Authorization: Bearer {{accessToken}}
+
+### ========================================
+### KIỂM KÊ TỒN KHO - STOCK TAKE (INVENTORY COUNT)
+### ========================================
+
+### Tạo phiếu kiểm kê mới
+# Mô tả: Bắt đầu đợt kiểm kê tại chi nhánh
+# Body: { branch_id, note }
+# Staff chỉ tạo được cho chi nhánh của mình
+# Response: { success: true, data: { id, branch_id, status: "in_progress", started_by, items: [...] } }
+POST {{baseUrl}}/stock-takes
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": {{branchId}},
+  "note": "Kiểm kê cuối tháng 12/2025"
+}
+
+### Lấy danh sách tất cả phiếu kiểm kê
+# Mô tả: Xem lịch sử kiểm kê (Admin: tất cả, Staff: chi nhánh mình)
+# Response: { success: true, data: [{ id, branch, status, started_by, started_at, completed_at }] }
+GET {{baseUrl}}/stock-takes
+Authorization: Bearer {{accessToken}}
+
+### Lấy phiếu kiểm kê với bộ lọc
+# Mô tả: Lọc theo chi nhánh, trạng thái
+# Query: branch_id, status (in_progress/completed/cancelled)
+# Response: Danh sách phiếu kiểm kê đã lọc
+GET {{baseUrl}}/stock-takes?branch_id={{branchId}}&status=in_progress
+Authorization: Bearer {{accessToken}}
+
+### Lấy thông tin phiếu kiểm kê theo ID
+# Mô tả: Xem chi tiết 1 phiếu kiểm kê cụ thể
+# Response: { success: true, data: { id, branch, status, note, items_count, discrepancies } }
+GET {{baseUrl}}/stock-takes/{{stockTakeId}}
+Authorization: Bearer {{accessToken}}
+
+### Lấy danh sách sản phẩm trong phiếu kiểm kê
+# Mô tả: Xem tất cả sản phẩm cần kiểm đếm với số lượng hệ thống
+# Response: { success: true, data: [{ id, product, expected_quantity, actual_quantity, variance }] }
+GET {{baseUrl}}/stock-takes/{{stockTakeId}}/items
+Authorization: Bearer {{accessToken}}
+
+### Cập nhật số lượng thực tế đếm được
+# Mô tả: Nhập số lượng thực tế sau khi đếm từng sản phẩm
+# Body: { actual_quantity, note }
+# Response: { success: true, data: { item, variance, percentage }, message: "Cập nhật thành công" }
+PUT {{baseUrl}}/stock-takes/{{stockTakeId}}/items/1
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "actual_quantity": 95,
+  "note": "Thiếu 5 sản phẩm - nguyên nhân chưa rõ"
+}
+
+### Hoàn thành kiểm kê
+# Mô tả: Kết thúc kiểm kê, tự động điều chỉnh tồn kho theo số thực tế
+# Response: { success: true, adjustments: [...], total_discrepancy, message: "Kiểm kê hoàn tất" }
+POST {{baseUrl}}/stock-takes/{{stockTakeId}}/complete
+Authorization: Bearer {{accessToken}}
+
+### Hủy phiếu kiểm kê
+# Mô tả: Hủy phiếu kiểm kê đang tiến hành, không điều chỉnh tồn kho
+# Response: { success: true, message: "Đã hủy phiếu kiểm kê" }
+POST {{baseUrl}}/stock-takes/{{stockTakeId}}/cancel
+Authorization: Bearer {{accessToken}}
+
+### Xóa phiếu kiểm kê
+# Mô tả: Xóa phiếu kiểm kê khỏi hệ thống
+# Cảnh báo: Chỉ xóa phiếu đã hủy hoặc chưa bắt đầu
+# Response: { success: true, message: "Xóa phiếu kiểm kê thành công" }
+DELETE {{baseUrl}}/stock-takes/{{stockTakeId}}
+Authorization: Bearer {{accessToken}}
+
+### ========================================
+### ĐƠN HÀNG NHÀ CUNG CẤP - SUPPLIER ORDERS
+### ========================================
+
+### Lấy tất cả đơn đặt hàng NCC
+# Mô tả: Xem danh sách đơn đặt hàng từ nhà cung cấp
+# Response: { success: true, data: [{ id, supplier, branch, status, total_amount, expected_delivery_date }] }
+GET {{baseUrl}}/supplier-orders
+Authorization: Bearer {{accessToken}}
+
+### Lấy đơn hàng NCC với bộ lọc
+# Mô tả: Lọc theo NCC, trạng thái, chi nhánh
+# Query: supplier_id, status (pending/approved/shipped/received/cancelled), branch_id
+# Response: Danh sách đơn hàng đã lọc
+GET {{baseUrl}}/supplier-orders?supplier_id={{supplierId}}&status=pending
+Authorization: Bearer {{accessToken}}
+
+### Thống kê đơn hàng NCC (Chỉ Admin)
+# Mô tả: Báo cáo tổng hợp giá trị đơn hàng, số lượng theo thời gian
+# Query: start_date, end_date (format: YYYY-MM-DD)
+# Response: { success: true, data: { total_orders, total_value, by_supplier, by_status } }
+GET {{baseUrl}}/supplier-orders/statistics?start_date=2025-01-01&end_date=2025-12-31
+Authorization: Bearer {{accessToken}}
+
+### Lấy chi tiết đơn hàng NCC
+# Mô tả: Xem thông tin chi tiết 1 đơn hàng cụ thể
+# Response: { success: true, data: { id, supplier, items: [...], status, total_amount, history } }
+GET {{baseUrl}}/supplier-orders/{{supplierOrderId}}
+Authorization: Bearer {{accessToken}}
+
+### Tạo đơn đặt hàng NCC mới
+# Mô tả: Đặt hàng từ nhà cung cấp
+# Body: { supplier_id, branch_id, items: [{ product_id, quantity, cost_price }], expected_delivery_date, note }
+# Response: { success: true, data: { order }, message: "Tạo đơn hàng thành công" }
+POST {{baseUrl}}/supplier-orders
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "supplier_id": {{supplierId}},
+  "branch_id": {{branchId}},
+  "items": [
+    {
+      "product_id": {{productId}},
+      "quantity": 100,
+      "cost_price": 50000
+    }
+  ],
+  "expected_delivery_date": "2025-12-31",
+  "note": "Đơn hàng bổ sung tháng 12/2025"
+}
+
+### Cập nhật trạng thái đơn hàng
+# Mô tả: Chuyển trạng thái đơn (pending → approved → shipped → received)
+# Body: { status, receivedItems }
+# Status: pending, approved, shipped, received, cancelled
+# Response: { success: true, data: { updated_order }, message: "Cập nhật trạng thái thành công" }
+PATCH {{baseUrl}}/supplier-orders/{{supplierOrderId}}/status
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "status": "approved"
+}
+
+### Nhận hàng từ NCC
+# Mô tả: Xác nhận nhận hàng, tự động nhập kho và tạo lô hàng
+# Body: { receivedItems: [{ product_id, received_qty }] }
+# Nếu không truyền receivedItems, mặc định nhận đủ như đơn đặt
+# Response: { success: true, batches_created: [...], inventory_updated, message: "Nhận hàng thành công" }
+POST {{baseUrl}}/supplier-orders/{{supplierOrderId}}/receive
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "receivedItems": [
+    {
+      "product_id": {{productId}},
+      "received_qty": 95
+    }
+  ]
+}
+
+### Hủy đơn hàng NCC
+# Mô tả: Hủy đơn đặt hàng chưa nhận
+# Body: { reason }
+# Response: { success: true, message: "Đã hủy đơn hàng" }
+POST {{baseUrl}}/supplier-orders/{{supplierOrderId}}/cancel
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "reason": "Nhà cung cấp không giao được hàng"
+}
+
+### ========================================
+### CHUYỂN KHO GIỮA CHI NHÁNH - INVENTORY TRANSFERS
+### ========================================
+### Quy trình: Tạo → Duyệt (Admin) → Xuất kho → Nhận kho
+
+### Lấy tất cả phiếu chuyển kho
+# Mô tả: Xem danh sách phiếu chuyển kho
+# Response: { success: true, data: [{ id, from_branch, to_branch, status, requested_by, created_at }] }
+GET {{baseUrl}}/inventory-transfers
+Authorization: Bearer {{accessToken}}
+
+### Lấy phiếu chuyển kho với bộ lọc
+# Mô tả: Lọc theo chi nhánh nguồn/đích, trạng thái
+# Query: from_branch_id, to_branch_id, status (pending/approved/shipped/completed/cancelled)
+# Response: Danh sách phiếu chuyển đã lọc
+GET {{baseUrl}}/inventory-transfers?from_branch_id={{branchId}}&status=pending
+Authorization: Bearer {{accessToken}}
+
+### Lấy chi tiết phiếu chuyển kho
+# Mô tả: Xem thông tin chi tiết 1 phiếu chuyển
+# Response: { success: true, data: { id, from_branch, to_branch, items: [...], status, history } }
+GET {{baseUrl}}/inventory-transfers/{{transferId}}
+Authorization: Bearer {{accessToken}}
+
+### Tạo phiếu chuyển kho mới
+# Mô tả: Yêu cầu chuyển hàng từ chi nhánh này sang chi nhánh khác
+# Body: { from_branch_id, to_branch_id, items: [{ product_id, quantity }], note }
+# Staff chỉ tạo được phiếu chuyển từ chi nhánh của mình
+# Response: { success: true, data: { transfer }, message: "Tạo phiếu chuyển kho thành công" }
+POST {{baseUrl}}/inventory-transfers
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "from_branch_id": 1,
+  "to_branch_id": 2,
+  "items": [
+    {
+      "product_id": {{productId}},
+      "quantity": 50
+    }
+  ],
+  "note": "Chuyển kho do chi nhánh 2 thiếu hàng"
+}
+
+### Duyệt phiếu chuyển kho (Chỉ Admin)
+# Mô tả: Admin phê duyệt phiếu chuyển kho
+# Response: { success: true, data: { transfer }, message: "Đã duyệt phiếu chuyển kho" }
+POST {{baseUrl}}/inventory-transfers/{{transferId}}/approve
+Authorization: Bearer {{accessToken}}
+
+### Xuất kho (Staff chi nhánh nguồn)
+# Mô tả: Xác nhận đã xuất hàng khỏi kho nguồn
+# Staff chi nhánh nguồn thực hiện, tự động trừ tồn kho
+# Response: { success: true, data: { transfer }, message: "Đã xuất kho thành công" }
+POST {{baseUrl}}/inventory-transfers/{{transferId}}/ship
+Authorization: Bearer {{accessToken}}
+
+### Nhận kho (Staff chi nhánh đích)
+# Mô tả: Xác nhận đã nhận hàng tại kho đích
+# Staff chi nhánh đích thực hiện, tự động cộng tồn kho
+# Response: { success: true, data: { transfer }, message: "Đã nhận hàng thành công" }
+POST {{baseUrl}}/inventory-transfers/{{transferId}}/receive
+Authorization: Bearer {{accessToken}}
+
+### Hủy phiếu chuyển kho
+# Mô tả: Hủy phiếu chuyển chưa xuất kho
+# Body: { reason }
+# Staff chi nhánh nguồn hoặc Admin có thể hủy
+# Response: { success: true, message: "Đã hủy phiếu chuyển kho" }
+POST {{baseUrl}}/inventory-transfers/{{transferId}}/cancel
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "reason": "Không còn nhu cầu chuyển kho"
+}
+
+### ========================================
+### KIỂM TRA SỨC KHỎE TỒN KHO - INVENTORY HEALTH CHECK
+### ========================================
+
+### Kiểm tra tổng quan sức khỏe tồn kho
+# Mô tả: Tổng hợp các vấn đề về tồn kho trong toàn hệ thống
+# Response: { success: true, status: "healthy/warning/critical", issues: [...], summary }
+GET {{baseUrl}}/inventory/health
+Authorization: Bearer {{accessToken}}
+
+### Kiểm tra tính nhất quán tồn kho chi nhánh
+# Mô tả: Phát hiện sai lệch giữa tổng lô hàng và số liệu tồn kho
+# Response: { success: true, discrepancies: [{ product, batch_total, inventory_total, difference }] }
+GET {{baseUrl}}/inventory/health/branch/{{branchId}}
+Authorization: Bearer {{accessToken}}
+
+### Kiểm tra nhật ký biến động tồn kho
+# Mô tả: Xác minh tính chính xác của lịch sử xuất nhập kho
+# Response: { success: true, is_consistent: true/false, logs_summary, calculated_stock }
+GET {{baseUrl}}/inventory/health/logs/{{branchId}}/{{productId}}
+Authorization: Bearer {{accessToken}}
+
+### Kiểm tra đơn hàng bị kẹt
+# Mô tả: Tìm các đơn có hàng được giữ chỗ (reservation) quá lâu
+# Response: { success: true, stuck_reservations: [{ order_id, product, reserved_quantity, duration }] }
+GET {{baseUrl}}/inventory/health/reservations
+Authorization: Bearer {{accessToken}}
+
+### Sửa đơn hàng bị kẹt (Chỉ Admin)
+# Mô tả: Tự động hủy reservation đơn quá hạn, trả hàng về kho
+# Response: { success: true, fixed_count, released_quantity, message: "Đã sửa các reservation bị kẹt" }
+POST {{baseUrl}}/inventory/health/reservations/fix
+Authorization: Bearer {{accessToken}}
+
+### ========================================
+### THỐNG KÊ TỒN KHO - INVENTORY STATISTICS
+### ========================================
+
+### Tổng quan tồn kho toàn hệ thống
+# Mô tả: Thống kê tổng giá trị, số lượng sản phẩm, phân bố theo chi nhánh
+# Response: { success: true, data: { total_value, total_products, by_branch, by_category } }
+GET {{baseUrl}}/statistics/inventory/overview
+Authorization: Bearer {{accessToken}}
+
+### Thống kê tồn kho theo chi nhánh
+# Mô tả: Chi tiết tồn kho, giá trị, xu hướng của 1 chi nhánh
+# Response: { success: true, data: { branch_info, total_items, total_value, top_products } }
+GET {{baseUrl}}/statistics/inventory/branch/{{branchId}}
+Authorization: Bearer {{accessToken}}
+
+### Sản phẩm tồn kho thấp
+# Mô tả: Danh sách sản phẩm cần nhập thêm
+# Response: { success: true, data: [{ product, branch, current_stock, min_stock, deficit }] }
+GET {{baseUrl}}/statistics/inventory/low-stock
+Authorization: Bearer {{accessToken}}
+
+### Sản phẩm tồn kho cao
+# Mô tả: Danh sách sản phẩm tồn quá nhiều so với ngưỡng
+# Response: { success: true, data: [{ product, branch, current_stock, max_stock, excess }] }
+GET {{baseUrl}}/statistics/inventory/overstock
+Authorization: Bearer {{accessToken}}
+
+### Báo cáo biến động tồn kho
+# Mô tả: Lịch sử xuất nhập kho theo thời gian
+# Query: start_date, end_date (YYYY-MM-DD)
+# Response: { success: true, data: { imports: [...], exports: [...], transfers: [...], net_change } }
+GET {{baseUrl}}/statistics/inventory/movements?start_date=2025-01-01&end_date=2025-12-31
+Authorization: Bearer {{accessToken}}
+
+### Top sản phẩm nhập nhiều nhất
+# Mô tả: Xếp hạng sản phẩm theo số lượng nhập kho
+# Query: limit (mặc định 10)
+# Response: { success: true, data: [{ product, total_imported, value, transactions }] }
+GET {{baseUrl}}/statistics/inventory/top-imported?limit=10
+Authorization: Bearer {{accessToken}}
+
+### Top sản phẩm xuất nhiều nhất
+# Mô tả: Xếp hạng sản phẩm theo số lượng xuất kho (bán chạy)
+# Query: limit (mặc định 10)
+# Response: { success: true, data: [{ product, total_exported, value, transactions }] }
+GET {{baseUrl}}/statistics/inventory/top-exported?limit=10
+Authorization: Bearer {{accessToken}}
+
+### Thống kê tồn kho theo danh mục
+# Mô tả: Phân bố tồn kho và giá trị theo từng danh mục sản phẩm
+# Response: { success: true, data: [{ category, product_count, total_quantity, total_value }] }
+GET {{baseUrl}}/statistics/inventory/by-category
+Authorization: Bearer {{accessToken}}
+
+### ========================================
+### 🎉 KẾT THÚC - END OF INVENTORY MANAGEMENT API
+### ========================================
+### 
+### Tổng cộng: 70+ endpoints cho quản lý tồn kho
+### Bao gồm:
+### ✅ Quản lý chi nhánh và tồn kho
+### ✅ Quản lý lô hàng theo FEFO
+### ✅ Kiểm kê định kỳ
+### ✅ Đặt hàng nhà cung cấp
+### ✅ Chuyển kho nội bộ
+### ✅ Kiểm tra sức khỏe hệ thống
+### ✅ Thống kê và báo cáo
+### 
+### ========================================

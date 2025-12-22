@@ -55,12 +55,19 @@ export const createReview = async (req, res) => {
       });
     }
 
+    // Xử lý file upload (media)
+    let media = [];
+    if (req.files && req.files.length > 0) {
+      media = req.files.map(f => `/uploads/reviews/${f.filename}`);
+    }
+
     // Map productId to product_id if needed
     const reviewData = {
       customer_id,
       product_id: req.body.productId || req.body.product_id,
       rating: req.body.rating,
-      comment: req.body.comment
+      comment: req.body.comment,
+      media
     };
 
     const result = await reviewService.createReview(reviewData);
@@ -170,6 +177,43 @@ export const getProductRatingStats = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Lỗi khi lấy thống kê đánh giá'
+    });
+  }
+};
+
+// Get customer's own reviews
+export const getCustomerOwnReviews = async (req, res) => {
+  try {
+    const customer_id = req.user?.customer_id;
+
+    if (!customer_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Chỉ khách hàng mới có thể xem đánh giá của mình'
+      });
+    }
+
+    const { page, limit, rating, sortBy, sortOrder } = req.query;
+    const result = await reviewService.getCustomerReviews(
+      customer_id,
+      {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        rating,
+        sortBy,
+        sortOrder
+      }
+    );
+
+    if (!result.success) {
+      return res.status(result.status).json(result);
+    }
+    res.json(result);
+  } catch (err) {
+    console.error('Error in getCustomerOwnReviews:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi lấy danh sách đánh giá của bạn'
     });
   }
 };

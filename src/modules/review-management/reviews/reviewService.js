@@ -250,12 +250,14 @@ export const createReview = async (data) => {
       };
     }
 
+    // Lưu media nếu có
     const review = await prisma.reviews.create({
       data: {
         customer_id: Number(data.customer_id),
         product_id: Number(data.product_id),
         rating: Number(data.rating),
         comment: data.comment,
+        media: data.media && Array.isArray(data.media) ? data.media : [],
         created_at: new Date()
       },
       include: {

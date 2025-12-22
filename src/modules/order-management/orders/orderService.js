@@ -3,14 +3,18 @@ import { ORDER_STATUS } from '../../../utils/constants.js';
 
 /**
  * ✅ FIX #20: Valid order status transitions (State Machine)
+ * ✅ SIMPLIFIED: PENDING → CONFIRMED → SHIPPING → DELIVERED → COMPLETED
+ * - Loại bỏ PROCESSING (gộp vào CONFIRMED - xác nhận là chuẩn bị luôn)
+ * - COMPLETED không thể RETURNED (chỉ DELIVERED mới có thể return)
+ * - SHIPPING không thể trực tiếp RETURNED (phải giao xong mới return)
  */
 const VALID_ORDER_TRANSITIONS = {
   [ORDER_STATUS.PENDING]: [ORDER_STATUS.CONFIRMED, ORDER_STATUS.CANCELLED],
-  [ORDER_STATUS.CONFIRMED]: [ORDER_STATUS.PROCESSING, ORDER_STATUS.CANCELLED],
-  [ORDER_STATUS.PROCESSING]: [ORDER_STATUS.SHIPPING, ORDER_STATUS.CANCELLED],
-  [ORDER_STATUS.SHIPPING]: [ORDER_STATUS.DELIVERED, ORDER_STATUS.RETURNED, ORDER_STATUS.CANCELLED],
+  [ORDER_STATUS.CONFIRMED]: [ORDER_STATUS.SHIPPING, ORDER_STATUS.CANCELLED],
+  [ORDER_STATUS.PROCESSING]: [ORDER_STATUS.SHIPPING, ORDER_STATUS.CANCELLED], // Legacy support
+  [ORDER_STATUS.SHIPPING]: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED],
   [ORDER_STATUS.DELIVERED]: [ORDER_STATUS.COMPLETED, ORDER_STATUS.RETURNED],
-  [ORDER_STATUS.COMPLETED]: [ORDER_STATUS.RETURNED], // Chỉ có thể return sau completed
+  [ORDER_STATUS.COMPLETED]: [], // Terminal state - không thể đổi
   [ORDER_STATUS.CANCELLED]: [], // Terminal state
   [ORDER_STATUS.RETURNED]: []   // Terminal state
 };
@@ -289,6 +293,8 @@ export const getOrderById = async (orderId, customerId = null, isAdmin = false) 
 
 /**
  * Get customer's orders
+ * ✅ FIX: Support multiple statuses separated by comma
+ * ✅ FIX: Always exclude 'cart' status
  */
 export const getCustomerOrders = async (customerId, filters = {}) => {
   try {
@@ -303,14 +309,35 @@ export const getCustomerOrders = async (customerId, filters = {}) => {
 
     // Build where clause
     const where = {
-      customer_id: Number(customerId),
-      status: {
-        not: ORDER_STATUS.CART // Exclude cart
-      }
+      customer_id: Number(customerId)
     };
 
+    // ✅ Support multiple statuses separated by comma
+    // ✅ Always exclude 'cart' status from results
     if (status) {
-      where.status = status;
+      const statusArray = status.split(',').map(s => s.trim()).filter(s => s !== ORDER_STATUS.CART);
+      if (statusArray.length === 0) {
+        // If all requested statuses were 'cart', return empty
+        return {
+          success: true,
+          data: {
+            orders: [],
+            pagination: {
+              page: Number(page),
+              limit: Number(limit),
+              total: 0,
+              totalPages: 0
+            }
+          }
+        };
+      } else if (statusArray.length === 1) {
+        where.status = statusArray[0];
+      } else {
+        where.status = { in: statusArray };
+      }
+    } else {
+      // No status filter - exclude cart
+      where.status = { not: ORDER_STATUS.CART };
     }
 
     // Check if customer exists
@@ -404,6 +431,7 @@ export const getCustomerOrders = async (customerId, filters = {}) => {
  * ✅ FIX #1: Thêm logic tăng sold_count khi order chuyển sang delivered/completed
  * ✅ FIX #20: Thêm state machine validation
  * ✅ FIX #22: Thêm Serializable isolation level
+ * ✅ SIMPLIFIED: Luồng đơn giản - PENDING → CONFIRMED → SHIPPING → DELIVERED → COMPLETED
  */
 export const updateOrderStatus = async (orderId, status, userId) => {
   try {
@@ -581,6 +609,7 @@ export const updateOrderStatus = async (orderId, status, userId) => {
  * - ✅ FIX #18: Rollback flashsale sold_count (dựa trên order_date thay vì 24h)
  * - ✅ FIX #19: Handle multi-branch shipments
  * - ✅ FIX #23: Thêm Serializable isolation level
+ * - ✅ SIMPLIFIED: PROCESSING đã được gộp vào CONFIRMED
  */
 export const cancelOrder = async (orderId, userId, reason = null) => {
   try {
@@ -618,7 +647,8 @@ export const cancelOrder = async (orderId, userId, reason = null) => {
       };
     }
 
-    // ✅ FIX ISSUE #5: Thêm COMPLETED và RETURNED vào danh sách không thể hủy
+    // ✅ FIX ISSUE #5: Các trạng thái không thể hủy
+    // NOTE: SHIPPING có thể cancel trong 30 phút đầu (logic có thể thêm sau)
     const nonCancellableStatuses = [
       ORDER_STATUS.DELIVERED,
       ORDER_STATUS.COMPLETED,
@@ -928,7 +958,7 @@ export const getOrderStatistics = async (filters = {}) => {
       totalOrders,
       pendingOrders,
       confirmedOrders,
-      processingOrders,
+      processingOrders, // Legacy support - PROCESSING đã được thay bằng CONFIRMED
       shippingOrders,
       deliveredOrders,
       cancelledOrders,

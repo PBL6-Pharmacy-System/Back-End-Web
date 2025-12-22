@@ -23,7 +23,7 @@ export const getAvailableBatchesFEFO = async (req, res) => {
 
     const result = await productBatchService.getAvailableBatchesFEFO(branchId, productId);
 
-    if (!result.success) {
+    if (!result.success) {  
       return res.status(result.status || 400).json(result);
     }
 

@@ -2,10 +2,10 @@ import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
 // Jobs - chỉ import những job cần thiết
-import { startCartCleanupJob } from './src/jobs/cartCleanupJob.js';
 import './src/jobs/flashsaleJob.js';
 import { startPaymentExpirationJob } from './src/jobs/paymentExpirationJob.js';
 import { startReservationCleanupJob } from './src/jobs/reservationCleanupJob.js';
+import { startCartCleanupJob } from './src/jobs/cartCleanupJob.js';
 
 // Middlewares
 import { errorHandler, notFound } from './src/middlewares/errorHandler.middleware.js';
@@ -38,23 +38,21 @@ import branchInventoryRoutes from './src/modules/inventory-management/branch-inv
 import branchRoutes from './src/modules/inventory-management/branches/branchRoutes.js';
 import inventoryTransferRoutes from './src/modules/inventory-management/inventory-transfer/inventoryTransferRoutes.js';
 import productBatchRoutes from './src/modules/inventory-management/product-batch/productBatchRoutes.js';
-import stockOperationsRoutes from './src/modules/inventory-management/stock-operations/stockOperationsRoutes.js';
 import stockTakeRoutes from './src/modules/inventory-management/stock-take/stockTakeRoutes.js';
-import supplierOrderRoutes from './src/modules/inventory-management/supplier-order/supplierOrderRoutes.js';
+import stockOperationsRoutes from './src/modules/inventory-management/stock-operations/stockOperationsRoutes.js';
 
 // Order Management
 import cartRoutes from './src/modules/order-management/cart/cartRoutes.js';
 import orderRoutes from './src/modules/order-management/orders/orderRoutes.js';
 import momoRoutes from './src/modules/order-management/payments/gateways/momo/momoRoutes.js';
-import payosRoutes from './src/modules/order-management/payments/gateways/payos/payosRoutes.js';
-import paypalRoutes from './src/modules/order-management/payments/gateways/paypal/paypalRoutes.js';
 import vnpayRoutes from './src/modules/order-management/payments/gateways/vnpay/vnpayRoutes.js';
+import paypalRoutes from './src/modules/order-management/payments/gateways/paypal/paypalRoutes.js';
 import paymentRoutes from './src/modules/order-management/payments/paymentRoutes.js';
 
 // Shipping Management
+import shippingFeeRoutes from './src/modules/shipping-management/shipping-fees/shippingFeeRoutes.js';
 import shipmentRoutes from './src/modules/shipping-management/shipments/shipmentRoutes.js';
 import shippingAddressRoutes from './src/modules/shipping-management/shipping-addresses/shippingAddressRoutes.js';
-import shippingFeeRoutes from './src/modules/shipping-management/shipping-fees/shippingFeeRoutes.js';
 
 // Promotion Management
 import flashsaleRoutes from './src/modules/promotion-management/flashsales/flashsaleRoutes.js';
@@ -125,8 +123,9 @@ app.use('/api', shippingAddressRoutes);
 // Promotion management routes - MUST be early to avoid middleware conflicts
 app.use('/api', voucherRoutes);
 app.use('/api', flashsaleRoutes);
+app.use('/api/payments/paypal', paypalRoutes);
 
-// Auth routes - MUST be early for login/register to work
+// Auth routes
 app.use('/api', authRoutes);
 
 // User management
@@ -149,10 +148,18 @@ app.use('/api', inventoryTransferRoutes);
 app.use('/api', productBatchRoutes);
 app.use('/api', stockTakeRoutes);
 app.use('/api', stockOperationsRoutes);
-app.use('/api/supplier-orders', supplierOrderRoutes);
 
+// Order management
+app.use('/api', cartRoutes);
+app.use('/api', orderRoutes);
+app.use('/api', paymentRoutes);
+app.use('/api/payments/vnpay', vnpayRoutes);
+app.use('/api/payments/momo', momoRoutes);
 
-
+// Shipping management
+app.use('/api/shipping', shippingFeeRoutes);
+app.use('/api', shipmentRoutes);
+app.use('/api', shippingAddressRoutes);
 
 // Notification management
 app.use('/api', notificationRoutes);
