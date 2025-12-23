@@ -235,10 +235,10 @@ export const createBranchInventory = async (data) => {
   }
 };
 
-// Update inventory
+// Cập nhật cấu hình tồn kho (CHỈ min_stock, max_stock - KHÔNG được update stock)
 export const updateBranchInventory = async (id, data) => {
   try {
-    // Check if inventory exists
+    // Kiểm tra tồn kho có tồn tại không
     const existingInventory = await prisma.branchinventory.findUnique({
       where: { id: Number(id) }
     });
@@ -251,16 +251,17 @@ export const updateBranchInventory = async (id, data) => {
       };
     }
 
-    // Validate stock value
-    if (data.stock !== undefined && data.stock < 0) {
+    // ⛔ BẢO MẬT: Ngăn chặn cập nhật số lượng stock thủ công
+    // Stock chỉ có thể thay đổi thông qua các thao tác: nhập kho, xuất kho, chuyển kho, kiểm kho
+    if (data.stock !== undefined) {
       return {
         success: false,
-        status: 400,
-        error: 'Số lượng tồn kho không được âm'
+        status: 403,
+        error: 'Không thể cập nhật số lượng tồn kho thủ công. Vui lòng sử dụng chức năng nhập kho, xuất kho, chuyển kho hoặc kiểm kho.'
       };
     }
 
-    // Validate stock limits
+    // Validate giới hạn tồn kho
     if (data.min_stock !== undefined && data.max_stock !== undefined) {
       if (Number(data.min_stock) >= Number(data.max_stock)) {
         return {
@@ -271,10 +272,10 @@ export const updateBranchInventory = async (id, data) => {
       }
     }
 
+    // Chỉ cho phép cập nhật các trường cấu hình (min_stock, max_stock)
     const inventory = await prisma.branchinventory.update({
       where: { id: Number(id) },
       data: {
-        stock: data.stock !== undefined ? Number(data.stock) : undefined,
         min_stock: data.min_stock !== undefined ? Number(data.min_stock) : undefined,
         max_stock: data.max_stock !== undefined ? Number(data.max_stock) : undefined,
         last_updated: new Date()
@@ -292,7 +293,8 @@ export const updateBranchInventory = async (id, data) => {
 
     return {
       success: true,
-      data: inventory
+      data: inventory,
+      message: 'Cập nhật cấu hình tồn kho thành công'
     };
   } catch (error) {
     throw error;

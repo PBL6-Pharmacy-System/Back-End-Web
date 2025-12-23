@@ -73,6 +73,13 @@ router.get('/product-batches/generate-number/:productId/:branchId',
     productBatchController.generateBatchNumber
 );
 
+// Get depleted batches (quantity = 0) - Lấy lô hàng đã hết hàng
+// ⚠️ Staff chỉ xem được chi nhánh của mình (check trong controller)
+router.get('/product-batches/depleted',
+    authorizeAdminOrStaff,
+    productBatchController.getDepletedBatches
+);
+
 // ============================================================
 // EXISTING ROUTES
 // ============================================================

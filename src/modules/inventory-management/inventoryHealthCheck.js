@@ -11,10 +11,11 @@ import { INVENTORY_LOG_TYPE, INVENTORY_INCREASE_TYPES, INVENTORY_DECREASE_TYPES 
 /**
  * Check inventory consistency cho một branch
  * So sánh branchinventory.stock với SUM(productBatch.quantity)
+ * ✅ OPTIMIZED: Sử dụng groupBy để tránh N+1 query
  */
 export const checkBranchInventoryConsistency = async (branchId) => {
     try {
-        // Lấy tất cả inventory của branch
+        // 1️⃣ Lấy tất cả inventory của branch (1 query)
         const inventories = await prisma.branchinventory.findMany({
             where: { branch_id: Number(branchId) },
             include: {
@@ -22,21 +23,27 @@ export const checkBranchInventoryConsistency = async (branchId) => {
             }
         });
 
+        // 2️⃣ Lấy tất cả batch totals cùng lúc với 1 query (dùng groupBy)
+        const batchTotals = await prisma.productBatch.groupBy({
+            by: ['product_id'],
+            where: {
+                branch_id: Number(branchId),
+                status: { in: ['active', 'expired'] }
+            },
+            _sum: { quantity: true }
+        });
+
+        // 3️⃣ Tạo map cho O(1) lookup thay vì loop
+        const batchMap = new Map(
+            batchTotals.map(bt => [bt.product_id, bt._sum.quantity || 0])
+        );
+
         const results = [];
         const discrepancies = [];
 
+        // 4️⃣ Xử lý dữ liệu mà không cần query thêm
         for (const inventory of inventories) {
-            // Tính tổng từ batches (active + expired, không tính disposed)
-            const batchTotal = await prisma.productBatch.aggregate({
-                where: {
-                    branch_id: Number(branchId),
-                    product_id: inventory.product_id,
-                    status: { in: ['active', 'expired'] }
-                },
-                _sum: { quantity: true }
-            });
-
-            const batchQuantity = batchTotal._sum.quantity || 0;
+            const batchQuantity = batchMap.get(inventory.product_id) || 0;
             const inventoryQuantity = inventory.stock || 0;
             const difference = inventoryQuantity - batchQuantity;
 
@@ -242,7 +249,7 @@ export const getInventoryHealthStatus = async () => {
     try {
         const now = new Date();
 
-        // Parallel queries cho performance
+        // Parallel queries for performance
         const [
             totalBranches,
             totalProducts,
@@ -255,7 +262,7 @@ export const getInventoryHealthStatus = async () => {
             stuckReservationsCount
         ] = await Promise.all([
             prisma.branches.count({ where: { is_active: true } }),
-            prisma.products.count({ where: { is_active: true } }),
+            prisma.products.count(), // Products table doesn't have is_active field
             prisma.branchinventory.count(),
             // Low stock: stock <= min_stock
             prisma.branchinventory.count({

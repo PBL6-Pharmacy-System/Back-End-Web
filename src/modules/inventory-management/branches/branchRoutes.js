@@ -58,14 +58,15 @@ router.get('/branches/:branchId/inventory/alerts/low-stock',
     branchInventoryController.getBranchLowStockItems
 );
 
-// PUT /branches/:branchId/inventory/:productId - Cập nhật tồn kho thủ công
-// ✅ WRITE PERMISSION: Staff chỉ được update own branch
+// PUT /branches/:branchId/inventory/:productId - Update inventory configuration (min/max stock)
+// ⛔ Stock quantity CANNOT be manually updated - use import/export/transfer operations instead
+// ✅ WRITE PERMISSION: Staff can only update their own branch configuration
 router.put('/branches/:branchId/inventory/:productId',
     authenticateToken,
     authorizeAdminOrStaff,
-    authorizeStaffBranch, // ✅ Added: Staff chỉ được WRITE own branch
+    authorizeStaffBranch, // ✅ Added: Staff can only WRITE to own branch
     validateId('branchId'),
-    validateId('productId'), // ✅ Reusable validator thay vì inline validation
+    validateId('productId'), // ✅ Reusable validator instead of inline validation
     branchInventoryController.updateBranchInventoryByBranchProduct
 );
 

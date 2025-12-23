@@ -21,7 +21,7 @@ const validateTransferNote = validateTextFields({
 const validateCancelReason = validateTextFields({
   fields: ['reason'],
   maxLength: 500,
-  required: false
+  required: true
 });
 
 // GET /api/inventory-transfers - Lấy danh sách chuyển kho

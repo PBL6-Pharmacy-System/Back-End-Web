@@ -122,24 +122,22 @@ export const createStockTake = async (data, userId) => {
         }
       });
 
-      // Create stock take items for all products
-      const items = await Promise.all(
-        inventoryItems.map(item =>
-          tx.stockTakeItem.create({
-            data: {
-              stock_take_id: stockTake.id,
-              product_id: item.product_id,
-              branch_id: Number(branch_id),
-              system_qty: item.stock,
-              actual_qty: null,
-              variance: null,
-              variance_value: null
-            }
-          })
-        )
-      );
+      // Create stock take items for all products using createMany for better performance
+      const { count } = await tx.stockTakeItem.createMany({
+        data: inventoryItems.map(item => ({
+          stock_take_id: stockTake.id,
+          product_id: item.product_id,
+          branch_id: Number(branch_id),
+          system_qty: item.stock,
+          actual_qty: null,
+          variance: null,
+          variance_value: null
+        }))
+      });
 
-      return { ...stockTake, itemCount: items.length };
+      return { ...stockTake, itemCount: count };
+    }, {
+      timeout: 15000
     });
 
     return {

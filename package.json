@@ -5,8 +5,8 @@
   "description": "",
   "main": "index.js",
   "engines": {
-  "node": "20.x"
-},
+    "node": "20.x"
+  },
   "scripts": {
     "build": "prisma generate",
     "start": "node index.js",
@@ -46,7 +46,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "prisma": "^6.16.2",
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.11",
+    "prisma": "^6.16.2"
   }
 }

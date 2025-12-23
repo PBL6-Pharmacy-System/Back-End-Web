@@ -351,6 +351,13 @@ export const deleteBranch = async (id) => {
       message: 'Đã xóa chi nhánh thành công'
     };
   } catch (error) {
+    if (error.code === 'P2025') {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy chi nhánh'
+      };
+    }
     throw error;
   }
 };
@@ -369,19 +376,16 @@ export const findBranchByName = async (name) => {
 
 // Check if branch can be deleted
 export const canDeleteBranch = async (id) => {
-  const [hasInventory, hasShipments, hasOrders] = await Promise.all([
-    prisma.branchInventory.findFirst({
+  const [hasInventory, hasShipments] = await Promise.all([
+    prisma.branchinventory.findFirst({
       where: { branch_id: Number(id) }
     }),
     prisma.shipments.findFirst({
       where: { branch_id: Number(id) }
-    }),
-    prisma.orders.findFirst({
-      where: { branch_id: Number(id) }
     })
   ]);
 
-  return !hasInventory && !hasShipments && !hasOrders;
+  return !hasInventory && !hasShipments;
 };
 
 /**

@@ -240,13 +240,25 @@ export const createSupplierOrder = async (data, userId) => {
         // Generate order number
         const orderNumber = await generateOrderNumber();
 
-        // Calculate totals
+        // Calculate totals - handle both unit_price and cost_price field names
         let totalAmount = 0;
         let taxAmount = 0;
         let discountAmount = 0;
 
         for (const item of items) {
-            const subtotal = Number(item.quantity) * Number(item.unit_price);
+            // Support both unit_price and cost_price field names
+            const price = Number(item.unit_price || item.cost_price || 0);
+            const quantity = Number(item.quantity || 0);
+
+            if (isNaN(price) || isNaN(quantity)) {
+                return {
+                    success: false,
+                    status: 400,
+                    error: `Giá hoặc số lượng không hợp lệ cho sản phẩm ${item.product_id}`
+                };
+            }
+
+            const subtotal = quantity * price;
             const itemTax = subtotal * (Number(item.tax_rate || 0) / 100);
             const itemDiscount = Number(item.discount || 0);
 
@@ -261,32 +273,39 @@ export const createSupplierOrder = async (data, userId) => {
         const result = await prisma.$transaction(async (tx) => {
             const order = await tx.supplierOrder.create({
                 data: {
-                    supplier_id: Number(supplier_id),
-                    branch_id: Number(branch_id),
                     order_number: orderNumber,
                     status: 'draft',
                     total_amount: totalAmount,
                     tax_amount: taxAmount,
                     discount_amount: discountAmount,
                     final_amount: finalAmount,
-                    ordered_by: userId,
                     order_date: new Date(),
                     expected_date: expected_date ? new Date(expected_date) : null,
-                    note
+                    note,
+                    branches: {
+                        connect: { id: Number(branch_id) }
+                    },
+                    suppliers: {
+                        connect: { id: Number(supplier_id) }
+                    },
+                    users_supplierOrder_ordered_byTousers: {
+                        connect: { id: userId }
+                    }
                 }
             });
 
             // Create order items
             for (const item of items) {
+                const price = Number(item.unit_price || item.cost_price || 0);
                 await tx.supplierOrderItem.create({
                     data: {
                         order_id: order.id,
                         product_id: Number(item.product_id),
                         quantity: Number(item.quantity),
-                        unit_price: Number(item.unit_price),
+                        unit_price: price,
                         tax_rate: Number(item.tax_rate || 0),
                         discount: Number(item.discount || 0),
-                        subtotal: Number(item.quantity) * Number(item.unit_price),
+                        subtotal: Number(item.quantity) * price,
                         batch_number: item.batch_number || null,
                         expiry_date: item.expiry_date ? new Date(item.expiry_date) : null,
                         note: item.note || null
