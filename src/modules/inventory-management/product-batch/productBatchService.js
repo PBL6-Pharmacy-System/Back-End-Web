@@ -1,4 +1,5 @@
 import prisma from '../../../config/db.js';
+import { inventoryLogger } from '../../../utils/logger.js';
 
 // ============================================================
 // FEFO (First Expired First Out) INVENTORY MANAGEMENT
@@ -127,6 +128,7 @@ export const allocateBatchesFEFO = async (branchId, productId, requiredQuantity)
  * 4. Create inventory logs for traceability
  * 
  * ✅ FIX #24: Thêm atomic check để batch quantity không âm
+ * ✅ ENHANCED: Strict validation và data integrity checks
  * 
  * ⚠️ CONVENTION: Quantity trong InventoryLog dùng số ÂM cho xuất kho
  * Điều này giúp dễ dàng tính SUM(quantity) để reconcile
@@ -142,25 +144,143 @@ export const exportStockFEFO = async (data, userId) => {
       note = 'Xuất kho FEFO'
     } = data;
 
-    // Validate inputs
-    if (!branch_id || !product_id || !quantity) {
+    // ========================================
+    // CRITICAL VALIDATION - Prevent data tampering
+    // ========================================
+
+    // 1. Validate required fields
+    if (!branch_id || !product_id || !quantity || !userId) {
       return {
         success: false,
         status: 400,
-        error: 'Thiếu thông tin bắt buộc (branch_id, product_id, quantity)'
+        error: 'Thiếu thông tin bắt buộc (branch_id, product_id, quantity, userId)',
+        details: {
+          branch_id: !branch_id ? 'Bắt buộc' : 'OK',
+          product_id: !product_id ? 'Bắt buộc' : 'OK',
+          quantity: !quantity ? 'Bắt buộc' : 'OK',
+          userId: !userId ? 'Bắt buộc' : 'OK'
+        }
       };
     }
 
-    if (quantity <= 0) {
+    // 2. Validate data types and ranges
+    const parsedBranchId = Number(branch_id);
+    const parsedProductId = Number(product_id);
+    const parsedQuantity = Number(quantity);
+
+    if (!Number.isInteger(parsedBranchId) || parsedBranchId <= 0) {
       return {
         success: false,
         status: 400,
-        error: 'Số lượng xuất phải lớn hơn 0'
+        error: 'branch_id phải là số nguyên dương'
       };
     }
+
+    if (!Number.isInteger(parsedProductId) || parsedProductId <= 0) {
+      return {
+        success: false,
+        status: 400,
+        error: 'product_id phải là số nguyên dương'
+      };
+    }
+
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Số lượng xuất phải là số nguyên dương'
+      };
+    }
+
+    // 3. Validate quantity is reasonable (prevent huge numbers that may be mistakes)
+    const MAX_EXPORT_QUANTITY = 100000; // Configurable limit
+    if (parsedQuantity > MAX_EXPORT_QUANTITY) {
+      return {
+        success: false,
+        status: 400,
+        error: `Số lượng xuất vượt quá giới hạn cho phép (${MAX_EXPORT_QUANTITY})`
+      };
+    }
+
+    // 4. Validate reference_type (only allow specific types)
+    const ALLOWED_REFERENCE_TYPES = [
+      'manual_export',
+      'order_fulfillment',
+      'transfer',
+      'damage',
+      'sample',
+      'return_to_supplier'
+    ];
+
+    if (!ALLOWED_REFERENCE_TYPES.includes(reference_type)) {
+      return {
+        success: false,
+        status: 400,
+        error: `reference_type không hợp lệ. Cho phép: ${ALLOWED_REFERENCE_TYPES.join(', ')}`
+      };
+    }
+
+    // 5. Verify branch exists and is active
+    const branch = await prisma.branches.findUnique({
+      where: { id: parsedBranchId },
+      select: { id: true, name: true, is_active: true }
+    });
+
+    if (!branch) {
+      return {
+        success: false,
+        status: 404,
+        error: `Chi nhánh ID ${parsedBranchId} không tồn tại`
+      };
+    }
+
+    if (!branch.is_active) {
+      return {
+        success: false,
+        status: 403,
+        error: `Chi nhánh "${branch.name}" đã bị vô hiệu hóa, không thể xuất kho`
+      };
+    }
+
+    // 6. Verify product exists
+    const product = await prisma.products.findUnique({
+      where: { id: parsedProductId },
+      select: { id: true, name: true }
+    });
+
+    if (!product) {
+      return {
+        success: false,
+        status: 404,
+        error: `Sản phẩm ID ${parsedProductId} không tồn tại`
+      };
+    }
+
+    // 7. Check if reference_id is provided when reference_type requires it
+    if (reference_type === 'order_fulfillment' && !reference_id) {
+      return {
+        success: false,
+        status: 400,
+        error: 'reference_id (order_id) bắt buộc khi reference_type là order_fulfillment'
+      };
+    }
+
+    if (reference_type === 'transfer' && !reference_id) {
+      return {
+        success: false,
+        status: 400,
+        error: 'reference_id (transfer_id) bắt buộc khi reference_type là transfer'
+      };
+    }
+
+
+
+    // ========================================
+    // ALLOCATION & EXPORT
+    // ========================================
 
     // Get allocation plan
-    const allocationResult = await allocateBatchesFEFO(branch_id, product_id, quantity);
+    const allocationResult = await allocateBatchesFEFO(parsedBranchId, parsedProductId, parsedQuantity);
 
     if (!allocationResult.success) {
       return allocationResult;
@@ -195,13 +315,13 @@ export const exportStockFEFO = async (data, userId) => {
         // ✅ FIX #25: Số DƯƠNG với type EXPORT (convention mới)
         const log = await tx.inventoryLog.create({
           data: {
-            branch_id: Number(branch_id),
-            product_id: Number(product_id),
+            branch_id: parsedBranchId,
+            product_id: parsedProductId,
             batch_id: allocation.batch_id,
             quantity: allocation.allocated_qty, // ✅ Số DƯƠNG
             type: 'EXPORT',                     // ✅ Type cho biết chiều xuất kho
             reference_type,
-            reference_id,
+            reference_id: reference_id ? Number(reference_id) : null,
             note: `${note} - Lô ${allocation.batch_number} (HSD: ${allocation.expiry_date ? new Date(allocation.expiry_date).toLocaleDateString('vi-VN') : 'N/A'})`,
             created_by: userId,
             date: new Date()
@@ -213,12 +333,12 @@ export const exportStockFEFO = async (data, userId) => {
       // ✅ FIX #24: Update total inventory với atomic check
       const inventoryUpdate = await tx.branchinventory.updateMany({
         where: {
-          branch_id: Number(branch_id),
-          product_id: Number(product_id),
-          stock: { gte: quantity } // ✅ Atomic check
+          branch_id: parsedBranchId,
+          product_id: parsedProductId,
+          stock: { gte: parsedQuantity } // ✅ Atomic check
         },
         data: {
-          stock: { decrement: quantity },
+          stock: { decrement: parsedQuantity },
           last_updated: new Date()
         }
       });
@@ -227,10 +347,25 @@ export const exportStockFEFO = async (data, userId) => {
         throw new Error(`Không đủ tồn kho trong branchinventory (race condition detected)`);
       }
 
+      // Get updated batch quantities after export
+      const updatedBatches = await tx.productBatch.findMany({
+        where: {
+          id: { in: allocations.map(a => a.batch_id) }
+        },
+        select: {
+          id: true,
+          batch_number: true,
+          quantity: true,
+          expiry_date: true,
+          status: true
+        }
+      });
+
       return {
         allocations,
         logs,
-        totalExported: quantity
+        totalExported: parsedQuantity,
+        updatedBatches
       };
     }, {
       timeout: 15000,
@@ -239,8 +374,22 @@ export const exportStockFEFO = async (data, userId) => {
 
     return {
       success: true,
-      data: result,
-      message: `Đã xuất ${quantity} sản phẩm từ ${allocations.length} lô theo FEFO`
+      data: {
+        ...result,
+        summary: {
+          total_exported: parsedQuantity,
+          batches_used: allocations.length,
+          branch_id: parsedBranchId,
+          branch_name: branch.name,
+          product_id: parsedProductId,
+          product_name: product.name,
+          reference_type,
+          reference_id: reference_id ? Number(reference_id) : null,
+          exported_at: new Date(),
+          exported_by: userId
+        }
+      },
+      message: `Đã xuất ${parsedQuantity} sản phẩm từ ${allocations.length} lô theo FEFO`
     };
   } catch (error) {
     // ✅ Handle race condition errors
@@ -709,11 +858,104 @@ export const generateBatchNumber = async (productId, branchId) => {
   return `BATCH-${productId}-${branchId}-${dateStr}-${random}`;
 };
 
+/**
+ * Get depleted batches (quantity = 0) - Lấy lô hàng hết (để xem hoặc xử lý)
+ * Hữu ích để tracking lô nào đã bán hết, cần xóa, hoặc xác nhận tồn kho
+ */
+export const getDepletedBatches = async (filters) => {
+  try {
+    const {
+      branch_id,
+      product_id,
+      status = 'active', // Mặc định chỉ lấy active depleted
+      page = 1,
+      limit = 20
+    } = filters;
+
+    const where = {
+      quantity: 0 // ✅ CHỈ lấy batch hết hàng
+    };
+
+    if (branch_id) {
+      where.branch_id = Number(branch_id);
+    }
+
+    if (product_id) {
+      where.product_id = Number(product_id);
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    const [batches, total] = await Promise.all([
+      prisma.productBatch.findMany({
+        where,
+        include: {
+          products: {
+            select: {
+              id: true,
+              name: true,
+              image_url: true
+            }
+          },
+          branchinventory: {
+            include: {
+              branches: {
+                select: {
+                  id: true,
+                  name: true,
+                  address: true
+                }
+              }
+            }
+          },
+          suppliers: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
+        },
+        orderBy: {
+          updated_at: 'desc' // Xem batch nào vừa hết hàng
+        },
+        skip: (page - 1) * limit,
+        take: limit
+      }),
+      prisma.productBatch.count({ where })
+    ]);
+
+    return {
+      success: true,
+      data: {
+        batches,
+        pagination: {
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+          totalRecords: total
+        }
+      }
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
 // ============================================================
 // EXISTING FUNCTIONS
 // ============================================================
 
 // Create a new product batch
+/**
+ * ✅ ENHANCED: Strict validation for batch creation
+ * - Validate all required fields
+ * - Prevent duplicate batches
+ * - Validate dates logically
+ * - Verify foreign key references
+ * - Ensure data integrity
+ */
 export const createProductBatch = async (data, userId) => {
   try {
     const {
@@ -729,66 +971,172 @@ export const createProductBatch = async (data, userId) => {
       note
     } = data;
 
-    // Validate required fields
-    if (!product_id || !branch_id || !batch_number || !quantity) {
+    // ========================================
+    // CRITICAL VALIDATION - Prevent data tampering
+    // ========================================
+
+    // 1. Validate required fields
+    if (!product_id || !branch_id || !batch_number || !quantity || !userId) {
       return {
         success: false,
         status: 400,
-        error: 'Thiếu thông tin bắt buộc (product_id, branch_id, batch_number, quantity)'
+        error: 'Thiếu thông tin bắt buộc (product_id, branch_id, batch_number, quantity, userId)',
+        details: {
+          product_id: !product_id ? 'Bắt buộc' : 'OK',
+          branch_id: !branch_id ? 'Bắt buộc' : 'OK',
+          batch_number: !batch_number ? 'Bắt buộc' : 'OK',
+          quantity: !quantity ? 'Bắt buộc' : 'OK',
+          userId: !userId ? 'Bắt buộc' : 'OK'
+        }
       };
     }
 
-    // Validate quantity
-    if (quantity <= 0) {
+    // 2. Validate data types
+    const parsedProductId = Number(product_id);
+    const parsedBranchId = Number(branch_id);
+    const parsedQuantity = Number(quantity);
+    const parsedCostPrice = cost_price ? Number(cost_price) : null;
+    const parsedSellingPrice = selling_price ? Number(selling_price) : null;
+    const parsedSupplierId = supplier_id ? Number(supplier_id) : null;
+
+    if (!Number.isInteger(parsedProductId) || parsedProductId <= 0) {
       return {
         success: false,
         status: 400,
-        error: 'Số lượng phải lớn hơn 0'
+        error: 'product_id phải là số nguyên dương'
       };
     }
 
-    // Check if product and branch exist
-    const [product, branch] = await Promise.all([
-      prisma.products.findUnique({ where: { id: Number(product_id) } }),
-      prisma.branches.findUnique({ where: { id: Number(branch_id) } })
-    ]);
-
-    if (!product) {
+    if (!Number.isInteger(parsedBranchId) || parsedBranchId <= 0) {
       return {
         success: false,
-        status: 404,
-        error: 'Sản phẩm không tồn tại'
+        status: 400,
+        error: 'branch_id phải là số nguyên dương'
       };
     }
 
-    if (!branch) {
+    // 3. Validate batch_number format (prevent SQL injection, XSS)
+    const batchNumberTrimmed = batch_number.trim();
+    if (batchNumberTrimmed.length === 0) {
       return {
         success: false,
-        status: 404,
-        error: 'Chi nhánh không tồn tại'
+        status: 400,
+        error: 'Mã lô hàng không được để trống'
       };
     }
 
-    // Check if batch already exists
-    const existingBatch = await prisma.productBatch.findFirst({
-      where: {
-        batch_number: batch_number,
-        product_id: Number(product_id),
-        branch_id: Number(branch_id)
+    if (batchNumberTrimmed.length > 50) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Mã lô hàng không được vượt quá 50 ký tự'
+      };
+    }
+
+    // Only allow alphanumeric, dash, underscore
+    if (!/^[a-zA-Z0-9\-_]+$/.test(batchNumberTrimmed)) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Mã lô hàng chỉ được chứa chữ cái, số, dấu gạch ngang (-) và gạch dưới (_)'
+      };
+    }
+
+    // 4. Validate quantity
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Số lượng phải là số nguyên dương'
+      };
+    }
+
+    const MAX_IMPORT_QUANTITY = 100000;
+    if (parsedQuantity > MAX_IMPORT_QUANTITY) {
+      return {
+        success: false,
+        status: 400,
+        error: `Số lượng nhập vượt quá giới hạn cho phép (${MAX_IMPORT_QUANTITY})`
+      };
+    }
+
+    // 5. Validate prices
+    if (parsedCostPrice !== null && (parsedCostPrice < 0 || !Number.isFinite(parsedCostPrice))) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Giá nhập phải là số dương hợp lệ'
+      };
+    }
+
+    if (parsedSellingPrice !== null && (parsedSellingPrice < 0 || !Number.isFinite(parsedSellingPrice))) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Giá bán phải là số dương hợp lệ'
+      };
+    }
+
+    // Validate selling price >= cost price (if both provided)
+    if (parsedCostPrice !== null && parsedSellingPrice !== null && parsedSellingPrice < parsedCostPrice) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Giá bán không được thấp hơn giá nhập',
+        details: {
+          cost_price: parsedCostPrice,
+          selling_price: parsedSellingPrice
+        }
+      };
+    }
+
+    // 6. Validate dates
+    let parsedManufactureDate = null;
+    let parsedExpiryDate = null;
+
+    if (manufacture_date) {
+      parsedManufactureDate = new Date(manufacture_date);
+      if (isNaN(parsedManufactureDate.getTime())) {
+        return {
+          success: false,
+          status: 400,
+          error: 'Ngày sản xuất không hợp lệ'
+        };
       }
-    });
 
-    if (existingBatch) {
-      return {
-        success: false,
-        status: 409,
-        error: 'Số lô hàng đã tồn tại cho sản phẩm này tại chi nhánh này'
-      };
+      // Manufacture date cannot be in the future
+      if (parsedManufactureDate > new Date()) {
+        return {
+          success: false,
+          status: 400,
+          error: 'Ngày sản xuất không được ở tương lai'
+        };
+      }
     }
 
-    // Validate dates
-    if (expiry_date && manufacture_date) {
-      if (new Date(expiry_date) <= new Date(manufacture_date)) {
+    if (expiry_date) {
+      parsedExpiryDate = new Date(expiry_date);
+      if (isNaN(parsedExpiryDate.getTime())) {
+        return {
+          success: false,
+          status: 400,
+          error: 'Ngày hết hạn không hợp lệ'
+        };
+      }
+
+      // Expiry date cannot be in the past
+      if (parsedExpiryDate < new Date()) {
+        return {
+          success: false,
+          status: 400,
+          error: 'Ngày hết hạn không được ở quá khứ'
+        };
+      }
+    }
+
+    // Expiry must be after manufacture
+    if (parsedExpiryDate && parsedManufactureDate) {
+      if (parsedExpiryDate <= parsedManufactureDate) {
         return {
           success: false,
           status: 400,
@@ -797,31 +1145,105 @@ export const createProductBatch = async (data, userId) => {
       }
     }
 
-    // Check if expiry date is in the past
-    if (expiry_date && new Date(expiry_date) < new Date()) {
+    // ========================================
+    // VERIFY FOREIGN KEY REFERENCES
+    // ========================================
+
+    // Check if product and branch exist
+    const [product, branch, supplier] = await Promise.all([
+      prisma.products.findUnique({
+        where: { id: parsedProductId },
+        select: { id: true, name: true }
+      }),
+      prisma.branches.findUnique({
+        where: { id: parsedBranchId },
+        select: { id: true, name: true, is_active: true }
+      }),
+      parsedSupplierId ? prisma.suppliers.findUnique({
+        where: { id: parsedSupplierId },
+        select: { id: true, name: true }
+      }) : null
+    ]);
+
+    if (!product) {
       return {
         success: false,
-        status: 400,
-        error: 'Ngày hết hạn không được ở quá khứ'
+        status: 404,
+        error: `Sản phẩm ID ${parsedProductId} không tồn tại`
       };
     }
+
+    if (!branch) {
+      return {
+        success: false,
+        status: 404,
+        error: `Chi nhánh ID ${parsedBranchId} không tồn tại`
+      };
+    }
+
+    if (!branch.is_active) {
+      return {
+        success: false,
+        status: 403,
+        error: `Chi nhánh "${branch.name}" đã bị vô hiệu hóa, không thể nhập kho`
+      };
+    }
+
+    if (parsedSupplierId && !supplier) {
+      return {
+        success: false,
+        status: 404,
+        error: `Nhà cung cấp ID ${parsedSupplierId} không tồn tại`
+      };
+    }
+
+    // ========================================
+    // CHECK FOR DUPLICATE BATCH
+    // ========================================
+
+    // Check if batch already exists
+    const existingBatch = await prisma.productBatch.findFirst({
+      where: {
+        batch_number: batchNumberTrimmed,
+        product_id: parsedProductId,
+        branch_id: parsedBranchId
+      }
+    });
+
+    if (existingBatch) {
+      return {
+        success: false,
+        status: 409,
+        error: 'Số lô hàng đã tồn tại cho sản phẩm này tại chi nhánh này',
+        details: {
+          existing_batch_id: existingBatch.id,
+          batch_number: batchNumberTrimmed,
+          product: product.name,
+          branch: branch.name
+        }
+      };
+    }
+
+    // ========================================
+    // CREATE BATCH IN TRANSACTION
+    // ========================================
 
     // Create batch and update inventory in transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create product batch
       const batch = await tx.productBatch.create({
         data: {
-          product_id: Number(product_id),
-          branch_id: Number(branch_id),
-          batch_number,
-          manufacture_date: manufacture_date ? new Date(manufacture_date) : null,
-          expiry_date: expiry_date ? new Date(expiry_date) : null,
-          quantity: Number(quantity),
-          cost_price: cost_price ? Number(cost_price) : null,
-          selling_price: selling_price ? Number(selling_price) : null,
-          supplier_id: supplier_id ? Number(supplier_id) : null,
+          product_id: parsedProductId,
+          branch_id: parsedBranchId,
+          batch_number: batchNumberTrimmed,
+          manufacture_date: parsedManufactureDate,
+          expiry_date: parsedExpiryDate,
+          quantity: parsedQuantity,
+          cost_price: parsedCostPrice,
+          selling_price: parsedSellingPrice,
+          supplier_id: parsedSupplierId,
           status: 'active',
-          note
+          note: note ? note.trim() : null
         },
         include: {
           products: true,
@@ -837,8 +1259,8 @@ export const createProductBatch = async (data, userId) => {
       // Update or create branch inventory
       const inventory = await tx.branchinventory.findFirst({
         where: {
-          branch_id: Number(branch_id),
-          product_id: Number(product_id)
+          branch_id: parsedBranchId,
+          product_id: parsedProductId
         }
       });
 
@@ -846,43 +1268,61 @@ export const createProductBatch = async (data, userId) => {
         await tx.branchinventory.update({
           where: { id: inventory.id },
           data: {
-            stock: { increment: Number(quantity) },
+            stock: { increment: parsedQuantity },
             last_updated: new Date()
           }
         });
       } else {
         await tx.branchinventory.create({
           data: {
-            branch_id: Number(branch_id),
-            product_id: Number(product_id),
-            stock: Number(quantity),
+            branch_id: parsedBranchId,
+            product_id: parsedProductId,
+            stock: parsedQuantity,
             last_updated: new Date()
           }
         });
       }
 
       // Create inventory log
-      const inventoryLog = await tx.inventoryLog.create({
+      await tx.inventoryLog.create({
         data: {
-          branch_id: Number(branch_id),
-          product_id: Number(product_id),
-          quantity: Number(quantity),
+          branch_id: parsedBranchId,
+          product_id: parsedProductId,
+          quantity: parsedQuantity,
           type: 'IMPORT',
           batch_id: batch.id,
           reference_type: 'batch_import',
           reference_id: batch.id,
-          note: `Nhập lô hàng ${batch_number}`,
+          note: `Nhập lô hàng ${batchNumberTrimmed}${supplier ? ` - NCC: ${supplier.name}` : ''}`,
           created_by: userId,
           date: new Date()
         }
       });
 
       return batch;
+    }, {
+      timeout: 15000
     });
 
     return {
       success: true,
-      data: result
+      data: {
+        batch: result,
+        summary: {
+          batch_id: result.id,
+          batch_number: batchNumberTrimmed,
+          quantity_imported: parsedQuantity,
+          product_id: parsedProductId,
+          product_name: product.name,
+          branch_id: parsedBranchId,
+          branch_name: branch.name,
+          supplier_id: parsedSupplierId,
+          supplier_name: supplier?.name || null,
+          imported_at: new Date(),
+          imported_by: userId
+        }
+      },
+      message: 'Tạo lô hàng thành công'
     };
   } catch (error) {
     throw error;
@@ -1233,6 +1673,8 @@ export const disposeExpiredBatch = async (id, userId, disposalNote = 'Tiêu hủ
       });
 
       return updatedBatch;
+    }, {
+      timeout: 15000
     });
 
     return {

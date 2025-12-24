@@ -122,24 +122,22 @@ export const createStockTake = async (data, userId) => {
         }
       });
 
-      // Create stock take items for all products
-      const items = await Promise.all(
-        inventoryItems.map(item =>
-          tx.stockTakeItem.create({
-            data: {
-              stock_take_id: stockTake.id,
-              product_id: item.product_id,
-              branch_id: Number(branch_id),
-              system_qty: item.stock,
-              actual_qty: null,
-              variance: null,
-              variance_value: null
-            }
-          })
-        )
-      );
+      // Create stock take items for all products using createMany for better performance
+      const { count } = await tx.stockTakeItem.createMany({
+        data: inventoryItems.map(item => ({
+          stock_take_id: stockTake.id,
+          product_id: item.product_id,
+          branch_id: Number(branch_id),
+          system_qty: item.stock,
+          actual_qty: null,
+          variance: null,
+          variance_value: null
+        }))
+      });
 
-      return { ...stockTake, itemCount: items.length };
+      return { ...stockTake, itemCount: count };
+    }, {
+      timeout: 15000
     });
 
     return {
@@ -571,9 +569,9 @@ export const completeStockTake = async (id, userId) => {
               remainingDeduction -= deductFromThis;
             }
 
-            // If still has remaining deduction, log warning (should not happen normally)
+            // If still has remaining deduction, throw error to rollback transaction
             if (remainingDeduction > 0) {
-              console.warn(`[StockTake ${stockTake.stock_take_no}] Could not fully adjust batches. Remaining: ${remainingDeduction}`);
+              throw new Error(`Cannot fully adjust batches for product ${item.product_id}. Remaining deduction: ${remainingDeduction}. This indicates data inconsistency between inventory and batches.`);
             }
           }
         }

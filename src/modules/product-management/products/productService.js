@@ -155,7 +155,12 @@ export const getAllProducts = async ({
             select: { id: true, name: true }
           },
           branchinventory: {
-            select: { stock: true }
+            select: { 
+              stock: true,
+              min_stock: true,
+              max_stock: true,
+              branch_id: true
+            }
           }
         },
         orderBy: { name: 'asc' }
@@ -169,8 +174,9 @@ export const getAllProducts = async ({
       const { branchinventory, ...productData } = product;
       return {
         ...productData,
-        stock: availableStock,           // ✅ Trả về số lượng thực cho Admin/Staff
-        in_stock: availableStock > 0 ? 1 : 0,
+        total_stock: availableStock,     // ✅ Tổng tồn kho từ tất cả chi nhánh
+        stock: availableStock,           // ⚠️ Deprecated - Giữ lại để backward compatible
+        in_stock: availableStock > 0,    // ✅ Boolean thay vì number
         branchinventory                  // ✅ Giữ lại để Admin/Staff xem chi tiết theo branch
       };
     });
@@ -239,8 +245,9 @@ export const getProductById = async (id) => {
       success: true,
       data: {
         ...product,
-        stock: availableStock,           // ✅ Trả về số lượng thực
-        in_stock: availableStock > 0 ? 1 : 0
+        total_stock: availableStock,     // ✅ Tổng tồn kho từ tất cả chi nhánh
+        stock: availableStock,           // ⚠️ Deprecated - Giữ lại để backward compatible
+        in_stock: availableStock > 0     // ✅ Boolean thay vì number
       }
     };
   } catch (error) {

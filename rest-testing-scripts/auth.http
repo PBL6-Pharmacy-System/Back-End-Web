@@ -1,0 +1,127 @@
+### ========================================
+### AUTHENTICATION API TESTS
+### ========================================
+### 
+### ⚠️ IMPORTANT: Before registering, run this command to fix Prisma:
+### npx prisma generate
+### 
+### ========================================
+
+# Variables
+@baseUrl = http://localhost:3000/api
+@contentType = application/json
+
+# Update these after registration/login
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjksInVzZXJuYW1lIjoiYWRtaW4xMjMiLCJlbWFpbCI6ImFkbWluMTIzQGdtYWlsLmNvbSIsInJvbGVfaWQiOjEsInJvbGVfbmFtZSI6ImFkbWluIiwiYWRtaW5faWQiOjIsImlzX3N1cGVyX2FkbWluIjpmYWxzZSwiaWF0IjoxNzY2NDEyMzQ4LCJleHAiOjE3NjY0OTg3NDh9.jX4WlfB75CSFuwVVv0NnrwSpXkjGV711wArR6cfSb6g
+@refreshToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjksImlhdCI6MTc2NTg3Nzc2OSwiZXhwIjoxNzY2NDgyNTY5fQ.F7qRrj4UXax6t7awQ7TcrfuAMMRkiwj5geC9AO1lNso
+
+### ========================================
+### UNIFIED REGISTER & LOGIN
+### ========================================
+### The API uses /auth/register and /auth/login for all roles
+### Specify role_id: 1=admin, 2=staff (customer uses OTP)
+
+### Register Admin
+# @name registerAdmin
+POST {{baseUrl}}/auth/register
+Content-Type: {{contentType}}
+
+{
+  "username": "testadmin001",
+  "password": "Admin@123456",
+  "email": "testadmin@pharmacy.com",
+  "full_name": "Test Admin User",
+  "role_id": 1
+}
+
+### Register Staff
+# @name registerStaff
+POST {{baseUrl}}/auth/register
+Content-Type: {{contentType}}
+
+{
+  "username": "teststaff001",
+  "password": "Staff@123456",
+  "email": "teststaff@pharmacy.com",
+  "full_name": "Test Staff User",
+  "phone": "0901234567",
+  "role_id": 2,
+  "branch_id": 1
+}
+
+### Login (Any Role)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: {{contentType}}
+
+{
+  "username": "admin123",
+  "password": "admin123"
+}
+
+### 📝 After login: Copy the accessToken from response above
+### and paste it into the @accessToken variable at the top of this file
+
+### ========================================
+### TOKEN MANAGEMENT
+### ========================================
+
+### Refresh Token
+POST {{baseUrl}}/auth/refresh-token
+Content-Type: {{contentType}}
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Logout
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{accessToken}}
+
+### ========================================
+### PROFILE & PASSWORD (Protected Routes)
+### ========================================
+
+### Get Current User Profile
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{accessToken}}
+
+### Change Password
+POST {{baseUrl}}/auth/change-password
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "oldPassword": "Admin@123456",
+  "newPassword": "Admin@654321"
+}
+
+### ========================================
+### OTP LOGIN (CUSTOMER ONLY)
+### ========================================
+
+### Request OTP for Login
+POST {{baseUrl}}/auth/otp/request
+Content-Type: {{contentType}}
+
+{
+  "phone": "0987654321"
+}
+
+### Verify OTP
+POST {{baseUrl}}/auth/otp/verify
+Content-Type: {{contentType}}
+
+{
+  "phone": "0987654321",
+  "otp": "123456"
+}
+
+### Customer Login with OTP
+POST {{baseUrl}}/auth/customer/login-otp
+Content-Type: {{contentType}}
+
+{
+  "phone": "0987654321",
+  "otp": "123456"
+}

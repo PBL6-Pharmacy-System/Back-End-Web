@@ -152,7 +152,8 @@ export const register = async (data) => {
       return tx.users.findUnique({
         where: { id: newUser.id },
         include: {
-          rolepermissions: true,
+          rolepermissions: true, // This is the relation name in schema
+          // rolepermissionpermissions: true,
           customers: true,
           staff: {
             include: {
@@ -277,7 +278,7 @@ export const login = async (data) => {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
-      role_name: user.rolepermissions.role_name
+      role_name: user.rolepermissions?.role_name || 'customer'
     };
 
     // Add role-specific ID to token
@@ -651,7 +652,7 @@ export const customerLoginWithOTP = async (phone = null, email = null, otpCode) 
         
         console.log('✅ [customerLoginWithOTP] User loaded with relations:', {
           id: userWithRelations.id,
-          has_role: !!userWithRelations.roles,
+          has_role: !!userWithRelations.rolepermissions,
           has_customer: !!userWithRelations.customers
         });
         

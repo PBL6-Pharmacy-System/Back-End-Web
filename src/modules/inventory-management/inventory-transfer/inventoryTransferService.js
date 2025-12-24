@@ -21,20 +21,127 @@ export const createTransferRequest = async (data, userId) => {
       };
     }
 
-    // Check if from_branch has enough stock
-    const fromInventory = await prisma.branchinventory.findFirst({
-      where: {
-        branch_id: Number(data.from_branch_id),
-        product_id: Number(data.product_id)
-      }
-    });
-
-    if (!fromInventory || fromInventory.stock < data.quantity) {
+    // Validate quantity
+    const quantity = Number(data.quantity);
+    if (!Number.isInteger(quantity) || quantity <= 0) {
       return {
         success: false,
         status: 400,
-        error: 'Không đủ tồn kho để chuyển'
+        error: 'Số lượng phải là số nguyên dương'
       };
+    }
+
+    if (quantity > 100000) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Số lượng chuyển kho không được vượt quá 100,000'
+      };
+    }
+
+    // Validate entities exist
+    const [fromBranch, toBranch, product] = await Promise.all([
+      prisma.branches.findUnique({
+        where: { id: Number(data.from_branch_id) },
+        select: { id: true, name: true, is_active: true }
+      }),
+      prisma.branches.findUnique({
+        where: { id: Number(data.to_branch_id) },
+        select: { id: true, name: true, is_active: true }
+      }),
+      prisma.products.findUnique({
+        where: { id: Number(data.product_id) },
+        select: { id: true, name: true }
+      })
+    ]);
+
+    if (!fromBranch) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Chi nhánh nguồn không tồn tại'
+      };
+    }
+
+    if (!fromBranch.is_active) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Chi nhánh nguồn không còn hoạt động'
+      };
+    }
+
+    if (!toBranch) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Chi nhánh đích không tồn tại'
+      };
+    }
+
+    if (!toBranch.is_active) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Chi nhánh đích không còn hoạt động'
+      };
+    }
+
+    if (!product) {
+      return {
+        success: false,
+        status: 404,
+        error: 'Sản phẩm không tồn tại'
+      };
+    }
+
+    // Check if from_branch has enough stock
+    const fromInventory = await prisma.branchinventory.findUnique({
+      where: {
+        branch_id_product_id: {
+          branch_id: Number(data.from_branch_id),
+          product_id: Number(data.product_id)
+        }
+      }
+    });
+
+    if (!fromInventory) {
+      return {
+        success: false,
+        status: 400,
+        error: 'Sản phẩm không tồn tại trong kho chi nhánh nguồn'
+      };
+    }
+
+    if (fromInventory.stock < quantity) {
+      return {
+        success: false,
+        status: 400,
+        error: `Không đủ tồn kho để chuyển. Hiện có: ${fromInventory.stock}, Yêu cầu: ${quantity}`
+      };
+    }
+
+    // Check/Create destination branchinventory (required due to FK constraint)
+    // Database has FK: inventoryTransfer(to_branch_id, product_id) -> branchinventory(branch_id, product_id)
+    let toInventory = await prisma.branchinventory.findUnique({
+      where: {
+        branch_id_product_id: {
+          branch_id: Number(data.to_branch_id),
+          product_id: Number(data.product_id)
+        }
+      }
+    });
+
+    // If destination doesn't have this product yet, create with stock=0
+    if (!toInventory) {
+      toInventory = await prisma.branchinventory.create({
+        data: {
+          branch_id: Number(data.to_branch_id),
+          product_id: Number(data.product_id),
+          stock: 0,
+          last_updated: new Date()
+        }
+      });
     }
 
     // Create transfer request
@@ -43,11 +150,11 @@ export const createTransferRequest = async (data, userId) => {
         from_branch_id: Number(data.from_branch_id),
         to_branch_id: Number(data.to_branch_id),
         product_id: Number(data.product_id),
-        quantity: Number(data.quantity),
+        quantity: quantity,
         status: 'pending',
         requested_by: userId,
         requested_date: new Date(),
-        note: data.note
+        note: data.note || null
       },
       include: {
         products: {
@@ -67,11 +174,24 @@ export const createTransferRequest = async (data, userId) => {
       }
     });
 
+    // Add branch info to response
     return {
       success: true,
-      data: transfer
+      data: {
+        ...transfer,
+        fromBranch: { id: fromBranch.id, name: fromBranch.name },
+        toBranch: { id: toBranch.id, name: toBranch.name }
+      }
     };
   } catch (error) {
+    // Handle specific Prisma errors
+    if (error.code === 'P2003') {
+      return {
+        success: false,
+        status: 400,
+        error: 'Lỗi ràng buộc dữ liệu: Vui lòng kiểm tra chi nhánh và sản phẩm'
+      };
+    }
     throw error;
   }
 };
@@ -117,6 +237,20 @@ export const getAllTransfers = async ({ branchId, status, page = 1, limit = 20 }
               username: true,
               full_name: true
             }
+          },
+          users_inventoryTransfer_shipped_byTousers: {
+            select: {
+              id: true,
+              username: true,
+              full_name: true
+            }
+          },
+          users_inventoryTransfer_received_byTousers: {
+            select: {
+              id: true,
+              username: true,
+              full_name: true
+            }
           }
         },
         orderBy: {
@@ -128,27 +262,34 @@ export const getAllTransfers = async ({ branchId, status, page = 1, limit = 20 }
       prisma.inventoryTransfer.count({ where })
     ]);
 
-    // Get branch info
-    const transfersWithBranches = await Promise.all(
-      transfers.map(async (transfer) => {
-        const [fromBranch, toBranch] = await Promise.all([
-          prisma.branches.findUnique({
-            where: { id: transfer.from_branch_id },
-            select: { id: true, name: true, address: true }
-          }),
-          prisma.branches.findUnique({
-            where: { id: transfer.to_branch_id },
-            select: { id: true, name: true, address: true }
-          })
-        ]);
+    // Get unique branch IDs
+    const branchIds = [...new Set([
+      ...transfers.map(t => t.from_branch_id),
+      ...transfers.map(t => t.to_branch_id)
+    ])];
 
-        return {
-          ...transfer,
-          fromBranch,
-          toBranch
-        };
-      })
-    );
+    // Fetch branch info
+    const branches = await prisma.branches.findMany({
+      where: { id: { in: branchIds } },
+      select: {
+        id: true,
+        name: true,
+        address: true
+      }
+    });
+
+    // Create branch lookup map
+    const branchMap = branches.reduce((acc, branch) => {
+      acc[branch.id] = branch;
+      return acc;
+    }, {});
+
+    // Format response with branch names
+    const transfersWithBranches = transfers.map(transfer => ({
+      ...transfer,
+      fromBranch: branchMap[transfer.from_branch_id] || null,
+      toBranch: branchMap[transfer.to_branch_id] || null
+    }));
 
     return {
       success: true,

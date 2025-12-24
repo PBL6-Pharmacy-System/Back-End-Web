@@ -11,7 +11,21 @@ import {
 // Lấy tất cả tồn kho chi nhánh
 export const getAllBranchInventory = async (req, res) => {
 	try {
-		let { branchId, productId, page = 1, limit = 10, sortBy = 'id', sortOrder = 'asc' } = req.query;
+		// ✅ FIX: Support both camelCase and snake_case parameter names
+		let { 
+			branchId, 
+			branch_id, 
+			productId, 
+			product_id, 
+			page = 1, 
+			limit = 10, 
+			sortBy = 'id', 
+			sortOrder = 'asc' 
+		} = req.query;
+
+		// Use snake_case if camelCase not provided (backward compatibility)
+		branchId = branchId || branch_id;
+		productId = productId || product_id;
 
 		// NEW LOGIC: Staff có thể xem CROSS-BRANCH (để hỗ trợ khách hàng tìm hàng)
 		// Nhưng chỉ Admin/Staff mới được xem detailed inventory
@@ -73,6 +87,7 @@ export const getBranchInventoryById = async (req, res) => {
 };
 
 // Nhập hàng vào kho chi nhánh
+// ✅ FIX #2, #3: Fixed field naming (branch_id) and added userId parameter
 export const importToBranchInventory = async (req, res) => {
 	try {
 		// ✅ FIXED: Use branch_id from JWT token directly
@@ -86,19 +101,22 @@ export const importToBranchInventory = async (req, res) => {
 				});
 			}
 
-			// Verify the branchId in request matches staff's branch
-			if (req.body.branchId && Number(req.body.branchId) !== staffBranchId) {
+			// Verify the branch_id in request matches staff's branch
+			// ✅ FIX: Check both branchId (legacy) and branch_id (correct)
+			const requestBranchId = req.body.branch_id || req.body.branchId;
+			if (requestBranchId && Number(requestBranchId) !== staffBranchId) {
 				return res.status(403).json({
 					success: false,
 					error: 'Bạn chỉ có thể nhập hàng vào chi nhánh của mình'
 				});
 			}
 
-			// Set branchId to staff's branch
-			req.body.branchId = staffBranchId;
+			// ✅ FIX: Set branch_id (with underscore) to match service expectation
+			req.body.branch_id = staffBranchId;
 		}
 
-		const result = await branchInventoryService.importToBranchInventory(req.body);
+		// ✅ FIX #3: Pass userId for audit trail
+		const result = await branchInventoryService.importToBranchInventory(req.body, req.user.userId);
 		if (!result.success) {
 			return res.status(result.status).json(result);
 		}
@@ -113,6 +131,7 @@ export const importToBranchInventory = async (req, res) => {
 };
 
 // Xuất hàng khỏi kho chi nhánh
+// ✅ FIX #2, #4: Fixed field naming (branch_id) and added userId parameter
 export const exportFromBranchInventory = async (req, res) => {
 	try {
 		// ✅ FIXED: Use branch_id from JWT token directly
@@ -126,19 +145,22 @@ export const exportFromBranchInventory = async (req, res) => {
 				});
 			}
 
-			// Verify the branchId in request matches staff's branch
-			if (req.body.branchId && Number(req.body.branchId) !== staffBranchId) {
+			// Verify the branch_id in request matches staff's branch
+			// ✅ FIX: Check both branchId (legacy) and branch_id (correct)
+			const requestBranchId = req.body.branch_id || req.body.branchId;
+			if (requestBranchId && Number(requestBranchId) !== staffBranchId) {
 				return res.status(403).json({
 					success: false,
 					error: 'Bạn chỉ có thể xuất hàng từ chi nhánh của mình'
 				});
 			}
 
-			// Set branchId to staff's branch
-			req.body.branchId = staffBranchId;
+			// ✅ FIX: Set branch_id (with underscore) to match service expectation
+			req.body.branch_id = staffBranchId;
 		}
 
-		const result = await branchInventoryService.exportFromBranchInventory(req.body);
+		// ✅ FIX #4: Pass userId for audit trail
+		const result = await branchInventoryService.exportFromBranchInventory(req.body, req.user.userId);
 		if (!result.success) {
 			return res.status(result.status).json(result);
 		}
@@ -169,9 +191,18 @@ export const createBranchInventory = async (req, res) => {
 	}
 };
 
-// Cập nhật tồn kho
+// Cập nhật cấu hình tồn kho (chỉ min_stock, max_stock)
+// ⛔ KHÔNG THỂ cập nhật số lượng stock thủ công - phải dùng nhập/xuất/chuyển kho
 export const updateBranchInventory = async (req, res) => {
 	try {
+		// ⛔ KIỂM TRA: Chặn việc cập nhật stock thủ công
+		if (req.body.stock !== undefined) {
+			return res.status(403).json({
+				success: false,
+				error: 'Không thể cập nhật số lượng tồn kho thủ công. Vui lòng sử dụng chức năng nhập kho, xuất kho hoặc kiểm kho.'
+			});
+		}
+
 		// ✅ FIXED: Use branch_id from JWT token directly
 		if (req.user.role_name === 'staff') {
 			const staffBranchId = req.user.branch_id; // ✅ From JWT, no DB query needed
@@ -206,7 +237,7 @@ export const updateBranchInventory = async (req, res) => {
 		console.error('Error in updateBranchInventory:', err);
 		res.status(500).json({
 			success: false,
-			error: 'Lỗi khi cập nhật tồn kho'
+			error: 'Lỗi khi cập nhật cấu hình tồn kho'
 		});
 	}
 };
@@ -417,12 +448,22 @@ export const getBranchInventoryByBranchId = async (req, res) => {
 
 /**
  * PUT /api/branches/:branchId/inventory/:productId
- * Cập nhật tồn kho (WRITE permission: Staff chỉ update branch của mình)
+ * Cập nhật cấu hình tồn kho (chỉ min_stock, max_stock)
+ * ⛔ KHÔNG THỂ cập nhật số lượng stock thủ công - phải dùng nhập/xuất/chuyển kho
+ * WRITE permission: Staff chỉ có thể cập nhật chi nhánh của mình
  */
 export const updateBranchInventoryByBranchProduct = async (req, res) => {
 	try {
 		const { branchId, productId } = req.params;
-		const { stock, note } = req.body;
+		const { min_stock, max_stock, stock } = req.body;
+
+		// ⛔ KIỂM TRA: Chặn việc cập nhật stock thủ công
+		if (stock !== undefined) {
+			return res.status(403).json({
+				success: false,
+				error: 'Không thể cập nhật số lượng tồn kho thủ công. Vui lòng sử dụng chức năng nhập kho, xuất kho hoặc kiểm kho.'
+			});
+		}
 
 		// ✅ FIXED: canWriteToBranch is now sync, no await needed
 		const canWrite = canWriteToBranch(req.user, branchId);
@@ -448,10 +489,10 @@ export const updateBranchInventoryByBranchProduct = async (req, res) => {
 			});
 		}
 
-		// Update inventory
+		// Cập nhật cấu hình tồn kho (chỉ min_stock, max_stock)
 		const result = await branchInventoryService.updateBranchInventory(inventory.id, {
-			stock,
-			note
+			min_stock,
+			max_stock
 		});
 
 		if (!result.success) {
@@ -463,7 +504,7 @@ export const updateBranchInventoryByBranchProduct = async (req, res) => {
 		console.error('Error in updateBranchInventoryByBranchProduct:', err);
 		res.status(500).json({
 			success: false,
-			error: 'Lỗi khi cập nhật tồn kho'
+			error: 'Lỗi khi cập nhật cấu hình tồn kho'
 		});
 	}
 };

@@ -23,7 +23,7 @@ export const getAvailableBatchesFEFO = async (req, res) => {
 
     const result = await productBatchService.getAvailableBatchesFEFO(branchId, productId);
 
-    if (!result.success) {  
+    if (!result.success) {
       return res.status(result.status || 400).json(result);
     }
 
@@ -351,6 +351,62 @@ export const generateBatchNumber = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Lỗi khi tạo mã lô hàng',
+      details: error.message
+    });
+  }
+};
+
+/**
+ * Get depleted batches (quantity = 0)
+ * GET /product-batches/depleted
+ * 
+ * Query params:
+ * - branch_id: Filter by branch (optional, required for staff)
+ * - product_id: Filter by product (optional)
+ * - status: Filter by status (default: 'active')
+ * - page: Page number (default: 1)
+ * - limit: Items per page (default: 20)
+ */
+export const getDepletedBatches = async (req, res) => {
+  try {
+    const { branch_id, product_id, status, page, limit } = req.query;
+
+    // Staff can only view their own branch
+    if (req.user.role_name === 'staff') {
+      if (branch_id && Number(branch_id) !== req.user.branch_id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Bạn chỉ có quyền xem lô hàng của chi nhánh mình'
+        });
+      }
+
+      // Force staff to only see their branch
+      req.query.branch_id = req.user.branch_id;
+    }
+
+    const result = await productBatchService.getDepletedBatches({
+      branch_id: req.query.branch_id,
+      product_id,
+      status,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 20
+    });
+
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
+
+    // Mask sensitive data for staff
+    if (result.data?.batches) {
+      result.data.batches = maskBatchArray(result.data.batches, req.user);
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting depleted batches:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Lỗi khi lấy danh sách lô hàng hết hàng',
       details: error.message
     });
   }

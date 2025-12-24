@@ -149,18 +149,6 @@ app.use('/api', productBatchRoutes);
 app.use('/api', stockTakeRoutes);
 app.use('/api', stockOperationsRoutes);
 
-// Order management
-app.use('/api', cartRoutes);
-app.use('/api', orderRoutes);
-app.use('/api', paymentRoutes);
-app.use('/api/payments/vnpay', vnpayRoutes);
-app.use('/api/payments/momo', momoRoutes);
-
-// Shipping management
-app.use('/api/shipping', shippingFeeRoutes);
-app.use('/api', shipmentRoutes);
-app.use('/api', shippingAddressRoutes);
-
 // Notification management
 app.use('/api', notificationRoutes);
 

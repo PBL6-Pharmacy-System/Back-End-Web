@@ -1,0 +1,45 @@
+{
+  "timestamp": "2025-12-22T21:33:17.963Z",
+  "tables": {
+    "products": {
+      "total": 1011
+    },
+    "branches": {
+      "total": 6
+    },
+    "suppliers": {
+      "total": 1
+    },
+    "productunits": {
+      "total": 1095,
+      "orphaned": 0
+    },
+    "branchinventory": {
+      "total": 6025,
+      "zeroStock": 4465,
+      "withoutBatches": 5492,
+      "stockMismatch": 1101
+    },
+    "productBatch": {
+      "total": 764,
+      "orphaned": 0
+    },
+    "supplierOrder": {
+      "total": 53
+    },
+    "inventoryTransfer": {
+      "total": 22
+    },
+    "stockTake": {
+      "total": 14
+    },
+    "inventoryLog": {
+      "total": 129
+    }
+  },
+  "issues": [
+    "4465 inventory records with zero/null stock",
+    "5492 inventory records without batches",
+    "1101 inventory records with batch quantity mismatches"
+  ]
+}

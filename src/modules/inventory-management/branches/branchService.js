@@ -128,7 +128,7 @@ export const getBranchById = async (id, includeInventory = false) => {
       where: { id: Number(id) },
       include: includeInventory ? {
         branchinventory: {
-          include: { product: true }
+          include: { products: true }
         }
       } : undefined
     });
@@ -138,6 +138,21 @@ export const getBranchById = async (id, includeInventory = false) => {
         success: false,
         status: 404,
         error: 'Không tìm thấy chi nhánh'
+      };
+    }
+
+    // Nếu include inventory, thêm các thống kê
+    if (includeInventory && branch.branchinventory) {
+      const totalProducts = branch.branchinventory.length;
+      const totalStock = branch.branchinventory.reduce((sum, item) => sum + (item.stock || 0), 0);
+      const lowStockCount = branch.branchinventory.filter(item => 
+        item.min_stock && item.stock !== null && item.stock < item.min_stock
+      ).length;
+
+      branch.stats = {
+        totalProducts,
+        totalStock,
+        lowStockCount
       };
     }
 
@@ -336,6 +351,13 @@ export const deleteBranch = async (id) => {
       message: 'Đã xóa chi nhánh thành công'
     };
   } catch (error) {
+    if (error.code === 'P2025') {
+      return {
+        success: false,
+        status: 404,
+        error: 'Không tìm thấy chi nhánh'
+      };
+    }
     throw error;
   }
 };
@@ -354,19 +376,16 @@ export const findBranchByName = async (name) => {
 
 // Check if branch can be deleted
 export const canDeleteBranch = async (id) => {
-  const [hasInventory, hasShipments, hasOrders] = await Promise.all([
-    prisma.branchInventory.findFirst({
+  const [hasInventory, hasShipments] = await Promise.all([
+    prisma.branchinventory.findFirst({
       where: { branch_id: Number(id) }
     }),
     prisma.shipments.findFirst({
       where: { branch_id: Number(id) }
-    }),
-    prisma.orders.findFirst({
-      where: { branch_id: Number(id) }
     })
   ]);
 
-  return !hasInventory && !hasShipments && !hasOrders;
+  return !hasInventory && !hasShipments;
 };
 
 /**

@@ -101,6 +101,11 @@ export const getAllSupplierOrders = async (filters = {}) => {
                     users_supplierOrder_ordered_byTousers: { select: { id: true, full_name: true } },
                     users_supplierOrder_approved_byTousers: { select: { id: true, full_name: true } },
                     users_supplierOrder_received_byTousers: { select: { id: true, full_name: true } },
+                    supplierOrderItem: {
+                        include: {
+                            products: { select: { id: true, name: true, price: true, image_url: true } }
+                        }
+                    },
                     _count: { select: { supplierOrderItem: true } }
                 },
                 orderBy: { [sortBy]: sortOrder },
@@ -175,6 +180,9 @@ export const getSupplierOrderById = async (id) => {
  */
 export const createSupplierOrder = async (data, userId) => {
     try {
+        console.log('📥 Backend received supplier order data:', JSON.stringify(data, null, 2));
+        console.log('👤 User ID:', userId);
+
         const { supplier_id, branch_id, items, note, expected_date } = data;
 
         // Validate required fields
@@ -212,16 +220,45 @@ export const createSupplierOrder = async (data, userId) => {
             };
         }
 
+        // Verify all products exist
+        const productIds = items.map(item => Number(item.product_id));
+        const existingProducts = await prisma.products.findMany({
+            where: { id: { in: productIds } },
+            select: { id: true, name: true }
+        });
+
+        if (existingProducts.length !== productIds.length) {
+            const existingIds = existingProducts.map(p => p.id);
+            const missingIds = productIds.filter(id => !existingIds.includes(id));
+            return {
+                success: false,
+                status: 404,
+                error: `Các sản phẩm không tồn tại: ${missingIds.join(', ')}`
+            };
+        }
+
         // Generate order number
         const orderNumber = await generateOrderNumber();
 
-        // Calculate totals
+        // Calculate totals - handle both unit_price and cost_price field names
         let totalAmount = 0;
         let taxAmount = 0;
         let discountAmount = 0;
 
         for (const item of items) {
-            const subtotal = Number(item.quantity) * Number(item.unit_price);
+            // Support both unit_price and cost_price field names
+            const price = Number(item.unit_price || item.cost_price || 0);
+            const quantity = Number(item.quantity || 0);
+
+            if (isNaN(price) || isNaN(quantity)) {
+                return {
+                    success: false,
+                    status: 400,
+                    error: `Giá hoặc số lượng không hợp lệ cho sản phẩm ${item.product_id}`
+                };
+            }
+
+            const subtotal = quantity * price;
             const itemTax = subtotal * (Number(item.tax_rate || 0) / 100);
             const itemDiscount = Number(item.discount || 0);
 
@@ -236,32 +273,39 @@ export const createSupplierOrder = async (data, userId) => {
         const result = await prisma.$transaction(async (tx) => {
             const order = await tx.supplierOrder.create({
                 data: {
-                    supplier_id: Number(supplier_id),
-                    branch_id: Number(branch_id),
                     order_number: orderNumber,
                     status: 'draft',
                     total_amount: totalAmount,
                     tax_amount: taxAmount,
                     discount_amount: discountAmount,
                     final_amount: finalAmount,
-                    ordered_by: userId,
                     order_date: new Date(),
                     expected_date: expected_date ? new Date(expected_date) : null,
-                    note
+                    note,
+                    branches: {
+                        connect: { id: Number(branch_id) }
+                    },
+                    suppliers: {
+                        connect: { id: Number(supplier_id) }
+                    },
+                    users_supplierOrder_ordered_byTousers: {
+                        connect: { id: userId }
+                    }
                 }
             });
 
             // Create order items
             for (const item of items) {
+                const price = Number(item.unit_price || item.cost_price || 0);
                 await tx.supplierOrderItem.create({
                     data: {
                         order_id: order.id,
                         product_id: Number(item.product_id),
                         quantity: Number(item.quantity),
-                        unit_price: Number(item.unit_price),
+                        unit_price: price,
                         tax_rate: Number(item.tax_rate || 0),
                         discount: Number(item.discount || 0),
-                        subtotal: Number(item.quantity) * Number(item.unit_price),
+                        subtotal: Number(item.quantity) * price,
                         batch_number: item.batch_number || null,
                         expiry_date: item.expiry_date ? new Date(item.expiry_date) : null,
                         note: item.note || null
@@ -361,6 +405,13 @@ export const updateSupplierOrderStatus = async (id, newStatus, userId, receivedI
  */
 export const receiveSupplierOrder = async (id, userId, receivedItems = null) => {
     try {
+        console.log('[receiveSupplierOrder] Starting with params:', {
+            id,
+            userId,
+            receivedItems: receivedItems ? JSON.stringify(receivedItems) : 'null',
+            receivedItemsLength: receivedItems?.length
+        });
+
         const order = await prisma.supplierOrder.findUnique({
             where: { id: Number(id) },
             include: {
@@ -380,6 +431,36 @@ export const receiveSupplierOrder = async (id, userId, receivedItems = null) => 
             };
         }
 
+        console.log('[receiveSupplierOrder] Order found:', {
+            order_id: order.id,
+            order_number: order.order_number,
+            status: order.status,
+            items_count: order.supplierOrderItem.length,
+            item_product_ids: order.supplierOrderItem.map(i => i.product_id)
+        });
+
+        // Validate receivedItems product_ids if provided
+        if (receivedItems && Array.isArray(receivedItems)) {
+            const orderProductIds = order.supplierOrderItem.map(i => i.product_id);
+            const receivedProductIds = receivedItems.map(ri => Number(ri.product_id));
+
+            console.log('[receiveSupplierOrder] Validating receivedItems:', {
+                orderProductIds,
+                receivedProductIds
+            });
+
+            for (const productId of receivedProductIds) {
+                if (!orderProductIds.includes(productId)) {
+                    console.error('[receiveSupplierOrder] Invalid product_id:', productId);
+                    return {
+                        success: false,
+                        status: 400,
+                        error: `Sản phẩm ID ${productId} không có trong đơn hàng này`
+                    };
+                }
+            }
+        }
+
         if (order.status === 'received') {
             return {
                 success: false,
@@ -388,11 +469,12 @@ export const receiveSupplierOrder = async (id, userId, receivedItems = null) => 
             };
         }
 
-        if (order.status !== 'shipped' && order.status !== 'approved') {
+        // ✅ CHỈ cho phép nhận hàng từ trạng thái 'approved'
+        if (order.status !== 'approved') {
             return {
                 success: false,
                 status: 400,
-                error: `Chỉ có thể nhận hàng từ đơn đã duyệt hoặc đang giao. Trạng thái hiện tại: ${order.status}`
+                error: `Chỉ có thể nhập kho từ đơn đã duyệt (approved). Trạng thái hiện tại: ${order.status}. Vui lòng duyệt đơn hàng trước.`
             };
         }
 
@@ -415,14 +497,28 @@ export const receiveSupplierOrder = async (id, userId, receivedItems = null) => 
             const batchesCreated = [];
 
             for (const item of order.supplierOrderItem) {
+                console.log(`[DEBUG] Processing item:`, {
+                    product_id: item.product_id,
+                    product_name: item.products.name,
+                    ordered_qty: item.quantity
+                });
+
                 // Số lượng nhận thực tế (có thể khác với ordered quantity)
                 let receivedQty = item.quantity; // Default: nhận đủ
 
                 // Nếu có receivedItems, sử dụng số lượng thực nhận
-                if (receivedItems) {
-                    const receivedItem = receivedItems.find(ri => ri.product_id === item.product_id);
+                if (receivedItems && Array.isArray(receivedItems)) {
+                    // ✅ FIX: Ensure both sides are Number for comparison
+                    const receivedItem = receivedItems.find(ri => Number(ri.product_id) === Number(item.product_id));
                     if (receivedItem) {
-                        receivedQty = Number(receivedItem.received_qty);
+                        // Support both received_qty and received_quantity
+                        receivedQty = Number(receivedItem.received_qty || receivedItem.received_quantity || item.quantity);
+                        console.log(`[DEBUG] Found receivedItem for product ${item.product_id}:`, {
+                            received_qty: receivedQty,
+                            original: receivedItem
+                        });
+                    } else {
+                        console.log(`[DEBUG] No receivedItem found for product ${item.product_id}, using default qty: ${receivedQty}`);
                     }
                 }
 
@@ -436,53 +532,8 @@ export const receiveSupplierOrder = async (id, userId, receivedItems = null) => 
                     continue; // Skip nếu không nhận sản phẩm này
                 }
 
-                // Generate batch number nếu chưa có
-                const batchNumber = item.batch_number || generateBatchNumber(order.order_number, item.product_id);
-
-                // 1. Tạo hoặc cập nhật productBatch
-                const existingBatch = await tx.productBatch.findFirst({
-                    where: {
-                        batch_number: batchNumber,
-                        product_id: item.product_id,
-                        branch_id: order.branch_id
-                    }
-                });
-
-                let batch;
-                if (existingBatch) {
-                    batch = await tx.productBatch.update({
-                        where: { id: existingBatch.id },
-                        data: {
-                            quantity: { increment: receivedQty },
-                            updated_at: new Date()
-                        }
-                    });
-                } else {
-                    batch = await tx.productBatch.create({
-                        data: {
-                            product_id: item.product_id,
-                            branch_id: order.branch_id,
-                            batch_number: batchNumber,
-                            manufacture_date: null, // Có thể thêm vào supplierOrderItem nếu cần
-                            expiry_date: item.expiry_date,
-                            quantity: receivedQty,
-                            cost_price: item.unit_price,
-                            selling_price: item.products.price, // Dùng giá bán hiện tại
-                            supplier_id: order.supplier_id,
-                            status: 'active',
-                            note: `Nhập từ PO ${order.order_number}`
-                        }
-                    });
-                }
-
-                batchesCreated.push({
-                    batch_id: batch.id,
-                    batch_number: batchNumber,
-                    product_id: item.product_id,
-                    quantity: receivedQty
-                });
-
-                // 2. Cập nhật hoặc tạo branchinventory
+                // ✅ FIX: Tạo branchinventory TRƯỚC productBatch vì productBatch có FK đến branchinventory
+                // 1. Cập nhật hoặc tạo branchinventory TRƯỚC
                 const existingInventory = await tx.branchinventory.findUnique({
                     where: {
                         branch_id_product_id: {
@@ -505,6 +556,7 @@ export const receiveSupplierOrder = async (id, userId, receivedItems = null) => 
                             last_updated: new Date()
                         }
                     });
+                    console.log(`[DEBUG] Updated existing branchinventory for product ${item.product_id}`);
                 } else {
                     await tx.branchinventory.create({
                         data: {
@@ -514,7 +566,56 @@ export const receiveSupplierOrder = async (id, userId, receivedItems = null) => 
                             last_updated: new Date()
                         }
                     });
+                    console.log(`[DEBUG] Created new branchinventory for product ${item.product_id}`);
                 }
+
+                // Generate batch number nếu chưa có
+                const batchNumber = item.batch_number || generateBatchNumber(order.order_number, item.product_id);
+
+                // 2. SAU ĐÓ mới tạo hoặc cập nhật productBatch
+                const existingBatch = await tx.productBatch.findFirst({
+                    where: {
+                        batch_number: batchNumber,
+                        product_id: item.product_id,
+                        branch_id: order.branch_id
+                    }
+                });
+
+                let batch;
+                if (existingBatch) {
+                    batch = await tx.productBatch.update({
+                        where: { id: existingBatch.id },
+                        data: {
+                            quantity: { increment: receivedQty },
+                            updated_at: new Date()
+                        }
+                    });
+                    console.log(`[DEBUG] Updated existing batch ${batchNumber}`);
+                } else {
+                    batch = await tx.productBatch.create({
+                        data: {
+                            product_id: item.product_id,
+                            branch_id: order.branch_id,
+                            batch_number: batchNumber,
+                            manufacture_date: null, // Có thể thêm vào supplierOrderItem nếu cần
+                            expiry_date: item.expiry_date,
+                            quantity: receivedQty,
+                            cost_price: item.unit_price,
+                            selling_price: item.products.price, // Dùng giá bán hiện tại
+                            supplier_id: order.supplier_id,
+                            status: 'active',
+                            note: `Nhập từ PO ${order.order_number}`
+                        }
+                    });
+                    console.log(`[DEBUG] Created new batch ${batchNumber}`);
+                }
+
+                batchesCreated.push({
+                    batch_id: batch.id,
+                    batch_number: batchNumber,
+                    product_id: item.product_id,
+                    quantity: receivedQty
+                });
 
                 // 3. Tạo inventory log
                 const inventoryLog = await tx.inventoryLog.create({
@@ -532,13 +633,31 @@ export const receiveSupplierOrder = async (id, userId, receivedItems = null) => 
                     }
                 });
 
-                // 4. Tạo junction table entry
-                await tx.inventoryLog_SupplierOrder.create({
-                    data: {
-                        inventory_log_id: inventoryLog.id,
-                        supplier_order_id: order.id
-                    }
+                console.log(`[DEBUG] Created inventoryLog for product ${item.product_id}:`, {
+                    inventoryLog_id: inventoryLog.id,
+                    product_id: item.product_id,
+                    batch_id: batch.id,
+                    order_id: order.id
                 });
+
+                // 4. Tạo junction table entry
+                try {
+                    await tx.inventoryLog_SupplierOrder.create({
+                        data: {
+                            inventory_log_id: inventoryLog.id,
+                            supplier_order_id: order.id
+                        }
+                    });
+                    console.log(`[DEBUG] Created junction for inventoryLog ${inventoryLog.id} -> order ${order.id}`);
+                } catch (junctionError) {
+                    console.error(`[ERROR] Failed to create junction:`, {
+                        inventory_log_id: inventoryLog.id,
+                        supplier_order_id: order.id,
+                        error: junctionError.message,
+                        code: junctionError.code
+                    });
+                    throw junctionError;
+                }
 
                 importResults.push({
                     product_id: item.product_id,

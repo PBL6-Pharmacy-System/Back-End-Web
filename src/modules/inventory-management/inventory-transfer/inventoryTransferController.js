@@ -108,7 +108,32 @@ export const approveTransfer = async (req, res) => {
 export const shipTransfer = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { tracking_number } = req.body;
+    const tracking_number = req.body?.tracking_number;
+
+    // Validate tracking number
+    if (tracking_number) {
+      if (typeof tracking_number !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: 'Mã vận đơn phải là chuỗi ký tự'
+        });
+      }
+      
+      if (tracking_number.length > 100) {
+        return res.status(400).json({
+          success: false,
+          error: 'Mã vận đơn không được vượt quá 100 ký tự'
+        });
+      }
+      
+      const trackingPattern = /^[A-Z0-9\-]+$/i;
+      if (!trackingPattern.test(tracking_number)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Mã vận đơn chỉ được chứa chữ cái, số và dấu gạch ngang'
+        });
+      }
+    }
 
     // ✅ Get transfer first to check from_branch ownership
     const transferResult = await inventoryTransferService.getTransferById(req.params.id);

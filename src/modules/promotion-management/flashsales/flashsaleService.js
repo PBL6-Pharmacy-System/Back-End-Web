@@ -156,6 +156,26 @@ export const createFlashsale = async (data) => {
           error: 'Giá và số lượng phải lớn hơn 0'
         };
       }
+
+      // ✅ Kiểm tra tồn kho: So sánh với TỔNG số lượng ở TẤT CẢ chi nhánh
+      const totalStock = await prisma.branchinventory.aggregate({
+        where: { product_id: product.product_id },
+        _sum: { stock: true }
+      });
+
+      const availableStock = totalStock._sum.stock || 0;
+
+      if (product.stock_limit > availableStock) {
+        const productInfo = await prisma.products.findUnique({
+          where: { id: product.product_id },
+          select: { name: true }
+        });
+        
+        return {
+          success: false,
+          error: `Sản phẩm "${productInfo?.name || product.product_id}" chỉ còn ${availableStock} sản phẩm trong kho (tổng tất cả chi nhánh), không thể đặt giới hạn ${product.stock_limit}`
+        };
+      }
     }
 
     // Validate thời gian
@@ -276,6 +296,39 @@ export const updateFlashsale = async (id, data) => {
           return {
             success: false,
             error: 'Giá và số lượng phải lớn hơn 0'
+          };
+        }
+
+        // ✅ Kiểm tra tồn kho: So sánh với TỔNG số lượng ở TẤT CẢ chi nhánh
+        const totalStock = await prisma.branchinventory.aggregate({
+          where: { product_id: product.product_id },
+          _sum: { stock: true }
+        });
+
+        const totalAvailableStock = totalStock._sum.stock || 0;
+        
+        // ✅ Khi UPDATE: Cần tính sold_count để biết còn bao nhiêu chưa bán
+        // stock_limit mới = số lượng chưa bán (stock_limit - sold_count cũ) + sold_count cũ
+        // Chỉ cần check: stock_limit mới không vượt quá tổng tồn kho
+        const soldCount = product.sold_count || 0;
+        const remainingToSell = product.stock_limit - soldCount; // Số lượng còn lại cần bán
+        
+        console.log(`[UPDATE FLASHSALE] Product ${product.product_id}:`);
+        console.log(`  Total stock in branches: ${totalAvailableStock}`);
+        console.log(`  New stock_limit: ${product.stock_limit}`);
+        console.log(`  Already sold: ${soldCount}`);
+        console.log(`  Remaining to sell: ${remainingToSell}`);
+
+        // Chỉ kiểm tra số lượng còn lại chưa bán có vượt tồn kho không
+        if (remainingToSell > totalAvailableStock) {
+          const productInfo = await prisma.products.findUnique({
+            where: { id: product.product_id },
+            select: { name: true }
+          });
+          
+          return {
+            success: false,
+            error: `Sản phẩm "${productInfo?.name || product.product_id}" chỉ còn ${totalAvailableStock} trong kho (tổng tất cả chi nhánh). Đã bán ${soldCount}, còn cần bán ${remainingToSell} > tồn kho`
           };
         }
       }

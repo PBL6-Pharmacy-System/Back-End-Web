@@ -11,23 +11,23 @@
 ### ✅ TẤT CẢ endpoints đã sử dụng {{accessToken}} thống nhất
 ### 
 ### ========================================
-
 # Biến cấu hình
 @baseUrl = http://localhost:3000/api
 @contentType = application/json
 
 # Token xác thực
 # Chỉ cần 1 token duy nhất từ response của /auth/login
-@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjksInVzZXJuYW1lIjoiYWRtaW4xMjMiLCJlbWFpbCI6ImFkbWluMTIzQGdtYWlsLmNvbSIsInJvbGVfaWQiOjEsInJvbGVfbmFtZSI6ImFkbWluIiwiYWRtaW5faWQiOjIsImlzX3N1cGVyX2FkbWluIjpmYWxzZSwiaWF0IjoxNzY1ODc3NzY5LCJleHAiOjE3NjU5NjQxNjl9.NwKeoIpucpGzEpsNsAebcUvf7kx-Ku3LkJBzkZFpOvA
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjksInVzZXJuYW1lIjoiYWRtaW4xMjMiLCJlbWFpbCI6ImFkbWluMTIzQGdtYWlsLmNvbSIsInJvbGVfaWQiOjEsInJvbGVfbmFtZSI6ImFkbWluIiwiYWRtaW5faWQiOjIsImlzX3N1cGVyX2FkbWluIjpmYWxzZSwiaWF0IjoxNzY2NDEyMzQ4LCJleHAiOjE3NjY0OTg3NDh9.jX4WlfB75CSFuwVVv0NnrwSpXkjGV711wArR6cfSb6g
 
 # ID thử nghiệm (cập nhật theo database thực tế)
 @branchId = 2
-@productId = 100
-@batchId = 1
-@transferId = 1
-@stockTakeId = 1
+@productId = 3
+@batchId = 711
+@transferId = 26
+@stockTakeId = 18
 @supplierId = 1
-@supplierOrderId = 1
+@supplierOrderId = 2
+@inventoryId = 1824
 
 ### ========================================
 ### TỒN KHO CHI NHÁNH - BRANCH INVENTORY
@@ -54,9 +54,13 @@ GET {{baseUrl}}/branch-inventory/alerts/low-stock
 Authorization: Bearer {{accessToken}}
 
 ### Lấy chi tiết tồn kho theo ID
-# Mô tả: Xem chi tiết 1 bản ghi tồn kho cụ thể
+# Mô tả: Xem chi tiết 1 bản ghi tồn kho cụ thể bằng inventory record ID
+# Lưu ý: Đây là inventory.id (không phải branch_id)
+# Để xem tồn kho theo chi nhánh, dùng: GET /branches/:branchId/inventory
 # Response: { success: true, data: { id, branch_id, product_id, stock, ... } }
-GET {{baseUrl}}/branch-inventory/{{branchId}}
+# TODO: Cập nhật @inventoryId với ID thực tế từ database
+
+GET {{baseUrl}}/branch-inventory/{{inventoryId}}
 Authorization: Bearer {{accessToken}}
 
 ### Tạo bản ghi tồn kho mới (Chỉ Admin)
@@ -79,7 +83,7 @@ Content-Type: {{contentType}}
 # Mô tả: Xóa hoàn toàn bản ghi tồn kho
 # Cảnh báo: Chỉ xóa khi chắc chắn, dữ liệu không thể khôi phục
 # Response: { success: true, message: "Xóa tồn kho thành công" }
-DELETE {{baseUrl}}/branch-inventory/{{branchId}}
+DELETE {{baseUrl}}/branch-inventory/{{inventoryId}}
 Authorization: Bearer {{accessToken}}
 
 ### ========================================
@@ -168,17 +172,16 @@ Authorization: Bearer {{accessToken}}
 GET {{baseUrl}}/branches/{{branchId}}/inventory/alerts/low-stock
 Authorization: Bearer {{accessToken}}
 
-### Cập nhật tồn kho thủ công (Staff - chỉ chi nhánh của mình)
-# Mô tả: Điều chỉnh số lượng tồn kho và ngưỡng cảnh báo
-# Lưu ý: Staff chỉ được cập nhật chi nhánh mình làm việc
-# Body: { stock, min_stock, max_stock }
+### Cập nhật min_stock max_stock thủ công (Staff - chỉ chi nhánh của mình)
+# Mô tả: Điều chỉnh số lượng tồn kho tối thiểu và tối đa
+# Lưu ý: Staff chỉ được cập nhật chi nhánh mình làm việc, không được chỉnh sửa số lượng tồn kho trực tiếp
+# Body: { min_stock, max_stock }
 # Response: { success: true, data: { updated_inventory }, message: "Cập nhật tồn kho thành công" }
 PUT {{baseUrl}}/branches/{{branchId}}/inventory/{{productId}}
 Authorization: Bearer {{accessToken}}
 Content-Type: {{contentType}}
 
 {
-  "stock": 150,
   "min_stock": 25,
   "max_stock": 600
 }
@@ -210,13 +213,23 @@ Authorization: Bearer {{accessToken}}
 ### Lấy lô hàng sắp dụng theo FEFO
 # Mô tả: Danh sách lô hàng được sắp xếp theo HSD (hết hạn sớm nhất xuất trước)
 # Response: { success: true, data: [{ batch_number, quantity, expiry_date, cost_price }] }
+### ========================================
+### FEFO (First Expired First Out) - BATCH OPERATIONS
+### ========================================
+
+### 📋 STEP 1: Check current batches BEFORE export
+# Purpose: Verify current state of batches
+# Expected: See all available batches with quantities and expiry dates
 GET {{baseUrl}}/product-batches/fefo/{{branchId}}/{{productId}}
 Authorization: Bearer {{accessToken}}
 
-### Xem trước kế hoạch phân bổ FEFO
-# Mô tả: Mô phỏng xuất kho để xem lô nào sẽ được xuất (không thực hiện xuất)
-# Body: { branch_id, product_id, quantity }
-# Response: { success: true, allocation: [{ batch_number, allocated_quantity, remaining_in_batch }] }
+### 📋 STEP 2: Preview FEFO allocation plan
+# Purpose: See which batches will be used WITHOUT actually exporting
+# Expected: Allocation plan showing FEFO order (earliest expiry first)
+# Verify:
+# - Batches are sorted by expiry_date ASC
+# - Quantities allocated correctly
+# - Total allocated = requested quantity
 POST {{baseUrl}}/product-batches/fefo/allocate
 Authorization: Bearer {{accessToken}}
 Content-Type: {{contentType}}
@@ -224,31 +237,254 @@ Content-Type: {{contentType}}
 {
   "branch_id": {{branchId}},
   "product_id": {{productId}},
-  "quantity": 50
+  "quantity": 100
 }
 
-### Xuất kho theo chiến lược FEFO
-# Mô tả: Xuất hàng tự động từ các lô sắp hết hạn trước
-# Body: { branch_id, product_id, quantity, reason, order_id }
-# Response: { success: true, exported_batches: [...], total_exported, message: "Xuất kho thành công" }
-### Xuất kho theo chiến lược FEFO
-# Mô tả: Xuất hàng tự động từ các lô sắp hết hạn trước
-# Body: { branch_id, product_id, quantity, note?, reference_type?, reference_id? }
-# Response: 
+### 🚀 STEP 3: Export stock using FEFO (CRITICAL TEST)
+# Purpose: Actually export stock following FEFO strategy
+# Expected Response Structure - VERIFY ALL FIELDS:
 # {
-#   success: true,
-#   data: {
-#     allocations: [{ batch_id, batch_number, expiry_date, allocated_qty, remaining_after }],
-#     logs: [{ id, quantity, type, note, created_at, batch_id }],
-#     totalExported: number,
-#     updatedBatches: [{ id, batch_number, quantity, expiry_date, status }],
-#     summary: {
-#       total_exported, batches_used, branch_id, product_id, 
-#       exported_at, exported_by
+#   "success": true,
+#   "data": {
+#     "allocations": [...],  // Before state
+#     "logs": [...],         // Audit trail
+#     "totalExported": 100,
+#     "updatedBatches": [...],  // ⭐ After state
+#     "summary": {
+#       "total_exported": 100,
+#       "batches_used": 2,
+#       "branch_id": 2,
+#       "branch_name": "...",
+#       "product_id": 3,
+#       "product_name": "...",
+#       "reference_type": "manual_export",
+#       "reference_id": null,
+#       "exported_at": "...",
+#       "exported_by": 9
 #     }
-#   },
-#   message: "Đã xuất X sản phẩm từ Y lô theo FEFO"
+#   }
 # }
+# 
+# ✅ VERIFY AFTER RESPONSE:
+# 1. allocations[].allocated_qty sum = summary.total_exported
+# 2. Each updatedBatches[].quantity = original - allocated_qty
+# 3. Logs created for each batch
+# 4. summary contains all metadata
+POST {{baseUrl}}/product-batches/fefo/export
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": {{branchId}},
+  "product_id": {{productId}},
+  "quantity": 100,
+  "reference_type": "manual_export",
+  "reference_id": null,
+  "note": "Test export FEFO - Verify batch quantities"
+}
+
+### ✅ STEP 4: Verify batches after export
+# Purpose: Confirm batches have correct remaining quantities
+# Expected: 
+# - Batches used in export have reduced quantities
+# - FEFO order maintained (earliest expiry exported first)
+# - If batch quantity = 0, it should still show (not deleted)
+GET {{baseUrl}}/product-batches/fefo/{{branchId}}/{{productId}}
+Authorization: Bearer {{accessToken}}
+
+### ✅ STEP 5: Check inventory for stock decrease
+# Purpose: Verify branchinventory.stock decreased by exported amount
+# Expected: stock = previous_stock - 100
+GET {{baseUrl}}/branch-inventory?branch_id={{branchId}}&product_id={{productId}}
+Authorization: Bearer {{accessToken}}
+
+### ❌ TEST: Invalid reference_type
+# Purpose: Test reference_type whitelist validation
+# Expected: 400 error - "reference_type không hợp lệ"
+# Allowed types: manual_export, order_fulfillment, transfer, damage, sample, return_to_supplier
+POST {{baseUrl}}/product-batches/fefo/export
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": {{branchId}},
+  "product_id": {{productId}},
+  "quantity": 10,
+  "reference_type": "hacked_type",
+  "note": "❌ Should fail - invalid reference_type"
+}
+
+### ❌ TEST: Missing reference_id for order_fulfillment
+# Purpose: Test conditional validation
+# Expected: 400 error - "reference_id (order_id) bắt buộc"
+POST {{baseUrl}}/product-batches/fefo/export
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": {{branchId}},
+  "product_id": {{productId}},
+  "quantity": 10,
+  "reference_type": "order_fulfillment",
+  "reference_id": null,
+  "note": "❌ Should fail - missing order_id"
+}
+
+### ❌ TEST: Quantity exceeds limit
+# Purpose: Test max quantity constraint (100,000)
+# Expected: 400 error - "Số lượng xuất vượt quá giới hạn"
+POST {{baseUrl}}/product-batches/fefo/export
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": {{branchId}},
+  "product_id": {{productId}},
+  "quantity": 1000000,
+  "note": "❌ Should fail - quantity > 100,000"
+}
+
+### ❌ TEST: Non-existent branch
+# Purpose: Test foreign key validation
+# Expected: 404 error - "Chi nhánh không tồn tại"
+POST {{baseUrl}}/product-batches/fefo/export
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": 99999,
+  "product_id": {{productId}},
+  "quantity": 10,
+  "note": "❌ Should fail - branch doesn't exist"
+}
+
+### ========================================
+### BATCH IMPORT - CREATE NEW BATCH WITH VALIDATIONS
+### ========================================
+
+### 📋 IMPORT STEP 1: Check stock BEFORE import
+GET {{baseUrl}}/branch-inventory?branch_id={{branchId}}&product_id={{productId}}
+Authorization: Bearer {{accessToken}}
+
+### 🚀 IMPORT STEP 2: Create new batch with all validations
+# Purpose: Test complete import flow with all fields
+# Verify all data saves correctly
+POST {{baseUrl}}/product-batches
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "product_id": {{productId}},
+  "branch_id": {{branchId}},
+  "batch_number": "TEST-20251222-001",
+  "manufacture_date": "2025-01-15",
+  "expiry_date": "2027-06-30",
+  "quantity": 200,
+  "cost_price": 5000,
+  "selling_price": 7500,
+  "supplier_id": {{supplierId}},
+  "note": "Test import - Verify all data"
+}
+
+### ✅ IMPORT STEP 3: Verify batch created correctly
+GET {{baseUrl}}/product-batches?branch_id={{branchId}}&product_id={{productId}}
+Authorization: Bearer {{accessToken}}
+
+### ✅ IMPORT STEP 4: Verify inventory increased
+GET {{baseUrl}}/branch-inventory?branch_id={{branchId}}&product_id={{productId}}
+Authorization: Bearer {{accessToken}}
+
+### ❌ TEST: Duplicate batch
+POST {{baseUrl}}/product-batches
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "product_id": {{productId}},
+  "branch_id": {{branchId}},
+  "batch_number": "TEST-20251222-001",
+  "quantity": 100,
+  "note": "❌ Duplicate - should fail"
+}
+
+### ❌ TEST: SQL Injection
+POST {{baseUrl}}/product-batches
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "product_id": {{productId}},
+  "branch_id": {{branchId}},
+  "batch_number": "BATCH'; DROP TABLE--",
+  "quantity": 100
+}
+
+### ❌ TEST: Future manufacture date
+POST {{baseUrl}}/product-batches
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "product_id": {{productId}},
+  "branch_id": {{branchId}},
+  "batch_number": "TEST-FUTURE",
+  "manufacture_date": "2030-01-01",
+  "expiry_date": "2031-01-01",
+  "quantity": 100
+}
+
+### ❌ TEST: Past expiry date
+POST {{baseUrl}}/product-batches
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "product_id": {{productId}},
+  "branch_id": {{branchId}},
+  "batch_number": "TEST-PAST-EXP",
+  "manufacture_date": "2023-01-01",
+  "expiry_date": "2024-06-01",
+  "quantity": 100
+}
+
+### ❌ TEST: Selling < Cost price
+POST {{baseUrl}}/product-batches
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "product_id": {{productId}},
+  "branch_id": {{branchId}},
+  "batch_number": "TEST-PRICE-ERR",
+  "quantity": 100,
+  "cost_price": 10000,
+  "selling_price": 5000
+}
+
+### 🔄 COMPLETE FLOW: Import → Export → Verify
+### FLOW 1: Baseline
+GET {{baseUrl}}/branch-inventory?branch_id={{branchId}}&product_id={{productId}}
+Authorization: Bearer {{accessToken}}
+
+### FLOW 2: Import
+POST {{baseUrl}}/product-batches
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "product_id": {{productId}},
+  "branch_id": {{branchId}},
+  "batch_number": "FLOW-TEST-20251222",
+  "manufacture_date": "2025-06-01",
+  "expiry_date": "2026-03-31",
+  "quantity": 150,
+  "cost_price": 3000,
+  "selling_price": 4500,
+  "supplier_id": {{supplierId}},
+  "note": "Flow test Part 1"
+}
+
+### FLOW 3: Export 50
 POST {{baseUrl}}/product-batches/fefo/export
 Authorization: Bearer {{accessToken}}
 Content-Type: {{contentType}}
@@ -257,10 +493,35 @@ Content-Type: {{contentType}}
   "branch_id": {{branchId}},
   "product_id": {{productId}},
   "quantity": 50,
-  "note": "Xuất kho thủ công - Test FEFO",
   "reference_type": "manual_export",
-  "reference_id": null
+  "note": "Flow test Part 2 - Export 50"
 }
+
+### FLOW 4: Verify remaining = 150 - 50 = 100
+GET {{baseUrl}}/product-batches/fefo/{{branchId}}/{{productId}}
+Authorization: Bearer {{accessToken}}
+
+### FLOW 5: Deplete batch
+POST {{baseUrl}}/product-batches/fefo/export
+Authorization: Bearer {{accessToken}}
+Content-Type: {{contentType}}
+
+{
+  "branch_id": {{branchId}},
+  "product_id": {{productId}},
+  "quantity": 150,
+  "reference_type": "manual_export",
+  "note": "Flow test Part 3 - Deplete batch"
+}
+
+### FLOW 6: Verify quantity đã bị trừ (batch not deleted)
+GET {{baseUrl}}/product-batches/fefo/{{branchId}}/{{productId}}
+Authorization: Bearer {{accessToken}}
+
+### FLOW 7: Xem các batch với quantity = 0 vẫn còn trong hệ thống
+GET {{baseUrl}}/product-batches/depleted
+Authorization: Bearer {{accessToken}}
+
 
 ### Nhập hàng vào lô
 # Mô tả: Tạo lô mới hoặc thêm vào lô hiện có khi nhập hàng
@@ -273,8 +534,8 @@ Content-Type: {{contentType}}
 {
   "product_id": {{productId}},
   "branch_id": {{branchId}},
-  "batch_number": "BATCH-2025-001",
-  "quantity": 100,
+  "batch_number": "TEST-BATCH-001",
+  "quantity": 110,
   "expiry_date": "2027-12-31",
   "cost_price": 50000,
   "supplier_id": {{supplierId}}
@@ -363,7 +624,7 @@ Content-Type: {{contentType}}
 
 {
   "expiry_date": "2027-06-30",
-  "cost_price": 49000
+  "cost_price": 4900
 }
 
 ### Đánh dấu lô đã hết hạn
@@ -449,13 +710,13 @@ Authorization: Bearer {{accessToken}}
 # Mô tả: Nhập số lượng thực tế sau khi đếm từng sản phẩm
 # Body: { actual_quantity, note }
 # Response: { success: true, data: { item, variance, percentage }, message: "Cập nhật thành công" }
-PUT {{baseUrl}}/stock-takes/{{stockTakeId}}/items/1
+PUT {{baseUrl}}/stock-takes/{{stockTakeId}}/items/381
 Authorization: Bearer {{accessToken}}
 Content-Type: {{contentType}}
 
 {
-  "actual_quantity": 95,
-  "note": "Thiếu 5 sản phẩm - nguyên nhân chưa rõ"
+  "actual_quantity": 277,
+  "note": "Đếm lại do sai sót ban đầu, số lượng đúng"
 }
 
 ### Hoàn thành kiểm kê
@@ -498,7 +759,7 @@ Authorization: Bearer {{accessToken}}
 # Mô tả: Báo cáo tổng hợp giá trị đơn hàng, số lượng theo thời gian
 # Query: start_date, end_date (format: YYYY-MM-DD)
 # Response: { success: true, data: { total_orders, total_value, by_supplier, by_status } }
-GET {{baseUrl}}/supplier-orders/statistics?start_date=2025-01-01&end_date=2025-12-31
+GET {{baseUrl}}/supplier-orders/statistics?start_date=2025-12-01&end_date=2025-12-31
 Authorization: Bearer {{accessToken}}
 
 ### Lấy chi tiết đơn hàng NCC
@@ -629,6 +890,10 @@ Authorization: Bearer {{accessToken}}
 # Response: { success: true, data: { transfer }, message: "Đã xuất kho thành công" }
 POST {{baseUrl}}/inventory-transfers/{{transferId}}/ship
 Authorization: Bearer {{accessToken}}
+
+{
+  "tracking_number": "TRK-20251222-001",
+}
 
 ### Nhận kho (Staff chi nhánh đích)
 # Mô tả: Xác nhận đã nhận hàng tại kho đích
