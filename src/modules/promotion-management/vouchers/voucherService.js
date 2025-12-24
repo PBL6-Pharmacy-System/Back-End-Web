@@ -125,13 +125,15 @@ export const getCustomerVouchers = async (customerId, {
 /**
  * Lấy danh sách vouchers đang active (cho user)
  * Chỉ trả về vouchers còn hạn và còn lượt dùng
+ * ✅ FIX: Thêm customerId để lọc voucher đã sử dụng
  */
 export const getAvailableVouchers = async ({ 
   page = 1,
   limit = 10,
   search,
   sortBy = 'created_at',
-  sortOrder = 'desc'
+  sortOrder = 'desc',
+  customerId = null
 }) => {
   try {
     const now = new Date();
@@ -143,6 +145,22 @@ export const getAvailableVouchers = async ({
       start_date: { lte: now },
       end_date: { gte: now }
     };
+
+    // Lấy danh sách voucher IDs mà customer đã sử dụng
+    let usedVoucherIds = [];
+    if (customerId) {
+      const usedVouchers = await prisma.uservouchers.findMany({
+        where: {
+          customer_id: Number(customerId),
+          is_used: true
+        },
+        select: {
+          voucher_id: true
+        }
+      });
+      usedVoucherIds = usedVouchers.map(uv => uv.voucher_id);
+      console.log(`🎫 Customer ${customerId} has used voucher IDs:`, usedVoucherIds);
+    }
 
     // Lấy tất cả vouchers thỏa điều kiện date, sau đó filter trong code
     const [allVouchers, total] = await Promise.all([
@@ -167,10 +185,13 @@ export const getAvailableVouchers = async ({
       prisma.vouchers.count({ where })
     ]);
 
-    // Filter vouchers còn lượt dùng
-    const vouchers = allVouchers.filter(v => 
-      v.usage_limit === null || v.used_count < v.usage_limit
-    );
+    // Filter vouchers còn lượt dùng VÀ chưa được user hiện tại sử dụng
+    const vouchers = allVouchers
+      .filter(v => v.usage_limit === null || v.used_count < v.usage_limit)
+      .map(v => ({
+        ...v,
+        is_used_by_user: usedVoucherIds.includes(v.id)
+      }));
 
     // Apply pagination sau khi filter
     const paginatedVouchers = vouchers.slice((page - 1) * limit, page * limit);

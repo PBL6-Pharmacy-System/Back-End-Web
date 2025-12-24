@@ -231,11 +231,13 @@ const applyVoucher = async (voucherCode, totalAmount, customerId) => {
 
 /**
  * ✅ FIX ISSUE #21: Auto-sync giá trong cart với giá hiện tại trước khi checkout
+ * ✅ FIX FLASHSALE: Ưu tiên giá flashsale nếu sản phẩm đang trong chương trình flashsale
  * Nếu giá thay đổi, tự động cập nhật và thông báo cho user
  */
 const syncCartPricesWithCurrent = async (tx, cart) => {
   const priceChanges = [];
   let totalUpdated = 0;
+  const now = new Date();
 
   for (const item of cart.orderitems) {
     // Lấy giá hiện tại từ productunits
@@ -248,7 +250,51 @@ const syncCartPricesWithCurrent = async (tx, cart) => {
       throw new Error(`Đơn vị sản phẩm ID ${item.unit_id} không tồn tại`);
     }
 
-    const currentPrice = Number(currentProductUnit.price);
+    let currentPrice = Number(currentProductUnit.price);
+
+    // ✅ KIỂM TRA FLASHSALE: Nếu sản phẩm đang trong flashsale thì dùng giá flashsale
+    const activeFlashsale = await tx.flashsales.findFirst({
+      where: {
+        start_time: { lte: now },
+        end_time: { gte: now },
+        status: 'active',
+        flashsale_products: {
+          some: {
+            product_id: item.product_id
+          }
+        }
+      },
+      include: {
+        flashsale_products: {
+          where: {
+            product_id: item.product_id
+          },
+          select: {
+            flash_price: true,
+            stock_limit: true,
+            sold_count: true
+          }
+        }
+      }
+    });
+
+    // Nếu có flashsale và còn hàng flashsale, sử dụng flash_price
+    if (activeFlashsale && activeFlashsale.flashsale_products.length > 0) {
+      const flashsaleProduct = activeFlashsale.flashsale_products[0];
+      const remainingStock = flashsaleProduct.stock_limit - flashsaleProduct.sold_count;
+      
+      // Chỉ áp dụng giá flashsale nếu còn đủ hàng cho số lượng trong giỏ
+      if (remainingStock >= item.quantity) {
+        const flashPrice = Number(flashsaleProduct.flash_price);
+        if (flashPrice > 0 && flashPrice < currentPrice) {
+          currentPrice = flashPrice;
+          console.log(`[CHECKOUT] Using flashsale price for product ${item.product_id}: ${flashPrice} (original: ${currentProductUnit.price})`);
+        }
+      } else {
+        console.log(`[CHECKOUT] Flashsale stock insufficient for product ${item.product_id}: need ${item.quantity}, remaining ${remainingStock}`);
+      }
+    }
+
     const cartPrice = Number(item.price);
 
     // So sánh giá (cho phép sai số 0.01 do floating point)

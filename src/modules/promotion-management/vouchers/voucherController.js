@@ -48,6 +48,7 @@ export const getCustomerVouchers = async (req, res) => {
 /**
  * GET /vouchers/available
  * Lấy danh sách vouchers đang active (user có thể dùng)
+ * ✅ FIX: Truyền customerId để lọc voucher đã sử dụng
  */
 export const getAvailableVouchers = async (req, res) => {
   try {
@@ -59,12 +60,17 @@ export const getAvailableVouchers = async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
+    // Lấy customerId từ token (nếu có) - ✅ FIX: Sử dụng customer_id thay vì customerId
+    const customerId = req.user?.customer_id || null;
+    console.log(`🎫 [VoucherController] Getting available vouchers for customerId: ${customerId}`);
+
     const result = await voucherService.getAvailableVouchers({
       page: parseInt(page),
       limit: parseInt(limit),
       search: search?.trim(),
       sortBy,
-      sortOrder
+      sortOrder,
+      customerId
     });
 
     if (!result.success) {

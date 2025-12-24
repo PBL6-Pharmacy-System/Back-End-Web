@@ -7,7 +7,7 @@
 
 import express from 'express';
 import * as shipmentController from './shipmentController.js';
-import { authenticateToken, authorizeAdmin, authorizeRoles } from '../../auth/auth.middleware.js';
+import { authenticateToken, authorizeRoles } from '../../auth/auth.middleware.js';
 import { validateId } from '../../../middlewares/validate.middleware.js';
 import prisma from '../../../config/db.js';
 
@@ -20,7 +20,8 @@ const router = express.Router();
 const validateShipmentOwnership = async (req, res, next) => {
     try {
         // Admin và Staff có quyền truy cập tất cả
-        if (req.user.role_name === 'admin' || req.user.role_name === 'staff') {
+        const userRole = req.user.role_name?.toLowerCase();
+        if (userRole === 'admin' || userRole === 'staff') {
             return next();
         }
 
@@ -64,7 +65,8 @@ const validateShipmentOwnership = async (req, res, next) => {
 const validateOrderShipmentOwnership = async (req, res, next) => {
     try {
         // Admin và Staff có quyền truy cập tất cả
-        if (req.user.role_name === 'admin' || req.user.role_name === 'staff') {
+        const userRole = req.user.role_name?.toLowerCase();
+        if (userRole === 'admin' || userRole === 'staff') {
             return next();
         }
 
@@ -102,7 +104,7 @@ const validateOrderShipmentOwnership = async (req, res, next) => {
 router.post('/shipments', authenticateToken, authorizeRoles('admin', 'staff'), shipmentController.createShipment);
 
 // GET /api/shipments/statistics - Thống kê vận chuyển (Admin)
-router.get('/shipments/statistics', authenticateToken, authorizeAdmin, shipmentController.getShipmentStatistics);
+router.get('/shipments/statistics', authenticateToken, authorizeRoles('admin', 'staff'), shipmentController.getShipmentStatistics);
 
 // GET /api/shipments/track/:trackingNumber - Tra cứu vận đơn (Public)
 router.get('/shipments/track/:trackingNumber', shipmentController.trackShipment);

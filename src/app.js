@@ -28,6 +28,9 @@ for (const key of requiredEnvVars) {
 // Auth
 import authRoutes from './modules/auth/authRoutes.js';
 
+// AI Chat
+import chatRoutes from './modules/ai-chat/chatRoutes.js';
+
 // User Management
 import adminRoutes from './modules/user-management/admin/adminRoutes.js';
 import customerRoutes from './modules/user-management/customers/customerRoutes.js';
@@ -129,6 +132,9 @@ app.use('/api', flashsaleRoutes);
 
 // Auth
 app.use('/api', authRoutes);
+
+// AI Chat
+app.use('/api', chatRoutes);
 
 // User
 app.use('/api', userRoutes);
